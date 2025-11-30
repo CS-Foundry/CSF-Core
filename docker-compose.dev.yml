@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - JWT_SECRET=${JWT_SECRET}
+    command: sh -c "npm ci && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
+
+  backend-dev:
+    env_file:
+      - .env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/usr/src/app
+      - cargo_registry:/usr/local/cargo/registry
+      - cargo_target:/usr/src/app/target
+      - db_data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/finance.db
+      - CARGO_HOME=/usr/local/cargo
+      - JWT_SECRET=${JWT_SECRET}
+      - RUST_LOG=debug
+    command: cargo watch -x run
+
+volumes:
+  cargo_registry:
+  cargo_target:
+  db_data:
