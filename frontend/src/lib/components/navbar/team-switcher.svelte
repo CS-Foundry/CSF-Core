@@ -25,9 +25,9 @@
       <div
         class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
       >
-        <span class="truncate font-semibold text-lg"> FinanceVault </span>
+        <span class="truncate font-semibold text-lg"> CSF-Core </span>
         <span class="truncate text-xs text-muted-foreground">
-          Personal Finance
+          Business Platform
         </span>
       </div>
     </Sidebar.MenuButton>

@@ -6,6 +6,9 @@
     LayoutDashboardIcon,
     PiggyBank,
     ReceiptText,
+    Users,
+    FolderKanban,
+    FileText,
   } from "@lucide/svelte";
 
   // Data for FinanceVault app
@@ -17,7 +20,7 @@
     },
     teams: [
       {
-        name: "FinanceVault",
+        name: "CSF Core",
         plan: "Premium",
       },
     ],
@@ -29,24 +32,19 @@
         isActive: true,
       },
       {
-        title: "Expenses",
-        url: "/expenses/monthly",
-        icon: HandCoins,
+        title: "Customers",
+        url: "/customers",
+        icon: Users,
       },
       {
-        title: "Subscriptions",
-        url: "/subscriptions",
-        icon: RepeatIcon,
+        title: "Projects",
+        url: "/projects",
+        icon: FolderKanban,
       },
       {
-        title: "Budgets",
-        url: "/budgets",
-        icon: PiggyBank,
-      },
-      {
-        title: "Invoices",
-        url: "/invoices",
-        icon: ReceiptText,
+        title: "Documents",
+        url: "/documents",
+        icon: FileText,
       },
       {
         title: "Reports",
@@ -54,11 +52,32 @@
         icon: ChartPieIcon,
       },
     ],
+    favorites: [
+      {
+        name: "Max Mustermann",
+        company: "Tech Solutions GmbH",
+        url: "/customers/max-mustermann",
+        initials: "M",
+      },
+      {
+        name: "Anna Schmidt",
+        company: "Digital Marketing AG",
+        url: "/customers/anna-schmidt",
+        initials: "A",
+      },
+      {
+        name: "Stefan Klein",
+        company: "Klein & Partners",
+        url: "/customers/stefan-klein",
+        initials: "S",
+      },
+    ],
   };
 </script>
 
 <script lang="ts">
   import NavMain from "./nav-main.svelte";
+  import NavFavorites from "./nav-favorites.svelte";
   import NavProjects from "./nav-projects.svelte";
   import NavUser from "./nav-user.svelte";
   import TeamSwitcher from "./team-switcher.svelte";
@@ -78,6 +97,7 @@
   </Sidebar.Header>
   <Sidebar.Content>
     <NavMain items={data.navMain} />
+    <NavFavorites favorites={data.favorites} />
   </Sidebar.Content>
   <Sidebar.Footer>
     <NavUser />
