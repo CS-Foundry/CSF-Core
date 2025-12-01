@@ -14,11 +14,11 @@
   <Sidebar.MenuItem>
     <Sidebar.MenuButton size="lg" onclick={handleClick}>
       <div
-        class="flex aspect-square size-10 items-center justify-center rounded-lg overflow-hidden bg-sidebar-primary/10"
+        class="flex aspect-square size-10 items-center justify-center rounded-lg overflow-hidden"
       >
         <img
-          src="/logos/FinanceVault.png"
-          alt="FinanceVault Logo"
+          src="/logos/CSF_Logo.png"
+          alt="CSF-Core Logo"
           class="w-full h-full object-contain rounded-lg"
         />
       </div>

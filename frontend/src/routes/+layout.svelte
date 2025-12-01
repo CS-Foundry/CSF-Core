@@ -20,14 +20,15 @@
   // Check if we should show the sidebar (not on signin/signup pages)
   let showSidebar = $derived(
     !$page.url.pathname.startsWith("/signin") &&
-      !$page.url.pathname.startsWith("/signup")
+      !$page.url.pathname.startsWith("/signup") &&
+      !$page.url.pathname.startsWith("/otp")
   );
 
   // On the client we initialize the store from localStorage and
   // subscribe to the effective theme to keep the <html> class in sync.
   onMount(() => {
-    console.log('[+layout.svelte] Component mounted.');
-    console.log('[+layout.svelte] Data received from load function:', data);
+    console.log("[+layout.svelte] Component mounted.");
+    console.log("[+layout.svelte] Data received from load function:", data);
     // Initialize auth store with user from server
     authStore.init(data.user, data.token);
 
@@ -52,8 +53,6 @@
 
     return unsub;
   });
-
-  
 </script>
 
 <svelte:head>
