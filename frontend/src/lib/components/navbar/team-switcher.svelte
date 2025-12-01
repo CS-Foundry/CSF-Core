@@ -19,7 +19,7 @@
         <img
           src="/logos/CSF_Logo.png"
           alt="CSF-Core Logo"
-          class="w-full h-full object-contain rounded-lg"
+          class="w-full h-full object-contain rounded-lg max-w-8 max-h-8"
         />
       </div>
       <div

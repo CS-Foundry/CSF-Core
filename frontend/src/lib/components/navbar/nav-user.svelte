@@ -75,7 +75,7 @@
               <span class="truncate font-medium"
                 >{authState.user?.username || "User"}</span
               >
-              <span class="truncate text-xs">FinanceVault</span>
+              <span class="truncate text-xs">CSF-Core</span>
             </div>
             <ChevronsUpDownIcon class="ml-auto size-4" />
           </Sidebar.MenuButton>
@@ -100,7 +100,7 @@
               <span class="truncate font-medium"
                 >{authState.user?.username || "User"}</span
               >
-              <span class="truncate text-xs">FinanceVault</span>
+              <span class="truncate text-xs">CSF-Core</span>
             </div>
           </div>
         </DropdownMenu.Label>
