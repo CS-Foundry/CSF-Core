@@ -7,6 +7,7 @@ use utoipa_swagger_ui::SwaggerUi;
 mod auth;
 mod auth_service;
 mod db;
+mod init;
 mod routes;
 mod utils;
 
@@ -95,6 +96,12 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // Initialize database with default data (RSA keys, admin user)
+    if let Err(e) = init::initialize_database(&db_conn).await {
+        tracing::error!("Failed to initialize database: {}", e);
+        std::process::exit(1);
+    }
 
     // Create application state
     let state = AppState { db_conn };
