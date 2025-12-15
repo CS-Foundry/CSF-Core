@@ -21,14 +21,6 @@
     DialogHeader,
     DialogTitle,
   } from "$lib/components/ui/dialog";
-  import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-  } from "$lib/components/ui/select";
-  import { Checkbox } from "$lib/components/ui/checkbox";
   import { Trash2, Edit, Plus, Shield } from "@lucide/svelte";
 
   let users = $state<User[]>([]);
@@ -306,19 +298,24 @@
       </div>
       <div class="grid gap-2">
         <Label for="role">Role *</Label>
-        <Select bind:value={newUser.role_id}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a role" />
-          </SelectTrigger>
-          <SelectContent>
-            {#each roles as role (role.id)}
-              <SelectItem value={role.id}>{role.name}</SelectItem>
-            {/each}
-          </SelectContent>
-        </Select>
+        <select
+          id="role"
+          bind:value={newUser.role_id}
+          class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">Select a role</option>
+          {#each roles as role (role.id)}
+            <option value={role.id}>{role.name}</option>
+          {/each}
+        </select>
       </div>
       <div class="flex items-center space-x-2">
-        <Checkbox id="force-pwd" bind:checked={newUser.force_password_change} />
+        <input
+          id="force-pwd"
+          type="checkbox"
+          bind:checked={newUser.force_password_change}
+          class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+        />
         <Label for="force-pwd">Force password change on first login</Label>
       </div>
     </div>
@@ -344,9 +341,11 @@
         <Input id="edit-email" type="email" bind:value={editForm.email} />
       </div>
       <div class="flex items-center space-x-2">
-        <Checkbox
+        <input
           id="edit-force-pwd"
+          type="checkbox"
           bind:checked={editForm.force_password_change}
+          class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
         />
         <Label for="edit-force-pwd">Force password change</Label>
       </div>
@@ -371,16 +370,16 @@
     <div class="grid gap-4 py-4">
       <div class="grid gap-2">
         <Label for="new-role">Role</Label>
-        <Select bind:value={newRoleId}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a role" />
-          </SelectTrigger>
-          <SelectContent>
-            {#each roles as role (role.id)}
-              <SelectItem value={role.id}>{role.name}</SelectItem>
-            {/each}
-          </SelectContent>
-        </Select>
+        <select
+          id="new-role"
+          bind:value={newRoleId}
+          class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">Select a role</option>
+          {#each roles as role (role.id)}
+            <option value={role.id}>{role.name}</option>
+          {/each}
+        </select>
       </div>
     </div>
     <DialogFooter>
