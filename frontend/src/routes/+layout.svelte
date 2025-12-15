@@ -29,8 +29,18 @@
   onMount(() => {
     console.log("[+layout.svelte] Component mounted.");
     console.log("[+layout.svelte] Data received from load function:", data);
+
     // Initialize auth store with user from server
     authStore.init(data.user, data.token);
+
+    // If no user and not on public pages, redirect to signin
+    const publicPages = ["/signin", "/signup", "/otp"];
+    const currentPath = $page.url.pathname;
+    if (!data.user && !publicPages.some((p) => currentPath.startsWith(p))) {
+      console.log("[+layout.svelte] No user found, redirecting to signin");
+      window.location.href = "/signin";
+      return;
+    }
 
     // Initialize theme
     initThemeFromStorage();

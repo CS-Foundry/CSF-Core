@@ -13,6 +13,7 @@ pub mod expenses;
 pub mod frontend;
 pub mod subscriptions;
 pub mod users;
+pub mod organizations;
 
 /// Creates the main application router and logs all registered routes.
 pub fn create_router() -> Router<AppState> {
@@ -37,7 +38,8 @@ pub fn create_router() -> Router<AppState> {
     let api_router = Router::new()
         .merge(expenses::expenses_routes())
         .merge(subscriptions::subscriptions_routes())
-        .merge(users::users_routes());
+        .merge(users::users_routes())
+        .merge(organizations::routes());
 
     Router::new()
         // API routes have priority

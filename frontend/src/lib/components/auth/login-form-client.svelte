@@ -37,11 +37,43 @@
     errorMessage = "";
 
     try {
-      const response = await AuthService.login(username, password);
+      const response = await AuthService.login(
+        username,
+        password,
+        undefined // No 2FA code on initial login
+      );
+
+      // Check if password change is required
+      if (response.force_password_change) {
+        // Store token temporarily and redirect to password change
+        authStore.login(
+          {
+            id: response.user_id,
+            username: response.username,
+            force_password_change: true,
+            two_factor_enabled: response.two_factor_enabled,
+          },
+          response.token
+        );
+
+        await fetch("/api/set-auth-cookie", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: response.token }),
+        });
+
+        goto("/change-password");
+        return;
+      }
 
       // Update auth store
       authStore.login(
-        { id: response.user_id, username: response.username },
+        {
+          id: response.user_id,
+          username: response.username,
+          force_password_change: false,
+          two_factor_enabled: response.two_factor_enabled,
+        },
         response.token
       );
 
@@ -55,8 +87,17 @@
       // Redirect to home
       goto("/");
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Login failed";
-      isLoading = false;
+      if (error instanceof Error && error.message === "2FA_REQUIRED") {
+        // Store credentials in sessionStorage and redirect to OTP page
+        sessionStorage.setItem(
+          "totp_pending",
+          JSON.stringify({ username, password })
+        );
+        goto("/otp");
+      } else {
+        errorMessage = error instanceof Error ? error.message : "Login failed";
+        isLoading = false;
+      }
     }
   }
 </script>

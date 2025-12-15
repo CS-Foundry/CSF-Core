@@ -27,6 +27,8 @@ pub struct LoginRequest {
     pub username: String,
     /// RSA encrypted password
     pub encrypted_password: String,
+    /// Optional 2FA code
+    pub two_factor_code: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -37,6 +39,10 @@ pub struct AuthResponse {
     pub user_id: String,
     /// Username
     pub username: String,
+    /// Whether 2FA is enabled for this user
+    pub two_factor_enabled: bool,
+    /// Whether the user must change their password
+    pub force_password_change: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -51,6 +57,12 @@ pub struct UserProfileResponse {
     pub id: String,
     /// Username
     pub username: String,
+    /// Email address
+    pub email: Option<String>,
+    /// Whether 2FA is enabled
+    pub two_factor_enabled: bool,
+    /// Whether password change is required
+    pub force_password_change: bool,
 }
 
 // Define the routes for the users module
@@ -58,7 +70,12 @@ pub fn users_routes() -> Router<AppState> {
     let auth_routes = Router::new()
         .route("/profile", get(get_user_profile))
         .route("/validate-session", get(validate_session))
-        .route("/logout", post(logout_user));
+        .route("/logout", post(logout_user))
+        .route("/2fa/setup", post(setup_2fa))
+        .route("/2fa/enable", post(enable_2fa))
+        .route("/2fa/disable", post(disable_2fa))
+        .route("/change-password", post(change_password))
+        .route("/change-email", post(change_email));
 
     Router::new()
         .route("/register", post(register_user))
@@ -106,6 +123,8 @@ pub async fn register_user(
                             token,
                             user_id: token_data.claims.user_id.to_string(),
                             username: token_data.claims.username,
+                            two_factor_enabled: false,
+                            force_password_change: false,
                         }),
                     );
                     Ok(response)
@@ -131,6 +150,7 @@ pub async fn register_user(
     responses(
         (status = 200, description = "User logged in successfully", body = AuthResponse),
         (status = 401, description = "Invalid credentials"),
+        (status = 403, description = "2FA required"),
         (status = 500, description = "Internal server error")
     ),
     tag = "Authentication"
@@ -142,10 +162,14 @@ pub async fn login_user(
     let auth_service = AuthService::new(state.db_conn.clone());
 
     match auth_service
-        .login_user(payload.username, payload.encrypted_password)
+        .login_user(
+            payload.username,
+            payload.encrypted_password,
+            payload.two_factor_code,
+        )
         .await
     {
-        Ok(token) => {
+        Ok((token, two_factor_enabled, force_password_change)) => {
             // Extract user info from token for response
             match crate::auth::jwt::verify_jwt(&token) {
                 Ok(token_data) => {
@@ -162,6 +186,8 @@ pub async fn login_user(
                             token,
                             user_id: token_data.claims.user_id.to_string(),
                             username: token_data.claims.username,
+                            two_factor_enabled,
+                            force_password_change,
                         }),
                     );
                     Ok(response)
@@ -174,6 +200,10 @@ pub async fn login_user(
             match err {
                 crate::auth_service::AuthError::UserNotFound
                 | crate::auth_service::AuthError::InvalidCredentials => {
+                    Err(StatusCode::UNAUTHORIZED)
+                }
+                crate::auth_service::AuthError::TwoFactorRequired => Err(StatusCode::FORBIDDEN),
+                crate::auth_service::AuthError::InvalidTwoFactorCode => {
                     Err(StatusCode::UNAUTHORIZED)
                 }
                 _ => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -265,6 +295,9 @@ pub async fn get_user_profile(
         Ok(user) => Ok(Json(UserProfileResponse {
             id: user.id.to_string(),
             username: user.name,
+            email: user.email.clone(),
+            two_factor_enabled: user.two_factor_enabled,
+            force_password_change: user.force_password_change,
         })),
         Err(err) => {
             tracing::error!("Failed to get user profile: {}", err);
@@ -300,7 +333,196 @@ pub async fn validate_session(
         Ok(user) => Ok(Json(UserProfileResponse {
             id: user.id.to_string(),
             username: user.name,
+            email: user.email.clone(),
+            two_factor_enabled: user.two_factor_enabled,
+            force_password_change: user.force_password_change,
         })),
         Err(_) => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+// 2FA Endpoints
+
+#[derive(Serialize, ToSchema)]
+pub struct Setup2FAResponse {
+    pub secret: String,
+    pub qr_code: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct TwoFactorCodeRequest {
+    pub code: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ChangeEmailRequest {
+    pub new_email: String,
+}
+
+/// Setup 2FA for user (protected)
+#[utoipa::path(
+    post,
+    path = "/api/2fa/setup",
+    responses(
+        (status = 200, description = "2FA setup initiated", body = Setup2FAResponse),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn setup_2fa(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<Setup2FAResponse>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service.generate_2fa_secret(claims.user_id).await {
+        Ok((secret, qr_code)) => Ok(Json(Setup2FAResponse { secret, qr_code })),
+        Err(err) => {
+            tracing::error!("Failed to setup 2FA: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Enable 2FA with verification code (protected)
+#[utoipa::path(
+    post,
+    path = "/api/2fa/enable",
+    request_body = TwoFactorCodeRequest,
+    responses(
+        (status = 200, description = "2FA enabled successfully"),
+        (status = 400, description = "Invalid 2FA code"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn enable_2fa(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(payload): Json<TwoFactorCodeRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service.enable_2fa(claims.user_id, payload.code).await {
+        Ok(_) => Ok(Json(json!({ "message": "2FA enabled successfully" }))),
+        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => Err(StatusCode::BAD_REQUEST),
+        Err(err) => {
+            tracing::error!("Failed to enable 2FA: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Disable 2FA with verification code (protected)
+#[utoipa::path(
+    post,
+    path = "/api/2fa/disable",
+    request_body = TwoFactorCodeRequest,
+    responses(
+        (status = 200, description = "2FA disabled successfully"),
+        (status = 400, description = "Invalid 2FA code"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn disable_2fa(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(payload): Json<TwoFactorCodeRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service.disable_2fa(claims.user_id, payload.code).await {
+        Ok(_) => Ok(Json(json!({ "message": "2FA disabled successfully" }))),
+        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => Err(StatusCode::BAD_REQUEST),
+        Err(err) => {
+            tracing::error!("Failed to disable 2FA: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Change user password (protected)
+#[utoipa::path(
+    post,
+    path = "/api/change-password",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed successfully"),
+        (status = 400, description = "Invalid old password"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn change_password(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service
+        .change_password(claims.user_id, payload.old_password, payload.new_password)
+        .await
+    {
+        Ok(_) => Ok(Json(json!({ "message": "Password changed successfully" }))),
+        Err(crate::auth_service::AuthError::InvalidCredentials) => Err(StatusCode::BAD_REQUEST),
+        Err(err) => {
+            tracing::error!("Failed to change password: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Change user email (protected)
+#[utoipa::path(
+    post,
+    path = "/api/change-email",
+    request_body = ChangeEmailRequest,
+    responses(
+        (status = 200, description = "Email changed successfully"),
+        (status = 409, description = "Email already in use"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn change_email(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(payload): Json<ChangeEmailRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service
+        .change_email(claims.user_id, payload.new_email)
+        .await
+    {
+        Ok(_) => Ok(Json(json!({ "message": "Email changed successfully" }))),
+        Err(crate::auth_service::AuthError::UserAlreadyExists) => Err(StatusCode::CONFLICT),
+        Err(err) => {
+            tracing::error!("Failed to change email: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }

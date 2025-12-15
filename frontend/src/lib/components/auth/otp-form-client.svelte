@@ -16,6 +16,7 @@
   import { authStore } from "$lib/stores/auth";
   import { NativeSelect } from "$lib/components/ui/native-select/index.js";
   import * as InputOTP from "$lib/components/ui/input-otp/index.js";
+  import { onMount } from "svelte";
 
   let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> =
     $props();
@@ -26,16 +27,31 @@
   let errorMessage = $state("");
   let otp = $state("");
   let selectedMethod = $state("email"); // "email" | "sms" | "authenticator"
+  let is2FA = $state(false); // Check if this is for 2FA TOTP
+  let username = $state("");
+  let password = $state("");
+
+  onMount(() => {
+    // Check if we have pending 2FA credentials
+    const stored = sessionStorage.getItem("totp_pending");
+    if (stored) {
+      const data = JSON.parse(stored);
+      username = data.username;
+      password = data.password;
+      is2FA = true;
+      selectedMethod = "authenticator";
+    }
+  });
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
 
     if (!otp || otp.trim().length === 0) {
-      errorMessage = "Bitte geben Sie den OTP-Code ein.";
+      errorMessage = "Bitte geben Sie den Code ein.";
       return;
     }
 
-    if (!selectedMethod) {
+    if (!is2FA && !selectedMethod) {
       errorMessage = "Bitte wählen Sie eine Verifizierungsmethode.";
       return;
     }
@@ -44,15 +60,47 @@
     errorMessage = "";
 
     try {
-      // Erwartet AuthService.verifyOtp({ method, code })
-      const response = await AuthService.verifyOtp({
-        method: selectedMethod,
-        code: otp.trim(),
-      });
+      if (is2FA) {
+        // Handle 2FA TOTP verification
+        const response = await AuthService.login(
+          username,
+          password,
+          otp.trim()
+        );
 
-      if (response?.token && response?.user_id) {
+        // Clear sessionStorage
+        sessionStorage.removeItem("totp_pending");
+
+        // Check if password change is required
+        if (response.force_password_change) {
+          authStore.login(
+            {
+              id: response.user_id,
+              username: response.username,
+              force_password_change: true,
+              two_factor_enabled: response.two_factor_enabled,
+            },
+            response.token
+          );
+
+          await fetch("/api/set-auth-cookie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: response.token }),
+          });
+
+          goto("/change-password");
+          return;
+        }
+
+        // Update auth store
         authStore.login(
-          { id: response.user_id, username: response.username },
+          {
+            id: response.user_id,
+            username: response.username,
+            force_password_change: false,
+            two_factor_enabled: response.two_factor_enabled,
+          },
           response.token
         );
 
@@ -64,13 +112,41 @@
 
         goto("/");
       } else {
-        throw new Error("Verifizierung fehlgeschlagen");
+        // Handle regular OTP verification (email/sms)
+        const response = await AuthService.verifyOtp({
+          method: selectedMethod,
+          code: otp.trim(),
+        });
+
+        if (response?.token && response?.user_id) {
+          authStore.login(
+            { id: response.user_id, username: response.username },
+            response.token
+          );
+
+          await fetch("/api/set-auth-cookie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: response.token }),
+          });
+
+          goto("/");
+        } else {
+          throw new Error("Verifizierung fehlgeschlagen");
+        }
       }
     } catch (error) {
       errorMessage =
         error instanceof Error ? error.message : "Verifizierung fehlgeschlagen";
       isLoading = false;
     }
+  }
+
+  function handleCancel() {
+    if (is2FA) {
+      sessionStorage.removeItem("totp_pending");
+    }
+    goto("/signin");
   }
 </script>
 
@@ -104,9 +180,13 @@
   <div class="flex-1 flex items-center justify-center p-8 bg-background">
     <div class="w-full max-w-md space-y-8">
       <div class="text-center">
-        <h1 class="text-3xl font-bold tracking-tight">OTP Verifizierung</h1>
+        <h1 class="text-3xl font-bold tracking-tight">
+          {is2FA ? "Zwei-Faktor-Authentifizierung" : "OTP Verifizierung"}
+        </h1>
         <p class="text-muted-foreground mt-2">
-          Geben Sie den erhaltenen Code ein, um fortzufahren.
+          {is2FA
+            ? "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein"
+            : "Geben Sie den erhaltenen Code ein, um fortzufahren."}
         </p>
       </div>
 
@@ -120,7 +200,7 @@
         <FieldGroup class="space-y-6">
           <Field>
             <FieldLabel for="{id}-otp" class="text-base font-semibold mb-3">
-              OTP Code eingeben
+              {is2FA ? "2FA-Code" : "OTP Code"} eingeben
             </FieldLabel>
 
             <div class="flex justify-center">
@@ -159,20 +239,46 @@
             </FieldDescription>
           </Field>
 
-          <Button
-            type="submit"
-            class="w-full h-12 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
-            disabled={isLoading}
-          >
-            {#if isLoading}
-              <div
-                class="animate-spin rounded-full h-5 w-5 border-b-2 border-current mr-2"
-              ></div>
+          <div class="flex gap-3">
+            <Button
+              type="submit"
+              class="flex-1 h-12 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
+              disabled={isLoading || otp.length !== 6}
+            >
+              {#if isLoading}
+                <div
+                  class="animate-spin rounded-full h-5 w-5 border-b-2 border-current mr-2"
+                ></div>
+              {/if}
+              {isLoading ? "Verifizieren..." : "Verifizieren"}
+            </Button>
+
+            {#if is2FA}
+              <Button
+                type="button"
+                variant="outline"
+                class="h-12"
+                onclick={handleCancel}
+                disabled={isLoading}
+              >
+                Abbrechen
+              </Button>
             {/if}
-            {isLoading ? "Verifizieren..." : "Verifizieren"}
-          </Button>
+          </div>
         </FieldGroup>
       </form>
+
+      {#if is2FA}
+        <div class="text-center text-sm text-muted-foreground">
+          <p>Kein Zugriff auf Ihre Authenticator-App?</p>
+          <button
+            onclick={handleCancel}
+            class="text-primary hover:underline mt-1"
+          >
+            Zurück zum Login
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 </div>
