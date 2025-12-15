@@ -22,6 +22,8 @@
 
   let username = $state("");
   let password = $state("");
+  let twoFactorCode = $state("");
+  let needs2FA = $state(false);
   let isLoading = $state(false);
   let errorMessage = $state("");
 
@@ -33,15 +35,52 @@
       return;
     }
 
+    if (needs2FA && !twoFactorCode.trim()) {
+      errorMessage = "2FA code is required";
+      return;
+    }
+
     isLoading = true;
     errorMessage = "";
 
     try {
-      const response = await AuthService.login(username, password);
+      const response = await AuthService.login(
+        username,
+        password,
+        needs2FA ? twoFactorCode : undefined
+      );
+
+      // Check if password change is required
+      if (response.force_password_change) {
+        // Store token temporarily and redirect to password change
+        authStore.login(
+          {
+            id: response.user_id,
+            username: response.username,
+            force_password_change: true,
+            two_factor_enabled: response.two_factor_enabled,
+          },
+          response.token
+        );
+
+        await fetch("/api/set-auth-cookie", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: response.token }),
+        });
+
+        goto("/change-password");
+        return;
+      }
 
       // Update auth store
       authStore.login(
-        { id: response.user_id, username: response.username },
+        {
+          id: response.user_id,
+          username: response.username,
+          force_password_change: false,
+          two_factor_enabled: response.two_factor_enabled,
+        },
         response.token
       );
 
@@ -55,7 +94,12 @@
       // Redirect to home
       goto("/");
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Login failed";
+      if (error instanceof Error && error.message === "2FA_REQUIRED") {
+        needs2FA = true;
+        errorMessage = "Bitte geben Sie Ihren 2FA-Code ein";
+      } else {
+        errorMessage = error instanceof Error ? error.message : "Login failed";
+      }
       isLoading = false;
     }
   }
@@ -117,6 +161,27 @@
               class="mt-1"
             />
           </Field>
+
+          {#if needs2FA}
+            <Field>
+              <FieldLabel for="2fa-code-{id}" class="text-sm font-medium">
+                2FA-Code
+              </FieldLabel>
+              <Input
+                id="2fa-code-{id}"
+                type="text"
+                placeholder="123456"
+                bind:value={twoFactorCode}
+                required
+                disabled={isLoading}
+                maxlength={6}
+                class="mt-1"
+              />
+              <FieldDescription class="text-xs text-muted-foreground mt-1">
+                Geben Sie den 6-stelligen Code aus Ihrer Authenticator App ein
+              </FieldDescription>
+            </Field>
+          {/if}
 
           <Button type="submit" class="w-full h-11" disabled={isLoading}>
             {#if isLoading}

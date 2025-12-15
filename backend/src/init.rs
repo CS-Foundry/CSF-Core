@@ -49,10 +49,14 @@ pub async fn initialize_database(
             name: ActiveValue::Set("admin@local.com".to_string()),
             password: ActiveValue::Set(hashed_password),
             salt: ActiveValue::Set(salt),
+            email: ActiveValue::Set(Some("admin@local.com".to_string())),
+            two_factor_secret: ActiveValue::NotSet,
+            two_factor_enabled: ActiveValue::Set(false),
+            force_password_change: ActiveValue::Set(true),
         };
 
         User::insert(admin_user).exec_without_returning(db).await?;
-        tracing::info!("Default admin user created: admin@local.com / admin");
+        tracing::info!("Default admin user created: admin@local.com / admin - Password change required on first login");
     } else {
         tracing::info!("Admin user already exists");
     }

@@ -6,6 +6,8 @@ import { logger } from '$lib/utils/logger';
 interface User {
 	id: string;
 	username: string;
+	force_password_change?: boolean;
+	two_factor_enabled?: boolean;
 }
 
 interface AuthState {

@@ -13,12 +13,15 @@ interface RegisterRequest {
 interface LoginRequest {
 	username: string;
 	encrypted_password: string;
+	two_factor_code?: string;
 }
 
 interface AuthResponse {
 	token: string;
 	user_id: string;
 	username: string;
+	two_factor_enabled: boolean;
+	force_password_change: boolean;
 }
 
 interface PublicKeyResponse {
@@ -76,13 +79,14 @@ export class AuthService {
 		return await response.json();
 	}
 
-	static async login(username: string, password: string): Promise<AuthResponse> {
+	static async login(username: string, password: string, twoFactorCode?: string): Promise<AuthResponse> {
 		const publicKey = await this.getPublicKey();
 		const encryptedPassword = this.encryptPassword(password, publicKey);
 
 		const request: LoginRequest = {
 			username,
-			encrypted_password: encryptedPassword
+			encrypted_password: encryptedPassword,
+			two_factor_code: twoFactorCode
 		};
 
 		const response = await fetch(`${API_BASE_URL}/login`, {
@@ -96,6 +100,9 @@ export class AuthService {
 		if (!response.ok) {
 			if (response.status === 401) {
 				throw new Error('Invalid credentials');
+			}
+			if (response.status === 403) {
+				throw new Error('2FA_REQUIRED');
 			}
 			throw new Error('Login failed');
 		}
