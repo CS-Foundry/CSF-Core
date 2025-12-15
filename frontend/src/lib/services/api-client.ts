@@ -26,7 +26,9 @@ export class ApiClient {
 
 		// Get token from store if not provided
 		if (!token && browser) {
-			token = get(authStore).token ?? undefined;
+			const authState = get(authStore);
+			token = authState.token ?? undefined;
+			console.log('[ApiClient] Token from store:', { hasToken: !!token, isAuthenticated: authState.isAuthenticated });
 		}
 
 		// Add authorization header if token exists

@@ -57,6 +57,12 @@ pub struct UserProfileResponse {
     pub id: String,
     /// Username
     pub username: String,
+    /// Email address
+    pub email: Option<String>,
+    /// Whether 2FA is enabled
+    pub two_factor_enabled: bool,
+    /// Whether password change is required
+    pub force_password_change: bool,
 }
 
 // Define the routes for the users module
@@ -156,7 +162,11 @@ pub async fn login_user(
     let auth_service = AuthService::new(state.db_conn.clone());
 
     match auth_service
-        .login_user(payload.username, payload.encrypted_password, payload.two_factor_code)
+        .login_user(
+            payload.username,
+            payload.encrypted_password,
+            payload.two_factor_code,
+        )
         .await
     {
         Ok((token, two_factor_enabled, force_password_change)) => {
@@ -285,6 +295,9 @@ pub async fn get_user_profile(
         Ok(user) => Ok(Json(UserProfileResponse {
             id: user.id.to_string(),
             username: user.name,
+            email: user.email.clone(),
+            two_factor_enabled: user.two_factor_enabled,
+            force_password_change: user.force_password_change,
         })),
         Err(err) => {
             tracing::error!("Failed to get user profile: {}", err);
@@ -320,6 +333,9 @@ pub async fn validate_session(
         Ok(user) => Ok(Json(UserProfileResponse {
             id: user.id.to_string(),
             username: user.name,
+            email: user.email.clone(),
+            two_factor_enabled: user.two_factor_enabled,
+            force_password_change: user.force_password_change,
         })),
         Err(_) => Err(StatusCode::UNAUTHORIZED),
     }
@@ -401,9 +417,7 @@ pub async fn enable_2fa(
 
     match auth_service.enable_2fa(claims.user_id, payload.code).await {
         Ok(_) => Ok(Json(json!({ "message": "2FA enabled successfully" }))),
-        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => {
-            Err(StatusCode::BAD_REQUEST)
-        }
+        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => Err(StatusCode::BAD_REQUEST),
         Err(err) => {
             tracing::error!("Failed to enable 2FA: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -435,9 +449,7 @@ pub async fn disable_2fa(
 
     match auth_service.disable_2fa(claims.user_id, payload.code).await {
         Ok(_) => Ok(Json(json!({ "message": "2FA disabled successfully" }))),
-        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => {
-            Err(StatusCode::BAD_REQUEST)
-        }
+        Err(crate::auth_service::AuthError::InvalidTwoFactorCode) => Err(StatusCode::BAD_REQUEST),
         Err(err) => {
             tracing::error!("Failed to disable 2FA: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)

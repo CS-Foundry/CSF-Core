@@ -39,12 +39,21 @@
   let twoFactorMessage = $state("");
 
   onMount(async () => {
+    // Wait a tick to ensure authStore is initialized
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    console.log("[Settings] authStore state:", $authStore);
+    console.log("[Settings] Has token:", !!$authStore.token);
+
     try {
       const profile = await SettingsService.getProfile();
       email = profile.email || "";
       twoFactorEnabled = profile.two_factor_enabled;
     } catch (error) {
       console.error("Failed to load profile:", error);
+      // Don't show error to user on initial load, just use defaults
+      // The profile endpoints are protected, if user is not authenticated
+      // they will be redirected by the server-side load function
     }
   });
 
