@@ -1,13 +1,13 @@
 {
-  "name": "financevault",
+  "name": "csf-core",
   "version": "0.1.7",
   "private": true,
   "description": "A secure financial management application with end-to-end encryption",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CodeMaster4711/FinanceVault.git"
+    "url": "https://github.com/CS-Foundry/CSF-Core.git"
   },
-  "author": "CodeMaster4711",
+  "author": "CS-Foundry",
   "license": "MIT",
   "scripts": {
     "release": "semantic-release"

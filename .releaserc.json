@@ -1,5 +1,8 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main",
+    {"name": "feat/*", "prerelease": true}
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -46,7 +49,7 @@
       "@semantic-release/changelog",
       {
         "changelogFile": "CHANGELOG.md",
-        "changelogTitle": "# Changelog\n\nAll notable changes to FinanceVault will be documented in this file."
+        "changelogTitle": "# Changelog\n\nAll notable changes to CSF-Core will be documented in this file."
       }
     ],
     [
