@@ -22,8 +22,6 @@
 
   let username = $state("");
   let password = $state("");
-  let twoFactorCode = $state("");
-  let needs2FA = $state(false);
   let isLoading = $state(false);
   let errorMessage = $state("");
 
@@ -35,11 +33,6 @@
       return;
     }
 
-    if (needs2FA && !twoFactorCode.trim()) {
-      errorMessage = "2FA code is required";
-      return;
-    }
-
     isLoading = true;
     errorMessage = "";
 
@@ -47,7 +40,7 @@
       const response = await AuthService.login(
         username,
         password,
-        needs2FA ? twoFactorCode : undefined
+        undefined // No 2FA code on initial login
       );
 
       // Check if password change is required
@@ -95,12 +88,16 @@
       goto("/");
     } catch (error) {
       if (error instanceof Error && error.message === "2FA_REQUIRED") {
-        needs2FA = true;
-        errorMessage = "Bitte geben Sie Ihren 2FA-Code ein";
+        // Store credentials in sessionStorage and redirect to OTP page
+        sessionStorage.setItem(
+          "totp_pending",
+          JSON.stringify({ username, password })
+        );
+        goto("/otp");
       } else {
         errorMessage = error instanceof Error ? error.message : "Login failed";
+        isLoading = false;
       }
-      isLoading = false;
     }
   }
 </script>
@@ -161,27 +158,6 @@
               class="mt-1"
             />
           </Field>
-
-          {#if needs2FA}
-            <Field>
-              <FieldLabel for="2fa-code-{id}" class="text-sm font-medium">
-                2FA-Code
-              </FieldLabel>
-              <Input
-                id="2fa-code-{id}"
-                type="text"
-                placeholder="123456"
-                bind:value={twoFactorCode}
-                required
-                disabled={isLoading}
-                maxlength={6}
-                class="mt-1"
-              />
-              <FieldDescription class="text-xs text-muted-foreground mt-1">
-                Geben Sie den 6-stelligen Code aus Ihrer Authenticator App ein
-              </FieldDescription>
-            </Field>
-          {/if}
 
           <Button type="submit" class="w-full h-11" disabled={isLoading}>
             {#if isLoading}
