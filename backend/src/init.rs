@@ -1,4 +1,7 @@
-use entity::{key, user, Key, User};
+use entity::{
+    key, organization, permission, role, role_permission, user, user_organization, Key,
+    Organization, Permission, Role, RolePermission, User, UserOrganization,
+};
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
@@ -31,14 +34,152 @@ pub async fn initialize_database(
         tracing::info!("RSA key pair already exists");
     }
 
-    // 2. Create admin user if not exists
+    // 2. Create default organization
+    let default_org_exists = Organization::find()
+        .filter(organization::Column::Name.eq("Default Organization"))
+        .one(db)
+        .await?;
+
+    let default_org_id = if let Some(org) = default_org_exists {
+        tracing::info!("Default organization already exists");
+        org.id
+    } else {
+        tracing::info!("Creating default organization...");
+        let org_id = Uuid::new_v4();
+        let now = chrono::Utc::now().naive_utc();
+        let new_org = organization::ActiveModel {
+            id: ActiveValue::Set(org_id),
+            name: ActiveValue::Set("Default Organization".to_string()),
+            description: ActiveValue::Set(Some("Default organization for all users".to_string())),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
+        };
+        Organization::insert(new_org)
+            .exec_without_returning(db)
+            .await?;
+        tracing::info!("Default organization created");
+        org_id
+    };
+
+    // 3. Create default permissions
+    let permissions_to_create = vec![
+        (
+            "organization.view",
+            "organization",
+            "view",
+            "View organization details",
+        ),
+        (
+            "organization.update",
+            "organization",
+            "update",
+            "Update organization",
+        ),
+        (
+            "organization.delete",
+            "organization",
+            "delete",
+            "Delete organization",
+        ),
+        (
+            "members.view",
+            "members",
+            "view",
+            "View organization members",
+        ),
+        (
+            "members.create",
+            "members",
+            "create",
+            "Add members to organization",
+        ),
+        ("members.update", "members", "update", "Update member roles"),
+        (
+            "members.delete",
+            "members",
+            "delete",
+            "Remove members from organization",
+        ),
+        ("users.view", "users", "view", "View user list and details"),
+        ("users.create", "users", "create", "Create new users"),
+        ("users.update", "users", "update", "Update user details"),
+        ("users.delete", "users", "delete", "Delete users"),
+    ];
+
+    let mut permission_map = std::collections::HashMap::new();
+
+    for (name, resource, action, description) in permissions_to_create {
+        let perm_exists = Permission::find()
+            .filter(permission::Column::Name.eq(name))
+            .one(db)
+            .await?;
+
+        let perm_id = if let Some(perm) = perm_exists {
+            perm.id
+        } else {
+            let perm_id = Uuid::new_v4();
+            let new_perm = permission::ActiveModel {
+                id: ActiveValue::Set(perm_id),
+                name: ActiveValue::Set(name.to_string()),
+                resource: ActiveValue::Set(resource.to_string()),
+                action: ActiveValue::Set(action.to_string()),
+                description: ActiveValue::Set(Some(description.to_string())),
+            };
+            Permission::insert(new_perm)
+                .exec_without_returning(db)
+                .await?;
+            perm_id
+        };
+
+        permission_map.insert(name, perm_id);
+    }
+
+    // 4. Create default roles
+    let admin_role_exists = Role::find()
+        .filter(role::Column::Name.eq("Admin"))
+        .filter(role::Column::OrganizationId.eq(default_org_id))
+        .one(db)
+        .await?;
+
+    let admin_role_id = if let Some(role) = admin_role_exists {
+        tracing::info!("Admin role already exists");
+        role.id
+    } else {
+        tracing::info!("Creating Admin role...");
+        let role_id = Uuid::new_v4();
+        let now = chrono::Utc::now().naive_utc();
+        let new_role = role::ActiveModel {
+            id: ActiveValue::Set(role_id),
+            name: ActiveValue::Set("Admin".to_string()),
+            description: ActiveValue::Set(Some("Full access to organization".to_string())),
+            organization_id: ActiveValue::Set(default_org_id),
+            is_system_role: ActiveValue::Set(true),
+            created_at: ActiveValue::Set(now),
+        };
+        Role::insert(new_role).exec_without_returning(db).await?;
+
+        // Assign all permissions to Admin role
+        for perm_id in permission_map.values() {
+            let role_perm = role_permission::ActiveModel {
+                role_id: ActiveValue::Set(role_id),
+                permission_id: ActiveValue::Set(*perm_id),
+            };
+            RolePermission::insert(role_perm)
+                .exec_without_returning(db)
+                .await?;
+        }
+
+        tracing::info!("Admin role created with all permissions");
+        role_id
+    };
+
+    // 5. Create admin user if not exists
     let admin_exists = User::find()
         .filter(user::Column::Name.eq("admin@local.com"))
         .one(db)
-        .await?
-        .is_some();
+        .await?;
 
-    if !admin_exists {
+    if admin_exists.is_none() {
         tracing::info!("Creating default admin user...");
         let salt = generate_salt();
         let hashed_password = hash_password("admin", &salt)?;
@@ -56,6 +197,21 @@ pub async fn initialize_database(
         };
 
         User::insert(admin_user).exec_without_returning(db).await?;
+
+        // Add admin user to default organization with Admin role
+        let user_org_id = Uuid::new_v4();
+        let now = chrono::Utc::now().naive_utc();
+        let user_org = user_organization::ActiveModel {
+            id: ActiveValue::Set(user_org_id),
+            user_id: ActiveValue::Set(user_id),
+            organization_id: ActiveValue::Set(default_org_id),
+            role_id: ActiveValue::Set(admin_role_id),
+            joined_at: ActiveValue::Set(now),
+        };
+        UserOrganization::insert(user_org)
+            .exec_without_returning(db)
+            .await?;
+
         tracing::info!("Default admin user created: admin@local.com / admin - Password change required on first login");
     } else {
         tracing::info!("Admin user already exists");

@@ -19,8 +19,11 @@
     KeyIcon,
     CheckCircle2Icon,
     XCircleIcon,
+    Building2,
+    Users,
   } from "@lucide/svelte";
   import { onMount } from "svelte";
+  import OrganizationSettings from "$lib/components/settings/OrganizationSettings.svelte";
 
   let authState = $derived($authStore);
   let email = $state("");
@@ -202,7 +205,7 @@
   </div>
 
   <Tabs.Root value="profile" class="space-y-6">
-    <Tabs.List class="grid w-full max-w-md grid-cols-2">
+    <Tabs.List class="grid w-full max-w-3xl grid-cols-4">
       <Tabs.Trigger value="profile" class="gap-2">
         <UserIcon class="h-4 w-4" />
         Profil
@@ -210,6 +213,14 @@
       <Tabs.Trigger value="security" class="gap-2">
         <ShieldCheckIcon class="h-4 w-4" />
         Sicherheit
+      </Tabs.Trigger>
+      <Tabs.Trigger value="organization" class="gap-2">
+        <Building2 class="h-4 w-4" />
+        Organisation
+      </Tabs.Trigger>
+      <Tabs.Trigger value="users" class="gap-2">
+        <Users class="h-4 w-4" />
+        Benutzer
       </Tabs.Trigger>
     </Tabs.List>
 
@@ -478,6 +489,54 @@
               </div>
             {/if}
           </div>
+        </Card.Content>
+      </Card.Root>
+    </Tabs.Content>
+
+    <Tabs.Content value="organization" class="space-y-6">
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Organisation</Card.Title>
+          <Card.Description
+            >Verwalten Sie Ihre Organisationseinstellungen</Card.Description
+          >
+        </Card.Header>
+        <Card.Content>
+          <p class="text-muted-foreground mb-4">
+            Besuchen Sie die <a
+              href="/admin/organization"
+              class="text-primary hover:underline font-medium"
+              >Organisationsverwaltungsseite</a
+            >, um Ihre Organisation zu verwalten.
+          </p>
+          <Button href="/admin/organization">
+            <Building2 class="mr-2 h-4 w-4" />
+            Zur Organisationsverwaltung
+          </Button>
+        </Card.Content>
+      </Card.Root>
+    </Tabs.Content>
+
+    <Tabs.Content value="users" class="space-y-6">
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Benutzerverwaltung</Card.Title>
+          <Card.Description
+            >Verwalten Sie Benutzer und deren Rollen</Card.Description
+          >
+        </Card.Header>
+        <Card.Content>
+          <p class="text-muted-foreground mb-4">
+            Besuchen Sie die <a
+              href="/admin/users"
+              class="text-primary hover:underline font-medium"
+              >Benutzerverwaltungsseite</a
+            >, um Benutzer zu erstellen, bearbeiten und löschen.
+          </p>
+          <Button href="/admin/users">
+            <Users class="mr-2 h-4 w-4" />
+            Zur Benutzerverwaltung
+          </Button>
         </Card.Content>
       </Card.Root>
     </Tabs.Content>
