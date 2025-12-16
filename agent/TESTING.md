@@ -5,16 +5,19 @@
 ### Was wurde implementiert:
 
 1. **Metrics Collector** (`collector.rs`)
+
    - Sammelt CPU, RAM, Disk, Network Metriken
    - Nutzt `sysinfo` crate für plattformübergreifende Metriken
    - Erfasst OS-Informationen und Uptime
 
 2. **Server Client** (`client.rs`)
+
    - HTTP Client für Kommunikation mit Central Server
    - Endpoints: Registration, Heartbeat, Metrics Upload
    - Authentifizierung via API-Key
 
 3. **Configuration** (`config.rs`)
+
    - TOML-basierte Konfiguration
    - Automatisches Laden aus lokalem oder System-Pfad
    - Generiert UUID für Agent-ID
@@ -55,6 +58,7 @@ Mit `strip` und optimierten Compiler-Flags ~7MB.
 ### 1. Backend-Routes testen
 
 Das Backend muss die neuen Agent-Endpoints haben:
+
 - `POST /api/agents/register` - Agent Registration
 - `POST /api/agents/heartbeat` - Heartbeat empfangen
 - `POST /api/agents/metrics` - Metriken speichern
@@ -78,6 +82,7 @@ RUST_LOG=info ./target/release/csf-agent
 ### 3. Frontend entwickeln
 
 Route: `/agents`
+
 - Liste aller registrierten Agents
 - Status (online/offline)
 - Letzte Metriken
@@ -134,6 +139,7 @@ sudo systemctl start csf-agent
 ## 📊 Gesammelte Metriken:
 
 ### System Information:
+
 - Hostname
 - OS Type & Version
 - Kernel Version
@@ -141,22 +147,26 @@ sudo systemctl start csf-agent
 - Uptime
 
 ### CPU:
+
 - Model/Brand
 - Physical Cores
 - Logical Threads
 - Usage Percentage (average)
 
 ### Memory:
+
 - Total Bytes
 - Used Bytes
 - Usage Percentage
 
 ### Disk:
+
 - Total Bytes (all disks)
 - Used Bytes (all disks)
 - Usage Percentage
 
 ### Network:
+
 - Total RX Bytes
 - Total TX Bytes
 

@@ -6,7 +6,9 @@ use axum::{
     Router,
 };
 use entity::entities::{agent_metrics, agents};
-use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -287,7 +289,7 @@ pub async fn get_agent_metrics(
     _user: AuthenticatedUser,
     axum::extract::Path(agent_id): axum::extract::Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let metrics = agent_metrics::Entity::find()
+    let metrics: Vec<agent_metrics::Model> = agent_metrics::Entity::find()
         .filter(agent_metrics::Column::AgentId.eq(agent_id))
         .order_by_desc(agent_metrics::Column::Timestamp)
         .limit(100)

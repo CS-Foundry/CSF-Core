@@ -9,6 +9,7 @@
     Users,
     FolderKanban,
     FileText,
+    Server,
   } from "@lucide/svelte";
 
   // Data for FinanceVault app
@@ -30,6 +31,11 @@
         url: "/",
         icon: LayoutDashboardIcon,
         isActive: true,
+      },
+      {
+        title: "Physical Servers",
+        url: "/physical-servers",
+        icon: Server,
       },
       {
         title: "Customers",
