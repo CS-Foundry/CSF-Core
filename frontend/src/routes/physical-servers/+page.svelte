@@ -17,7 +17,8 @@
     TableRow,
   } from "$lib/components/ui/table";
   import { Badge } from "$lib/components/ui/badge";
-  import { Server, Eye, RefreshCw, Activity } from "@lucide/svelte";
+  import { Server, RefreshCw, Activity } from "@lucide/svelte";
+  import Icon from "@iconify/svelte";
 
   let agents = $state<Agent[]>([]);
   let loading = $state(true);
@@ -51,16 +52,16 @@
     return `${Math.floor(diffMins / 1440)}d ago`;
   }
 
-  function getOsIcon(osType: string): string {
+  function getOsIconName(osType: string): string {
     switch (osType.toLowerCase()) {
       case "macos":
-        return "🍎";
+        return "bi:apple";
       case "linux":
-        return "🐧";
+        return "bi:ubuntu";
       case "windows":
-        return "🪟";
+        return "bi:windows";
       default:
-        return "💻";
+        return "bi:pc-display";
     }
   }
 
@@ -72,10 +73,29 @@
         return "default";
       case "offline":
         return "destructive";
+      case "error":
       case "degraded":
         return "secondary";
+      case "stopped":
+        return "outline";
       default:
         return "outline";
+    }
+  }
+
+  function getStatusColorClass(status: string): string {
+    switch (status.toLowerCase()) {
+      case "online":
+        return "bg-green-500 hover:bg-green-600 text-white";
+      case "offline":
+        return "bg-red-500 hover:bg-red-600 text-white";
+      case "error":
+      case "degraded":
+        return "bg-yellow-500 hover:bg-yellow-600 text-white";
+      case "stopped":
+        return "bg-gray-500 hover:bg-gray-600 text-white";
+      default:
+        return "bg-gray-400 hover:bg-gray-500 text-white";
     }
   }
 
@@ -88,7 +108,7 @@
   <title>Physical Servers - CSF Core</title>
 </svelte:head>
 
-<div class="mb-6 flex items-center justify-between">
+<div class="mb-6 mt-10 flex items-center justify-between">
   <div>
     <h2 class="text-2xl font-bold">Physical Servers</h2>
     <p class="text-muted-foreground">
@@ -143,17 +163,20 @@
           <TableHead>Agent Version</TableHead>
           <TableHead>Last Seen</TableHead>
           <TableHead>Tags</TableHead>
-          <TableHead class="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {#each agents as agent (agent.id)}
-          <TableRow class="cursor-pointer hover:bg-muted/50">
+          <TableRow
+            class="cursor-pointer hover:bg-muted/50"
+            onclick={() => handleAgentClick(agent.id)}
+          >
             <TableCell class="font-medium">
               <div class="flex items-center gap-3">
-                <div class="text-2xl">
-                  {getOsIcon(agent.os_type)}
-                </div>
+                <Icon
+                  icon={getOsIconName(agent.os_type)}
+                  class="h-8 w-8 text-muted-foreground"
+                />
                 <div>
                   <div class="font-semibold">{agent.name}</div>
                   <div class="text-sm text-muted-foreground">
@@ -163,7 +186,10 @@
               </div>
             </TableCell>
             <TableCell>
-              <Badge variant={getStatusVariant(agent.status)}>
+              <Badge
+                variant={getStatusVariant(agent.status)}
+                class={getStatusColorClass(agent.status)}
+              >
                 <Activity class="mr-1 h-3 w-3" />
                 {agent.status}
               </Badge>
@@ -204,15 +230,6 @@
               {:else}
                 <span class="text-muted-foreground">-</span>
               {/if}
-            </TableCell>
-            <TableCell class="text-right">
-              <Button
-                variant="ghost"
-                size="sm"
-                onclick={() => handleAgentClick(agent.id)}
-              >
-                <Eye class="h-4 w-4" />
-              </Button>
             </TableCell>
           </TableRow>
         {/each}
