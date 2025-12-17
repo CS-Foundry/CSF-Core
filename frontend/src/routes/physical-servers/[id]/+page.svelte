@@ -6,23 +6,42 @@
     getAgentDetails,
     getAgentMetrics,
     formatBytes,
-    getStatusBadgeClass,
   } from "$lib/services/agents";
   import type { Agent, AgentMetrics } from "$lib/types/agent";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Chart from "$lib/components/ui/chart/index.js";
+  import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+  } from "$lib/components/ui/table";
+  import { Badge } from "$lib/components/ui/badge";
+  import { Button } from "$lib/components/ui/button";
+  import { PieChart, Text, AreaChart, Area, ChartClipPath } from "layerchart";
+  import { scaleUtc } from "d3-scale";
+  import { curveNatural } from "d3-shape";
+  import ChartContainer from "$lib/components/ui/chart/chart-container.svelte";
+  import { ArrowLeft, Activity, RefreshCw } from "@lucide/svelte";
+  import Icon from "@iconify/svelte";
+  import { cubicInOut } from "svelte/easing";
 
-  let agent: Agent | null = null;
-  let metrics: AgentMetrics[] = [];
-  let loading = true;
-  let error: string | null = null;
-  let refreshInterval: number;
+  let agent = $state<Agent | null>(null);
+  let metrics = $state<AgentMetrics[]>([]);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let refreshInterval: ReturnType<typeof setInterval>;
 
-  $: agentId = $page.params.id;
+  const agentId = $derived($page.params.id);
 
   async function loadData() {
+    if (!agentId) return;
     try {
       const [agentData, metricsData] = await Promise.all([
         getAgentDetails(agentId),
-        getAgentMetrics(agentId, 50),
+        getAgentMetrics(agentId, 100),
       ]);
       agent = agentData;
       metrics = metricsData;
@@ -36,7 +55,6 @@
 
   onMount(() => {
     loadData();
-    // Auto-refresh every 10 seconds
     refreshInterval = setInterval(loadData, 10000);
   });
 
@@ -58,265 +76,669 @@
     });
   }
 
-  function getMetricColor(percent: number): string {
-    if (percent >= 90) return "bg-red-500";
-    if (percent >= 75) return "bg-yellow-500";
-    return "bg-green-500";
-  }
-
-  function getOsIcon(osType: string): string {
+  function getOsIconName(osType: string): string {
     switch (osType?.toLowerCase()) {
       case "macos":
-        return "🍎";
+        return "bi:apple";
       case "linux":
-        return "🐧";
+        return "bi:ubuntu";
       case "windows":
-        return "🪟";
+        return "bi:windows";
       default:
-        return "💻";
+        return "bi:pc-display";
     }
   }
+
+  function getStatusColorClass(status: string): string {
+    switch (status?.toLowerCase()) {
+      case "online":
+        return "bg-green-500 hover:bg-green-600 text-white";
+      case "offline":
+        return "bg-red-500 hover:bg-red-600 text-white";
+      case "error":
+      case "degraded":
+        return "bg-yellow-500 hover:bg-yellow-600 text-white";
+      case "stopped":
+        return "bg-gray-500 hover:bg-gray-600 text-white";
+      default:
+        return "bg-gray-400 hover:bg-gray-500 text-white";
+    }
+  }
+
+  // Chart configurations
+  const cpuChartConfig = {
+    usage: { label: "CPU Usage", color: "hsl(var(--chart-1))" },
+  } satisfies Chart.ChartConfig;
+
+  const memoryChartConfig = {
+    usage: { label: "Memory Usage", color: "hsl(var(--chart-2))" },
+  } satisfies Chart.ChartConfig;
+
+  const diskChartConfig = {
+    usage: { label: "Disk Usage", color: "hsl(var(--chart-3))" },
+  } satisfies Chart.ChartConfig;
+
+  const latest = $derived(metrics.length > 0 ? metrics[0] : null);
+
+  const cpuChartData = $derived(
+    metrics
+      .slice(0, 50)
+      .reverse()
+      .map((m) => ({
+        date: new Date(m.timestamp),
+        usage: m.cpu_usage_percent,
+      }))
+  );
+
+  const memoryChartData = $derived(
+    metrics
+      .slice(0, 50)
+      .reverse()
+      .map((m) => ({
+        date: new Date(m.timestamp),
+        usage: m.memory_usage_percent,
+      }))
+  );
+
+  const diskChartData = $derived(
+    metrics
+      .slice(0, 50)
+      .reverse()
+      .map((m) => ({
+        date: new Date(m.timestamp),
+        usage: m.disk_usage_percent,
+      }))
+  );
 </script>
 
 <svelte:head>
   <title>{agent?.name || "Agent Details"} - CSF Core</title>
 </svelte:head>
 
-<div class="container mx-auto p-6">
-  <button
-    on:click={() => goto("/physical-servers")}
-    class="mb-6 text-blue-500 hover:text-blue-600 flex items-center gap-2"
-  >
-    ← Back to Physical Servers
-  </button>
+<div class="space-y-6">
+  <!-- Back Button -->
+  <Button variant="outline" onclick={() => goto("/physical-servers")}>
+    <ArrowLeft class="mr-2 h-4 w-4" />
+    Back to Physical Servers
+  </Button>
 
   {#if loading && !agent}
-    <div class="flex justify-center items-center h-64">
-      <div
-        class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"
-      ></div>
+    <div class="flex h-64 items-center justify-center">
+      <RefreshCw class="h-8 w-8 animate-spin text-muted-foreground" />
     </div>
   {:else if error}
     <div
-      class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4"
+      class="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive"
     >
-      <p class="text-red-800 dark:text-red-200">{error}</p>
+      {error}
     </div>
   {:else if agent}
-    <!-- Agent Header -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-      <div class="flex items-start justify-between">
-        <div class="flex items-center gap-4">
-          <div class="text-5xl">{getOsIcon(agent.os_type)}</div>
+    <!-- Agent Header Card -->
+    <Card.Root>
+      <Card.Header>
+        <div class="flex items-start justify-between">
+          <div class="flex items-center gap-4">
+            <Icon
+              icon={getOsIconName(agent.os_type)}
+              class="h-16 w-16 text-muted-foreground"
+            />
+            <div>
+              <Card.Title class="text-3xl">{agent.name}</Card.Title>
+              <Card.Description class="mt-1 text-base">
+                {agent.hostname}
+              </Card.Description>
+              <p class="mt-2 text-sm text-muted-foreground">
+                {agent.os_type}
+                {agent.os_version} • Agent v{agent.agent_version}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onclick={loadData}
+              disabled={loading}
+            >
+              <RefreshCw class="h-4 w-4 {loading ? 'animate-spin' : ''}" />
+            </Button>
+            <Badge class={getStatusColorClass(agent.status)}>
+              <Activity class="mr-1 h-3 w-3" />
+              {agent.status}
+            </Badge>
+          </div>
+        </div>
+      </Card.Header>
+      <Card.Content>
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
           <div>
-            <h1 class="text-3xl font-bold mb-1">{agent.name}</h1>
-            <p class="text-gray-600 dark:text-gray-400">{agent.hostname}</p>
-            <p class="text-sm text-gray-500 mt-1">
-              {agent.os_type}
-              {agent.os_version} • Agent v{agent.agent_version}
+            <p class="text-sm text-muted-foreground">Agent ID</p>
+            <p class="mt-1 break-all font-mono text-xs">{agent.id}</p>
+          </div>
+          <div>
+            <p class="text-sm text-muted-foreground">Last Heartbeat</p>
+            <p class="mt-1 text-sm font-medium">
+              {formatTimestamp(agent.last_heartbeat)}
+            </p>
+          </div>
+          <div>
+            <p class="text-sm text-muted-foreground">Registered</p>
+            <p class="mt-1 text-sm font-medium">
+              {formatTimestamp(agent.created_at)}
+            </p>
+          </div>
+          <div>
+            <p class="text-sm text-muted-foreground">Updated</p>
+            <p class="mt-1 text-sm font-medium">
+              {formatTimestamp(agent.updated_at)}
             </p>
           </div>
         </div>
-        <span
-          class="px-3 py-1 rounded-full text-sm font-medium {getStatusBadgeClass(
-            agent.status
-          )}"
-        >
-          {agent.status}
-        </span>
-      </div>
+      </Card.Content>
+    </Card.Root>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <div>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Agent ID</p>
-          <p class="font-mono text-xs mt-1 break-all">{agent.id}</p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Last Heartbeat</p>
-          <p class="text-sm font-medium mt-1">
-            {formatTimestamp(agent.last_heartbeat)}
-          </p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Registered</p>
-          <p class="text-sm font-medium mt-1">
-            {formatTimestamp(agent.created_at)}
-          </p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Updated</p>
-          <p class="text-sm font-medium mt-1">
-            {formatTimestamp(agent.updated_at)}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Latest Metrics -->
-    {#if metrics.length > 0}
-      {@const latest = metrics[0]}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    {#if latest}
+      <!-- Current Metrics - 3 Radial Charts -->
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
         <!-- CPU Usage -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-          <h3 class="text-lg font-semibold mb-4">CPU Usage</h3>
-          <div class="relative pt-1">
-            <div class="flex mb-2 items-center justify-between">
-              <div>
-                <span class="text-3xl font-bold"
-                  >{latest.cpu_usage_percent.toFixed(1)}%</span
-                >
-              </div>
-            </div>
-            <div
-              class="overflow-hidden h-4 text-xs flex rounded bg-gray-200 dark:bg-gray-700"
+        <Card.Root class="flex flex-col">
+          <Card.Header class="items-center pb-0">
+            <Card.Title>CPU Usage</Card.Title>
+            <Card.Description>Current utilization</Card.Description>
+          </Card.Header>
+          <Card.Content class="flex flex-1 items-center pb-0">
+            <Chart.Container
+              config={cpuChartConfig}
+              class="mx-auto aspect-square max-h-[250px]"
             >
-              <div
-                style="width: {latest.cpu_usage_percent}%"
-                class="{getMetricColor(
-                  latest.cpu_usage_percent
-                )} transition-all duration-500"
-              ></div>
-            </div>
-          </div>
-        </div>
+              <PieChart
+                data={[
+                  {
+                    name: "used",
+                    value: latest.cpu_usage_percent,
+                    color: cpuChartConfig.usage.color,
+                  },
+                  {
+                    name: "free",
+                    value: 100 - latest.cpu_usage_percent,
+                    color: "hsl(var(--muted))",
+                  },
+                ]}
+                key="name"
+                value="value"
+                c="color"
+                innerRadius={76}
+                padding={29}
+                range={[-90, 90]}
+                props={{ pie: { sort: null } }}
+                cornerRadius={4}
+              >
+                {#snippet aboveMarks()}
+                  <Text
+                    value={`${latest.cpu_usage_percent.toFixed(1)}%`}
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-foreground text-2xl! font-bold"
+                    dy={-24}
+                  />
+                  <Text
+                    value="CPU"
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-muted-foreground! text-muted-foreground"
+                    dy={-4}
+                  />
+                {/snippet}
+                {#snippet tooltip()}
+                  <Chart.Tooltip hideLabel />
+                {/snippet}
+              </PieChart>
+            </Chart.Container>
+          </Card.Content>
+        </Card.Root>
 
         <!-- Memory Usage -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-          <h3 class="text-lg font-semibold mb-4">Memory Usage</h3>
-          <div class="relative pt-1">
-            <div class="flex mb-2 items-center justify-between">
-              <div>
-                <span class="text-3xl font-bold"
-                  >{latest.memory_usage_percent.toFixed(1)}%</span
-                >
-              </div>
-            </div>
-            <div
-              class="overflow-hidden h-4 text-xs flex rounded bg-gray-200 dark:bg-gray-700"
+        <Card.Root class="flex flex-col">
+          <Card.Header class="items-center pb-0">
+            <Card.Title>Memory Usage</Card.Title>
+            <Card.Description>
+              {formatBytes(latest.memory_used_bytes)} / {formatBytes(
+                latest.memory_total_bytes
+              )}
+            </Card.Description>
+          </Card.Header>
+          <Card.Content class="flex flex-1 items-center pb-0">
+            <Chart.Container
+              config={memoryChartConfig}
+              class="mx-auto aspect-square max-h-[250px]"
             >
-              <div
-                style="width: {latest.memory_usage_percent}%"
-                class="{getMetricColor(
-                  latest.memory_usage_percent
-                )} transition-all duration-500"
-              ></div>
-            </div>
-            <div class="flex justify-between text-xs text-gray-500 mt-2">
-              <span>{formatBytes(latest.memory_used_bytes)}</span>
-              <span>{formatBytes(latest.memory_total_bytes)}</span>
-            </div>
-          </div>
-        </div>
+              <PieChart
+                data={[
+                  {
+                    name: "used",
+                    value: latest.memory_usage_percent,
+                    color: memoryChartConfig.usage.color,
+                  },
+                  {
+                    name: "free",
+                    value: 100 - latest.memory_usage_percent,
+                    color: "hsl(var(--muted))",
+                  },
+                ]}
+                key="name"
+                value="value"
+                c="color"
+                innerRadius={76}
+                padding={29}
+                range={[-90, 90]}
+                props={{ pie: { sort: null } }}
+                cornerRadius={4}
+              >
+                {#snippet aboveMarks()}
+                  <Text
+                    value={`${latest.memory_usage_percent.toFixed(1)}%`}
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-foreground text-2xl! font-bold"
+                    dy={-24}
+                  />
+                  <Text
+                    value="Memory"
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-muted-foreground! text-muted-foreground"
+                    dy={-4}
+                  />
+                {/snippet}
+                {#snippet tooltip()}
+                  <Chart.Tooltip hideLabel />
+                {/snippet}
+              </PieChart>
+            </Chart.Container>
+          </Card.Content>
+        </Card.Root>
 
         <!-- Disk Usage -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-          <h3 class="text-lg font-semibold mb-4">Disk Usage</h3>
-          <div class="relative pt-1">
-            <div class="flex mb-2 items-center justify-between">
-              <div>
-                <span class="text-3xl font-bold"
-                  >{latest.disk_usage_percent.toFixed(1)}%</span
-                >
-              </div>
-            </div>
-            <div
-              class="overflow-hidden h-4 text-xs flex rounded bg-gray-200 dark:bg-gray-700"
+        <Card.Root class="flex flex-col">
+          <Card.Header class="items-center pb-0">
+            <Card.Title>Disk Usage</Card.Title>
+            <Card.Description>
+              {formatBytes(latest.disk_used_bytes)} / {formatBytes(
+                latest.disk_total_bytes
+              )}
+            </Card.Description>
+          </Card.Header>
+          <Card.Content class="flex flex-1 items-center pb-0">
+            <Chart.Container
+              config={diskChartConfig}
+              class="mx-auto aspect-square max-h-[250px]"
             >
-              <div
-                style="width: {latest.disk_usage_percent}%"
-                class="{getMetricColor(
-                  latest.disk_usage_percent
-                )} transition-all duration-500"
-              ></div>
-            </div>
-            <div class="flex justify-between text-xs text-gray-500 mt-2">
-              <span>{formatBytes(latest.disk_used_bytes)}</span>
-              <span>{formatBytes(latest.disk_total_bytes)}</span>
-            </div>
-          </div>
-        </div>
+              <PieChart
+                data={[
+                  {
+                    name: "used",
+                    value: latest.disk_usage_percent,
+                    color: diskChartConfig.usage.color,
+                  },
+                  {
+                    name: "free",
+                    value: 100 - latest.disk_usage_percent,
+                    color: "hsl(var(--muted))",
+                  },
+                ]}
+                key="name"
+                value="value"
+                c="color"
+                innerRadius={76}
+                padding={29}
+                range={[-90, 90]}
+                props={{ pie: { sort: null } }}
+                cornerRadius={4}
+              >
+                {#snippet aboveMarks()}
+                  <Text
+                    value={`${latest.disk_usage_percent.toFixed(1)}%`}
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-foreground text-2xl! font-bold"
+                    dy={-24}
+                  />
+                  <Text
+                    value="Disk"
+                    textAnchor="middle"
+                    verticalAnchor="middle"
+                    class="fill-muted-foreground! text-muted-foreground"
+                    dy={-4}
+                  />
+                {/snippet}
+                {#snippet tooltip()}
+                  <Chart.Tooltip hideLabel />
+                {/snippet}
+              </PieChart>
+            </Chart.Container>
+          </Card.Content>
+        </Card.Root>
       </div>
 
-      <!-- Metrics History -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <h3 class="text-lg font-semibold mb-4">Metrics History</h3>
-        <div class="overflow-x-auto">
-          <table
-            class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
-          >
-            <thead>
-              <tr>
-                <th
-                  class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+      <!-- Metrics History - Area Charts and Table -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Left Column - Area Charts -->
+        <div class="space-y-6">
+          <!-- CPU Area Chart -->
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>CPU History</Card.Title>
+              <Card.Description>Last 50 measurements</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <ChartContainer
+                config={cpuChartConfig}
+                class="aspect-auto h-[200px] w-full"
+              >
+                <AreaChart
+                  data={cpuChartData}
+                  x="date"
+                  xScale={scaleUtc()}
+                  series={[
+                    {
+                      key: "usage",
+                      label: "CPU %",
+                      color: cpuChartConfig.usage.color,
+                    },
+                  ]}
+                  props={{
+                    area: {
+                      curve: curveNatural,
+                      "fill-opacity": 0.4,
+                      line: { class: "stroke-2" },
+                    },
+                    xAxis: {
+                      format: (v) =>
+                        v.toLocaleTimeString("de-DE", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }),
+                    },
+                    yAxis: { format: (v) => `${v}%` },
+                  }}
                 >
-                  Timestamp
-                </th>
-                <th
-                  class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  {#snippet marks({ series, getAreaProps })}
+                    <defs>
+                      <linearGradient id="fillCPU" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.1}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <ChartClipPath
+                      initialWidth={0}
+                      motion={{
+                        width: {
+                          type: "tween",
+                          duration: 1000,
+                          easing: cubicInOut,
+                        },
+                      }}
+                    >
+                      {#each series as s, i (s.key)}
+                        <Area {...getAreaProps(s, i)} fill="url(#fillCPU)" />
+                      {/each}
+                    </ChartClipPath>
+                  {/snippet}
+                  {#snippet tooltip()}
+                    <Chart.Tooltip
+                      labelFormatter={(v: Date) => {
+                        return v.toLocaleString("de-DE");
+                      }}
+                      indicator="line"
+                    />
+                  {/snippet}
+                </AreaChart>
+              </ChartContainer>
+            </Card.Content>
+          </Card.Root>
+
+          <!-- Memory Area Chart -->
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>Memory History</Card.Title>
+              <Card.Description>Last 50 measurements</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <ChartContainer
+                config={memoryChartConfig}
+                class="aspect-auto h-[200px] w-full"
+              >
+                <AreaChart
+                  data={memoryChartData}
+                  x="date"
+                  xScale={scaleUtc()}
+                  series={[
+                    {
+                      key: "usage",
+                      label: "Memory %",
+                      color: memoryChartConfig.usage.color,
+                    },
+                  ]}
+                  props={{
+                    area: {
+                      curve: curveNatural,
+                      "fill-opacity": 0.4,
+                      line: { class: "stroke-2" },
+                    },
+                    xAxis: {
+                      format: (v) =>
+                        v.toLocaleTimeString("de-DE", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }),
+                    },
+                    yAxis: { format: (v) => `${v}%` },
+                  }}
                 >
-                  CPU
-                </th>
-                <th
-                  class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  {#snippet marks({ series, getAreaProps })}
+                    <defs>
+                      <linearGradient
+                        id="fillMemory"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.1}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <ChartClipPath
+                      initialWidth={0}
+                      motion={{
+                        width: {
+                          type: "tween",
+                          duration: 1000,
+                          easing: cubicInOut,
+                        },
+                      }}
+                    >
+                      {#each series as s, i (s.key)}
+                        <Area {...getAreaProps(s, i)} fill="url(#fillMemory)" />
+                      {/each}
+                    </ChartClipPath>
+                  {/snippet}
+                  {#snippet tooltip()}
+                    <Chart.Tooltip
+                      labelFormatter={(v: Date) => {
+                        return v.toLocaleString("de-DE");
+                      }}
+                      indicator="line"
+                    />
+                  {/snippet}
+                </AreaChart>
+              </ChartContainer>
+            </Card.Content>
+          </Card.Root>
+
+          <!-- Disk Area Chart -->
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>Disk History</Card.Title>
+              <Card.Description>Last 50 measurements</Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <ChartContainer
+                config={diskChartConfig}
+                class="aspect-auto h-[200px] w-full"
+              >
+                <AreaChart
+                  data={diskChartData}
+                  x="date"
+                  xScale={scaleUtc()}
+                  series={[
+                    {
+                      key: "usage",
+                      label: "Disk %",
+                      color: diskChartConfig.usage.color,
+                    },
+                  ]}
+                  props={{
+                    area: {
+                      curve: curveNatural,
+                      "fill-opacity": 0.4,
+                      line: { class: "stroke-2" },
+                    },
+                    xAxis: {
+                      format: (v) =>
+                        v.toLocaleTimeString("de-DE", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }),
+                    },
+                    yAxis: { format: (v) => `${v}%` },
+                  }}
                 >
-                  Memory
-                </th>
-                <th
-                  class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Disk
-                </th>
-                <th
-                  class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Network RX/TX
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              {#each metrics.slice(0, 20) as metric}
-                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td class="px-4 py-3 whitespace-nowrap text-sm">
-                    {formatTimestamp(metric.timestamp)}
-                  </td>
-                  <td class="px-4 py-3 whitespace-nowrap text-sm">
-                    {metric.cpu_usage_percent.toFixed(1)}%
-                  </td>
-                  <td class="px-4 py-3 whitespace-nowrap text-sm">
-                    {metric.memory_usage_percent.toFixed(1)}%
-                    <span class="text-xs text-gray-500">
-                      ({formatBytes(metric.memory_used_bytes)})
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 whitespace-nowrap text-sm">
-                    {metric.disk_usage_percent.toFixed(1)}%
-                    <span class="text-xs text-gray-500">
-                      ({formatBytes(metric.disk_used_bytes)})
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 whitespace-nowrap text-sm">
-                    {#if metric.network_rx_bytes !== undefined && metric.network_tx_bytes !== undefined}
-                      ↓ {formatBytes(metric.network_rx_bytes)} / ↑ {formatBytes(
-                        metric.network_tx_bytes
-                      )}
-                    {:else}
-                      -
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+                  {#snippet marks({ series, getAreaProps })}
+                    <defs>
+                      <linearGradient id="fillDisk" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stop-color="var(--color-usage)"
+                          stop-opacity={0.1}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <ChartClipPath
+                      initialWidth={0}
+                      motion={{
+                        width: {
+                          type: "tween",
+                          duration: 1000,
+                          easing: cubicInOut,
+                        },
+                      }}
+                    >
+                      {#each series as s, i (s.key)}
+                        <Area {...getAreaProps(s, i)} fill="url(#fillDisk)" />
+                      {/each}
+                    </ChartClipPath>
+                  {/snippet}
+                  {#snippet tooltip()}
+                    <Chart.Tooltip
+                      labelFormatter={(v: Date) => {
+                        return v.toLocaleString("de-DE");
+                      }}
+                      indicator="line"
+                    />
+                  {/snippet}
+                </AreaChart>
+              </ChartContainer>
+            </Card.Content>
+          </Card.Root>
         </div>
+
+        <!-- Right Column - Data Table -->
+        <Card.Root class="flex flex-col">
+          <Card.Header>
+            <Card.Title>Metrics Data</Card.Title>
+            <Card.Description>Detailed measurements history</Card.Description>
+          </Card.Header>
+          <Card.Content class="flex-1">
+            <div class="max-h-[660px] overflow-auto rounded-md border">
+              <Table>
+                <TableHeader class="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead class="w-[180px]">Timestamp</TableHead>
+                    <TableHead>CPU</TableHead>
+                    <TableHead>Memory</TableHead>
+                    <TableHead>Disk</TableHead>
+                    <TableHead>Network</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {#each metrics.slice(0, 100) as metric}
+                    <TableRow>
+                      <TableCell class="text-xs">
+                        {formatTimestamp(metric.timestamp)}
+                      </TableCell>
+                      <TableCell class="text-xs">
+                        {metric.cpu_usage_percent.toFixed(1)}%
+                      </TableCell>
+                      <TableCell class="text-xs">
+                        <div>{metric.memory_usage_percent.toFixed(1)}%</div>
+                        <div class="text-muted-foreground">
+                          {formatBytes(metric.memory_used_bytes)}
+                        </div>
+                      </TableCell>
+                      <TableCell class="text-xs">
+                        <div>{metric.disk_usage_percent.toFixed(1)}%</div>
+                        <div class="text-muted-foreground">
+                          {formatBytes(metric.disk_used_bytes)}
+                        </div>
+                      </TableCell>
+                      <TableCell class="text-xs">
+                        {#if metric.network_rx_bytes !== undefined && metric.network_tx_bytes !== undefined}
+                          <div>↓ {formatBytes(metric.network_rx_bytes)}</div>
+                          <div>↑ {formatBytes(metric.network_tx_bytes)}</div>
+                        {:else}
+                          -
+                        {/if}
+                      </TableCell>
+                    </TableRow>
+                  {/each}
+                </TableBody>
+              </Table>
+            </div>
+          </Card.Content>
+        </Card.Root>
       </div>
     {:else}
-      <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-12 text-center">
-        <div class="text-6xl mb-4">📊</div>
-        <h2 class="text-xl font-semibold mb-2">No Metrics Available</h2>
-        <p class="text-gray-600 dark:text-gray-400">
-          Waiting for the agent to send metrics data...
-        </p>
-      </div>
+      <Card.Root>
+        <Card.Content class="flex h-64 flex-col items-center justify-center">
+          <Activity class="mb-4 h-12 w-12 text-muted-foreground" />
+          <Card.Title class="mb-2">No Metrics Available</Card.Title>
+          <Card.Description>
+            Waiting for the agent to send metrics data...
+          </Card.Description>
+        </Card.Content>
+      </Card.Root>
     {/if}
   {/if}
 </div>
