@@ -106,47 +106,56 @@
   }
 
   // Chart configurations
-  const cpuChartConfig = {
-    usage: { label: "CPU Usage", color: "hsl(var(--chart-1))" },
+  const combinedChartConfig = {
+    cpu: { label: "CPU Usage", color: "oklch(0.646 0.222 41.116)" },
+    memory: { label: "Memory Usage", color: "oklch(0.6 0.118 184.704)" },
+    disk: { label: "Disk Usage", color: "oklch(0.398 0.07 227.392)" },
   } satisfies Chart.ChartConfig;
 
-  const memoryChartConfig = {
-    usage: { label: "Memory Usage", color: "hsl(var(--chart-2))" },
+  // Individuelle Chart-Configs für die Radial Charts
+  const cpuRadialConfig = {
+    used: { label: "Used", color: "oklch(0.646 0.222 41.116)" },
+    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
   } satisfies Chart.ChartConfig;
 
-  const diskChartConfig = {
-    usage: { label: "Disk Usage", color: "hsl(var(--chart-3))" },
+  const memoryRadialConfig = {
+    used: { label: "Used", color: "oklch(0.6 0.118 184.704)" },
+    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
   } satisfies Chart.ChartConfig;
+
+  const diskRadialConfig = {
+    used: { label: "Used", color: "oklch(0.398 0.07 227.392)" },
+    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+  } satisfies Chart.ChartConfig;
+
+  // Funktion zur Bestimmung der Farbe basierend auf Usage
+  function getUsageColor(percentage: number): string {
+    if (percentage < 80) {
+      // Grün für niedrige bis mittlere Nutzung
+      return "oklch(0.646 0.222 41.116)"; // chart-1 - Grün
+    } else if (percentage < 90) {
+      // Gelb für hohe Nutzung
+      return "oklch(0.828 0.189 84.429)"; // chart-4 - Gelb
+    } else {
+      // Rot für sehr hohe Nutzung
+      return "oklch(0.577 0.245 27.325)"; // destructive - Rot
+    }
+  }
+
+  // Dunkelgrau mit Transparenz für die freie/ungenutzte Seite
+  const freeColor = "oklch(0.5 0.002 286.375 / 0.3)"; // Dunkelgrau mit 30% Opazität
 
   const latest = $derived(metrics.length > 0 ? metrics[0] : null);
 
-  const cpuChartData = $derived(
+  const combinedChartData = $derived(
     metrics
       .slice(0, 50)
       .reverse()
       .map((m) => ({
         date: new Date(m.timestamp),
-        usage: m.cpu_usage_percent,
-      }))
-  );
-
-  const memoryChartData = $derived(
-    metrics
-      .slice(0, 50)
-      .reverse()
-      .map((m) => ({
-        date: new Date(m.timestamp),
-        usage: m.memory_usage_percent,
-      }))
-  );
-
-  const diskChartData = $derived(
-    metrics
-      .slice(0, 50)
-      .reverse()
-      .map((m) => ({
-        date: new Date(m.timestamp),
-        usage: m.disk_usage_percent,
+        cpu: m.cpu_usage_percent,
+        memory: m.memory_usage_percent,
+        disk: m.disk_usage_percent,
       }))
   );
 </script>
@@ -157,7 +166,11 @@
 
 <div class="space-y-6">
   <!-- Back Button -->
-  <Button variant="outline" onclick={() => goto("/physical-servers")}>
+  <Button
+    variant="outline"
+    onclick={() => goto("/physical-servers")}
+    class="m-4"
+  >
     <ArrowLeft class="mr-2 h-4 w-4" />
     Back to Physical Servers
   </Button>
@@ -244,28 +257,30 @@
         <Card.Root class="flex flex-col">
           <Card.Header class="items-center pb-0">
             <Card.Title>CPU Usage</Card.Title>
-            <Card.Description>Current utilization</Card.Description>
+            <Card.Description>
+              {latest.cpu_usage_percent.toFixed(1)}% used
+            </Card.Description>
           </Card.Header>
-          <Card.Content class="flex flex-1 items-center pb-0">
+          <Card.Content class="flex-1 pb-0">
             <Chart.Container
-              config={cpuChartConfig}
+              config={cpuRadialConfig}
               class="mx-auto aspect-square max-h-[250px]"
             >
               <PieChart
                 data={[
                   {
-                    name: "used",
-                    value: latest.cpu_usage_percent,
-                    color: cpuChartConfig.usage.color,
+                    platform: "used",
+                    visitors: latest.cpu_usage_percent,
+                    color: getUsageColor(latest.cpu_usage_percent),
                   },
                   {
-                    name: "free",
-                    value: 100 - latest.cpu_usage_percent,
-                    color: "hsl(var(--muted))",
+                    platform: "free",
+                    visitors: 100 - latest.cpu_usage_percent,
+                    color: freeColor,
                   },
                 ]}
-                key="name"
-                value="value"
+                key="platform"
+                value="visitors"
                 c="color"
                 innerRadius={76}
                 padding={29}
@@ -307,26 +322,26 @@
               )}
             </Card.Description>
           </Card.Header>
-          <Card.Content class="flex flex-1 items-center pb-0">
+          <Card.Content class="flex-1 pb-0">
             <Chart.Container
-              config={memoryChartConfig}
+              config={memoryRadialConfig}
               class="mx-auto aspect-square max-h-[250px]"
             >
               <PieChart
                 data={[
                   {
-                    name: "used",
-                    value: latest.memory_usage_percent,
-                    color: memoryChartConfig.usage.color,
+                    platform: "used",
+                    visitors: latest.memory_usage_percent,
+                    color: getUsageColor(latest.memory_usage_percent),
                   },
                   {
-                    name: "free",
-                    value: 100 - latest.memory_usage_percent,
-                    color: "hsl(var(--muted))",
+                    platform: "free",
+                    visitors: 100 - latest.memory_usage_percent,
+                    color: freeColor,
                   },
                 ]}
-                key="name"
-                value="value"
+                key="platform"
+                value="visitors"
                 c="color"
                 innerRadius={76}
                 padding={29}
@@ -368,26 +383,26 @@
               )}
             </Card.Description>
           </Card.Header>
-          <Card.Content class="flex flex-1 items-center pb-0">
+          <Card.Content class="flex-1 pb-0">
             <Chart.Container
-              config={diskChartConfig}
+              config={diskRadialConfig}
               class="mx-auto aspect-square max-h-[250px]"
             >
               <PieChart
                 data={[
                   {
-                    name: "used",
-                    value: latest.disk_usage_percent,
-                    color: diskChartConfig.usage.color,
+                    platform: "used",
+                    visitors: latest.disk_usage_percent,
+                    color: getUsageColor(latest.disk_usage_percent),
                   },
                   {
-                    name: "free",
-                    value: 100 - latest.disk_usage_percent,
-                    color: "hsl(var(--muted))",
+                    platform: "free",
+                    visitors: 100 - latest.disk_usage_percent,
+                    color: freeColor,
                   },
                 ]}
-                key="name"
-                value="value"
+                key="platform"
+                value="visitors"
                 c="color"
                 innerRadius={76}
                 padding={29}
@@ -420,259 +435,133 @@
         </Card.Root>
       </div>
 
-      <!-- Metrics History - Area Charts and Table -->
+      <!-- Metrics History - Combined Area Chart and Table -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <!-- Left Column - Area Charts -->
-        <div class="space-y-6">
-          <!-- CPU Area Chart -->
-          <Card.Root>
-            <Card.Header>
-              <Card.Title>CPU History</Card.Title>
-              <Card.Description>Last 50 measurements</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <ChartContainer
-                config={cpuChartConfig}
-                class="aspect-auto h-[200px] w-full"
+        <!-- Left Column - Combined Area Chart -->
+        <Card.Root>
+          <Card.Header>
+            <Card.Title>Metrics History</Card.Title>
+            <Card.Description>Last 50 measurements</Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <ChartContainer
+              config={combinedChartConfig}
+              class="aspect-auto h-[600px] w-full"
+            >
+              <AreaChart
+                data={combinedChartData}
+                x="date"
+                xScale={scaleUtc()}
+                yDomain={[0, 100]}
+                series={[
+                  {
+                    key: "cpu",
+                    label: "CPU %",
+                    color: combinedChartConfig.cpu.color,
+                  },
+                  {
+                    key: "memory",
+                    label: "Memory %",
+                    color: combinedChartConfig.memory.color,
+                  },
+                  {
+                    key: "disk",
+                    label: "Disk %",
+                    color: combinedChartConfig.disk.color,
+                  },
+                ]}
+                props={{
+                  area: {
+                    curve: curveNatural,
+                    "fill-opacity": 0.3,
+                    line: { class: "stroke-2" },
+                  },
+                  xAxis: {
+                    format: (v) =>
+                      v.toLocaleTimeString("de-DE", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                  },
+                  yAxis: {
+                    format: (v) => `${v}%`,
+                    ticks: [25, 50, 75, 100],
+                  },
+                }}
               >
-                <AreaChart
-                  data={cpuChartData}
-                  x="date"
-                  xScale={scaleUtc()}
-                  series={[
-                    {
-                      key: "usage",
-                      label: "CPU %",
-                      color: cpuChartConfig.usage.color,
-                    },
-                  ]}
-                  props={{
-                    area: {
-                      curve: curveNatural,
-                      "fill-opacity": 0.4,
-                      line: { class: "stroke-2" },
-                    },
-                    xAxis: {
-                      format: (v) =>
-                        v.toLocaleTimeString("de-DE", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }),
-                    },
-                    yAxis: { format: (v) => `${v}%` },
-                  }}
-                >
-                  {#snippet marks({ series, getAreaProps })}
-                    <defs>
-                      <linearGradient id="fillCPU" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.1}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <ChartClipPath
-                      initialWidth={0}
-                      motion={{
-                        width: {
-                          type: "tween",
-                          duration: 1000,
-                          easing: cubicInOut,
-                        },
-                      }}
-                    >
-                      {#each series as s, i (s.key)}
-                        <Area {...getAreaProps(s, i)} fill="url(#fillCPU)" />
-                      {/each}
-                    </ChartClipPath>
-                  {/snippet}
-                  {#snippet tooltip()}
-                    <Chart.Tooltip
-                      labelFormatter={(v: Date) => {
-                        return v.toLocaleString("de-DE");
-                      }}
-                      indicator="line"
-                    />
-                  {/snippet}
-                </AreaChart>
-              </ChartContainer>
-            </Card.Content>
-          </Card.Root>
-
-          <!-- Memory Area Chart -->
-          <Card.Root>
-            <Card.Header>
-              <Card.Title>Memory History</Card.Title>
-              <Card.Description>Last 50 measurements</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <ChartContainer
-                config={memoryChartConfig}
-                class="aspect-auto h-[200px] w-full"
-              >
-                <AreaChart
-                  data={memoryChartData}
-                  x="date"
-                  xScale={scaleUtc()}
-                  series={[
-                    {
-                      key: "usage",
-                      label: "Memory %",
-                      color: memoryChartConfig.usage.color,
-                    },
-                  ]}
-                  props={{
-                    area: {
-                      curve: curveNatural,
-                      "fill-opacity": 0.4,
-                      line: { class: "stroke-2" },
-                    },
-                    xAxis: {
-                      format: (v) =>
-                        v.toLocaleTimeString("de-DE", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }),
-                    },
-                    yAxis: { format: (v) => `${v}%` },
-                  }}
-                >
-                  {#snippet marks({ series, getAreaProps })}
-                    <defs>
-                      <linearGradient
-                        id="fillMemory"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.1}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <ChartClipPath
-                      initialWidth={0}
-                      motion={{
-                        width: {
-                          type: "tween",
-                          duration: 1000,
-                          easing: cubicInOut,
-                        },
-                      }}
-                    >
-                      {#each series as s, i (s.key)}
-                        <Area {...getAreaProps(s, i)} fill="url(#fillMemory)" />
-                      {/each}
-                    </ChartClipPath>
-                  {/snippet}
-                  {#snippet tooltip()}
-                    <Chart.Tooltip
-                      labelFormatter={(v: Date) => {
-                        return v.toLocaleString("de-DE");
-                      }}
-                      indicator="line"
-                    />
-                  {/snippet}
-                </AreaChart>
-              </ChartContainer>
-            </Card.Content>
-          </Card.Root>
-
-          <!-- Disk Area Chart -->
-          <Card.Root>
-            <Card.Header>
-              <Card.Title>Disk History</Card.Title>
-              <Card.Description>Last 50 measurements</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <ChartContainer
-                config={diskChartConfig}
-                class="aspect-auto h-[200px] w-full"
-              >
-                <AreaChart
-                  data={diskChartData}
-                  x="date"
-                  xScale={scaleUtc()}
-                  series={[
-                    {
-                      key: "usage",
-                      label: "Disk %",
-                      color: diskChartConfig.usage.color,
-                    },
-                  ]}
-                  props={{
-                    area: {
-                      curve: curveNatural,
-                      "fill-opacity": 0.4,
-                      line: { class: "stroke-2" },
-                    },
-                    xAxis: {
-                      format: (v) =>
-                        v.toLocaleTimeString("de-DE", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }),
-                    },
-                    yAxis: { format: (v) => `${v}%` },
-                  }}
-                >
-                  {#snippet marks({ series, getAreaProps })}
-                    <defs>
-                      <linearGradient id="fillDisk" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stop-color="var(--color-usage)"
-                          stop-opacity={0.1}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <ChartClipPath
-                      initialWidth={0}
-                      motion={{
-                        width: {
-                          type: "tween",
-                          duration: 1000,
-                          easing: cubicInOut,
-                        },
-                      }}
-                    >
-                      {#each series as s, i (s.key)}
-                        <Area {...getAreaProps(s, i)} fill="url(#fillDisk)" />
-                      {/each}
-                    </ChartClipPath>
-                  {/snippet}
-                  {#snippet tooltip()}
-                    <Chart.Tooltip
-                      labelFormatter={(v: Date) => {
-                        return v.toLocaleString("de-DE");
-                      }}
-                      indicator="line"
-                    />
-                  {/snippet}
-                </AreaChart>
-              </ChartContainer>
-            </Card.Content>
-          </Card.Root>
-        </div>
+                {#snippet marks({ series, getAreaProps })}
+                  <defs>
+                    <linearGradient id="fillCPU" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stop-color={combinedChartConfig.cpu.color}
+                        stop-opacity={0.8}
+                      />
+                      <stop
+                        offset="95%"
+                        stop-color={combinedChartConfig.cpu.color}
+                        stop-opacity={0.1}
+                      />
+                    </linearGradient>
+                    <linearGradient id="fillMemory" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stop-color={combinedChartConfig.memory.color}
+                        stop-opacity={0.8}
+                      />
+                      <stop
+                        offset="95%"
+                        stop-color={combinedChartConfig.memory.color}
+                        stop-opacity={0.1}
+                      />
+                    </linearGradient>
+                    <linearGradient id="fillDisk" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stop-color={combinedChartConfig.disk.color}
+                        stop-opacity={0.8}
+                      />
+                      <stop
+                        offset="95%"
+                        stop-color={combinedChartConfig.disk.color}
+                        stop-opacity={0.1}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <ChartClipPath
+                    initialWidth={0}
+                    motion={{
+                      width: {
+                        type: "tween",
+                        duration: 1000,
+                        easing: cubicInOut,
+                      },
+                    }}
+                  >
+                    {#each series as s, i (s.key)}
+                      <Area
+                        {...getAreaProps(s, i)}
+                        fill={s.key === "cpu"
+                          ? "url(#fillCPU)"
+                          : s.key === "memory"
+                            ? "url(#fillMemory)"
+                            : "url(#fillDisk)"}
+                      />
+                    {/each}
+                  </ChartClipPath>
+                {/snippet}
+                {#snippet tooltip()}
+                  <Chart.Tooltip
+                    labelFormatter={(v: Date) => {
+                      return v.toLocaleString("de-DE");
+                    }}
+                    indicator="line"
+                  />
+                {/snippet}
+              </AreaChart>
+            </ChartContainer>
+          </Card.Content>
+        </Card.Root>
 
         <!-- Right Column - Data Table -->
         <Card.Root class="flex flex-col">
