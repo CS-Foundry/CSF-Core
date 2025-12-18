@@ -1,21 +1,26 @@
 [Unit]
-Description=CSF Core Backend Daemon
+Description=CSF Core Backend and Frontend Service
 Documentation=https://github.com/CS-Foundry/CSF-Core
-After=network.target docker.service postgresql.service
-Requires=postgresql.service
-Wants=docker.service
+After=network.target postgresql.service
+Wants=postgresql.service
 
 [Service]
-Type=simple
+Type=forking
 User=csf-core
 Group=csf-core
 WorkingDirectory=/opt/csf-core
 
-# Environment variables
+# Load environment from config file (if exists)
+EnvironmentFile=-/opt/csf-core/config.env
+
+# Default environment variables (can be overridden in config.env)
 Environment="DATABASE_URL=postgres://csf_core:password@localhost/csf_core"
 Environment="JWT_SECRET=change-this-in-production"
-Environment="FRONTEND_URL=http://localhost:3000"
 Environment="RUST_LOG=info"
+Environment="NODE_ENV=production"
+Environment="PORT=3000"
+Environment="FRONTEND_URL=http://localhost:3000"
+Environment="ORIGIN=http://localhost:8000"
 
 # Security settings
 NoNewPrivileges=true
@@ -23,19 +28,28 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/csf-core
+ReadWritePaths=/var/lib/csf-core
+ReadWritePaths=/var/log/csf-core
 SupplementaryGroups=docker
 
+# Startup: Use unified startup script
+ExecStart=/opt/csf-core/start.sh
+
 # Process management
-ExecStart=/opt/csf-core/backend
 Restart=on-failure
 RestartSec=10
 KillMode=mixed
 KillSignal=SIGTERM
+TimeoutStartSec=60
 TimeoutStopSec=30
 
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096
+
+# Logging
+StandardOutput=append:/var/log/csf-core/csf-core.log
+StandardError=append:/var/log/csf-core/csf-core-error.log
 
 [Install]
 WantedBy=multi-user.target

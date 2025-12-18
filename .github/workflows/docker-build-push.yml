@@ -14,6 +14,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: csf-core
 
 jobs:
   build:
@@ -143,9 +144,9 @@ jobs:
       - name: Generate deployment summary
         run: |
           IMAGE_NAME="${{ steps.repo.outputs.image_name }}"
-          echo "## 🚀 Docker Image Published (Multi-Arch)" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 CSF-Core Docker Image Published (Multi-Arch)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### FinanceVault - Single Binary Architecture" >> $GITHUB_STEP_SUMMARY
+          echo "### CSF-Core - Unified Backend + Frontend Architecture" >> $GITHUB_STEP_SUMMARY
           echo "**Architecture**: Backend with embedded frontend proxy" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms**: linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -166,13 +167,19 @@ jobs:
           echo "# Docker wählt automatisch die richtige Architektur (amd64/arm64)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Run Command" >> $GITHUB_STEP_SUMMARY
+          echo "### Run Command (Docker)" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "docker run -d \\" >> $GITHUB_STEP_SUMMARY
           echo "  -p 8000:8000 \\" >> $GITHUB_STEP_SUMMARY
-          echo "  -v financevault_data:/data \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -v csf_data:/data \\" >> $GITHUB_STEP_SUMMARY
           echo "  -e JWT_SECRET=\$(openssl rand -hex 32) \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --name csf-core \\" >> $GITHUB_STEP_SUMMARY
           echo "  ${{ env.REGISTRY }}/${IMAGE_NAME}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Native Installation (Linux)" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | sudo bash" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Access the Application" >> $GITHUB_STEP_SUMMARY
