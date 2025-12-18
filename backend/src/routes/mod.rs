@@ -14,6 +14,7 @@ pub mod expenses;
 pub mod frontend;
 pub mod organizations;
 pub mod subscriptions;
+pub mod system;
 pub mod users;
 
 /// Creates the main application router and logs all registered routes.
@@ -41,6 +42,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(expenses::expenses_routes())
         .merge(organizations::routes())
         .merge(subscriptions::subscriptions_routes())
+        .merge(system::routes())
         .merge(users::users_routes());
 
     Router::new()

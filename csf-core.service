@@ -1,0 +1,41 @@
+[Unit]
+Description=CSF Core Backend Daemon
+Documentation=https://github.com/CS-Foundry/CSF-Core
+After=network.target docker.service postgresql.service
+Requires=postgresql.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=csf-core
+Group=csf-core
+WorkingDirectory=/opt/csf-core
+
+# Environment variables
+Environment="DATABASE_URL=postgres://csf_core:password@localhost/csf_core"
+Environment="JWT_SECRET=change-this-in-production"
+Environment="FRONTEND_URL=http://localhost:3000"
+Environment="RUST_LOG=info"
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/csf-core
+SupplementaryGroups=docker
+
+# Process management
+ExecStart=/opt/csf-core/backend
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
