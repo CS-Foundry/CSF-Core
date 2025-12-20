@@ -2,7 +2,8 @@
 # CSF-Core Installation Script
 # Installiert Backend + Frontend als systemd Service
 
-set -e
+# Nicht bei Fehlern abbrechen - wir handhaben Fehler manuell
+# set -e wurde entfernt für bessere Fehlerbehandlung
 
 # Farben für Output
 RED='\033[0;31m'
@@ -127,8 +128,8 @@ install_postgresql() {
             print_success "PostgreSQL Service läuft"
         else
             print_step "Starte PostgreSQL Service..."
-            systemctl start postgresql
-            systemctl enable postgresql
+            systemctl start postgresql 2>/dev/null || true
+            systemctl enable postgresql 2>/dev/null || true
         fi
         return
     fi
@@ -137,48 +138,67 @@ install_postgresql() {
     
     if command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
+        print_step "Installiere PostgreSQL via apt-get..."
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq
-        apt-get install -y -qq postgresql postgresql-contrib
-        systemctl enable postgresql
-        systemctl start postgresql
         
-        # Warte bis PostgreSQL bereit ist
-        sleep 3
-        
-        print_success "PostgreSQL installiert und gestartet"
-    elif command -v yum &> /dev/null; then
-        # RHEL/CentOS/Fedora
-        yum install -y postgresql-server postgresql-contrib
-        
-        # Initialize DB if needed
-        if [ ! -d "/var/lib/pgsql/data/base" ]; then
-            postgresql-setup --initdb || /usr/bin/postgresql-setup initdb
+        if ! apt-get update -qq 2>/dev/null; then
+            print_warning "apt-get update fehlgeschlagen, versuche trotzdem Installation..."
         fi
         
-        systemctl enable postgresql
-        systemctl start postgresql
+        if apt-get install -y -qq postgresql postgresql-contrib 2>/dev/null; then
+            systemctl enable postgresql 2>/dev/null || true
+            systemctl start postgresql 2>/dev/null || true
+            sleep 3
+            print_success "PostgreSQL installiert und gestartet"
+        else
+            print_error "PostgreSQL Installation fehlgeschlagen"
+            print_warning "Verwende SQLite als Fallback"
+            USE_SQLITE=true
+            return
+        fi
         
-        # Warte bis PostgreSQL bereit ist
-        sleep 3
-        
-        print_success "PostgreSQL installiert und gestartet"
     elif command -v dnf &> /dev/null; then
         # Fedora/RHEL 8+
-        dnf install -y postgresql-server postgresql-contrib
+        print_step "Installiere PostgreSQL via dnf..."
         
-        # Initialize DB if needed
-        if [ ! -d "/var/lib/pgsql/data/base" ]; then
-            postgresql-setup --initdb || /usr/bin/postgresql-setup initdb
+        if dnf install -y postgresql-server postgresql-contrib 2>/dev/null; then
+            # Initialize DB if needed
+            if [ ! -d "/var/lib/pgsql/data/base" ]; then
+                postgresql-setup --initdb 2>/dev/null || /usr/bin/postgresql-setup initdb 2>/dev/null || true
+            fi
+            
+            systemctl enable postgresql 2>/dev/null || true
+            systemctl start postgresql 2>/dev/null || true
+            sleep 3
+            print_success "PostgreSQL installiert und gestartet"
+        else
+            print_error "PostgreSQL Installation fehlgeschlagen"
+            print_warning "Verwende SQLite als Fallback"
+            USE_SQLITE=true
+            return
         fi
         
-        systemctl enable postgresql
-        systemctl start postgresql
+    elif command -v yum &> /dev/null; then
+        # RHEL/CentOS
+        print_step "Installiere PostgreSQL via yum..."
         
-        # Warte bis PostgreSQL bereit ist
-        sleep 3
+        if yum install -y postgresql-server postgresql-contrib 2>/dev/null; then
+            # Initialize DB if needed
+            if [ ! -d "/var/lib/pgsql/data/base" ]; then
+                postgresql-setup --initdb 2>/dev/null || /usr/bin/postgresql-setup initdb 2>/dev/null || true
+            fi
+            
+            systemctl enable postgresql 2>/dev/null || true
+            systemctl start postgresql 2>/dev/null || true
+            sleep 3
+            print_success "PostgreSQL installiert und gestartet"
+        else
+            print_error "PostgreSQL Installation fehlgeschlagen"
+            print_warning "Verwende SQLite als Fallback"
+            USE_SQLITE=true
+            return
+        fi
         
-        print_success "PostgreSQL installiert und gestartet"
     else
         print_warning "Paketmanager nicht unterstützt. Verwende SQLite als Fallback."
         USE_SQLITE=true
@@ -186,8 +206,11 @@ install_postgresql() {
     fi
     
     # Verifiziere Installation
-    if ! systemctl is-active --quiet postgresql; then
-        print_error "PostgreSQL konnte nicht gestartet werden"
+    if ! systemctl is-active --quiet postgresql 2>/dev/null; then
+        print_warning "PostgreSQL Service läuft nicht, verwende SQLite als Fallback"
+        USE_SQLITE=true
+    fi
+}
         print_warning "Verwende SQLite als Fallback"
         USE_SQLITE=true
     fi
@@ -506,15 +529,49 @@ print_next_steps() {
 # Main Installation
 main() {
     print_header
-    check_root
-    check_dependencies
-    detect_architecture
-    install_nodejs
-    install_postgresql
-    create_service_user
-    create_directories
-    download_release
-    setup_database
+    
+    echo -e "${BLUE}[DEBUG] Starting installation...${NC}"
+    
+    check_root || { print_error "Root check failed"; exit 1; }
+    check_dependencies || { print_error "Dependency check failed"; exit 1; }
+    detect_architecture || { print_error "Architecture detection failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Installing Node.js...${NC}"
+    install_nodejs || { print_warning "Node.js installation had issues, continuing..."; }
+    
+    echo -e "${BLUE}[DEBUG] Installing PostgreSQL...${NC}"
+    install_postgresql || { print_warning "PostgreSQL installation had issues, will use SQLite..."; USE_SQLITE=true; }
+    
+    echo -e "${BLUE}[DEBUG] Creating service user...${NC}"
+    create_service_user || { print_error "Service user creation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Creating directories...${NC}"
+    create_directories || { print_error "Directory creation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Downloading release...${NC}"
+    download_release || { print_error "Download failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Setting up database...${NC}"
+    setup_database || { print_warning "Database setup had issues, continuing..."; }
+    
+    echo -e "${BLUE}[DEBUG] Generating JWT secret...${NC}"
+    generate_jwt_secret || { print_error "JWT generation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Installing systemd service...${NC}"
+    install_systemd_service || { print_error "Systemd service installation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Creating startup script...${NC}"
+    create_startup_script || { print_error "Startup script creation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Reloading systemd...${NC}"
+    reload_systemd || { print_error "Systemd reload failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Creating config file...${NC}"
+    create_config_file || { print_error "Config file creation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Installation complete!${NC}"
+    print_next_steps
+}
     generate_jwt_secret
     install_systemd_service
     create_startup_script
