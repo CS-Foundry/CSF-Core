@@ -211,10 +211,6 @@ install_postgresql() {
         USE_SQLITE=true
     fi
 }
-        print_warning "Verwende SQLite als Fallback"
-        USE_SQLITE=true
-    fi
-}
 
 create_service_user() {
     print_step "Erstelle Service-Benutzer..."

@@ -1,7 +1,7 @@
 #!/bin/bash
 # CSF-Core Deinstallation Script
 
-set -e
+set +e  # Nicht bei Fehlern abbrechen
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -36,8 +36,8 @@ REMOVE_DATA=$REPLY
 
 # Stop service
 echo -e "${GREEN}Stoppe Service...${NC}"
-systemctl stop ${SERVICE_NAME} || true
-systemctl disable ${SERVICE_NAME} || true
+systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+systemctl disable ${SERVICE_NAME} 2>/dev/null || true
 
 # Remove systemd service
 echo -e "${GREEN}Entferne systemd Service...${NC}"
@@ -55,16 +55,23 @@ if [[ $REMOVE_DATA =~ ^[Jj]$ ]]; then
     rm -rf ${DATA_DIR}
     
     # Drop PostgreSQL database
-    if command -v psql &> /dev/null; then
-        sudo -u postgres psql -c "DROP DATABASE IF EXISTS csf_core;" || true
-        sudo -u postgres psql -c "DROP USER IF EXISTS csf_core;" || true
+    if command -v psql &> /dev/null && systemctl is-active --quiet postgresql 2>/dev/null; then
+        echo -e "${GREEN}Entferne PostgreSQL Datenbank...${NC}"
+        sudo -u postgres psql -c "DROP DATABASE IF EXISTS csf_core;" 2>/dev/null || true
+        sudo -u postgres psql -c "DROP USER IF EXISTS csf_core;" 2>/dev/null || true
     fi
 fi
 
 # Remove user
 echo -e "${GREEN}Entferne Service-Benutzer...${NC}"
-userdel ${SERVICE_USER} || true
+userdel ${SERVICE_USER} 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}✓ CSF-Core wurde erfolgreich deinstalliert${NC}"
 echo ""
+
+if [[ ! $REMOVE_DATA =~ ^[Jj]$ ]]; then
+    echo -e "${YELLOW}Hinweis: Daten wurden nicht gelöscht und befinden sich in:${NC}"
+    echo "  - ${DATA_DIR}"
+    echo ""
+fi
