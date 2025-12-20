@@ -285,12 +285,14 @@ install_rust() {
     print_step "Installiere Rust/Cargo..."
     
     # Install rustup (official Rust installer)
-    if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable 2>&1 | grep -v "info:"; then
-        # Source cargo env
-        export PATH="$HOME/.cargo/bin:$PATH"
-        source "$HOME/.cargo/env" 2>/dev/null || true
-        
-        print_success "Rust/Cargo installiert"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path 2>&1 | tail -10
+    
+    # Add cargo to PATH for current session
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    # Verify installation
+    if command -v cargo &> /dev/null; then
+        print_success "Rust/Cargo installiert ($(cargo --version))"
         return 0
     else
         print_error "Rust Installation fehlgeschlagen"
@@ -332,11 +334,21 @@ build_from_source() {
     # Build Backend
     print_step "Baue Backend (kann mehrere Minuten dauern)..."
     cd backend
-    if cargo build --release 2>&1 | grep -v "Compiling" | grep -v "Finished"; then
-        mkdir -p "$INSTALL_DIR/backend"
-        cp target/release/backend "$INSTALL_DIR/backend/"
-        chmod +x "$INSTALL_DIR/backend/backend"
-        print_success "Backend gebaut"
+    
+    # Build with cargo
+    if cargo build --release 2>&1; then
+        if [ -f "target/release/backend" ]; then
+            mkdir -p "$INSTALL_DIR/backend"
+            cp target/release/backend "$INSTALL_DIR/backend/"
+            chmod +x "$INSTALL_DIR/backend/backend"
+            print_success "Backend gebaut"
+        else
+            print_error "Backend Binary nicht gefunden"
+            cd "$temp_dir"
+            rm -rf "$temp_dir"
+            install_via_docker
+            return
+        fi
     else
         print_error "Backend build fehlgeschlagen"
         cd "$temp_dir"
@@ -349,14 +361,34 @@ build_from_source() {
     # Build Frontend
     print_step "Baue Frontend (kann mehrere Minuten dauern)..."
     cd frontend
-    if npm ci 2>&1 | tail -5 && npm run build 2>&1 | tail -5; then
+    
+    # Install dependencies
+    if ! npm ci 2>&1 | tail -10; then
+        print_error "npm ci fehlgeschlagen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        install_via_docker
+        return
+    fi
+    
+    # Build frontend
+    if ! npm run build 2>&1 | tail -10; then
+        print_error "Frontend build fehlgeschlagen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        install_via_docker
+        return
+    fi
+    
+    # Copy built files
+    if [ -d "build" ]; then
         mkdir -p "$INSTALL_DIR/frontend"
         cp -r build "$INSTALL_DIR/frontend/"
         cp -r node_modules "$INSTALL_DIR/frontend/"
         cp package.json "$INSTALL_DIR/frontend/"
         print_success "Frontend gebaut"
     else
-        print_error "Frontend build fehlgeschlagen"
+        print_error "Frontend build Verzeichnis nicht gefunden"
         cd - > /dev/null
         rm -rf "$temp_dir"
         install_via_docker
