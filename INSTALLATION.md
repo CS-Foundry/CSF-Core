@@ -17,48 +17,64 @@ CSF-Core ist ein unified Backend + Frontend Service, der auf Linux als systemd S
 ### Option 1: One-Line Installation (Empfohlen)
 
 ```bash
-# Von main Branch (Stable) - versucht Release, baut sonst aus Quellcode
+# Von main Branch (PRODUCTION) - verwendet nur Pre-Built Releases von GitHub
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo bash
 
-# Von einem bestimmten Branch (z.B. feat/docker-management) - baut aus Quellcode
-curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo bash
+# Von Development Branch - baut aus Quellcode (installiert gcc, Rust automatisch)
+curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo BRANCH=feat/docker-managment bash
 
 # Von einem bestimmten Tag/Release
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/v1.2.3/scripts/install.sh | sudo bash
 
-# Explizit aus Quellcode bauen (Development)
-curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo VERSION=dev bash
+# Explizit aus Quellcode bauen (auch für main Branch)
+curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo BUILD_FROM_SOURCE=1 bash
 ```
 
 Das Script:
 
 - ✅ Installiert alle Abhängigkeiten (Node.js 20, PostgreSQL)
+- ✅ **Production (main)**: Verwendet NUR Pre-Built Releases von GitHub Actions
+- ✅ **Development**: Installiert gcc, Rust automatisch und baut aus Quellcode
 - ✅ Erstellt PostgreSQL-Datenbank automatisch
 - ✅ Richtet systemd Service ein
 - ✅ Konfiguriert Backend + Frontend
 - ✅ Generiert sichere Secrets (JWT, DB-Passwort)
 - ✅ SQLite Fallback wenn PostgreSQL fehlschlägt
-- ✅ Baut aus Quellcode wenn kein Release verfügbar
 
-**Installation Priorität:**
+**Installation Strategie:**
 
-1. Versucht Release von GitHub herunterzuladen
-2. Falls nicht verfügbar: Baut aus Git-Repository (benötigt Rust + Node.js)
-3. Falls nicht möglich: Verwendet Docker Image
+**Production (main Branch):**
+
+1. ✅ Lädt Pre-Built Release von GitHub (gebaut via GitHub Actions)
+2. ❌ Baut NICHT aus Quellcode (außer BUILD_FROM_SOURCE=1 gesetzt)
+3. ⚠️ Schlägt fehl wenn kein Release verfügbar → warte auf GitHub Actions Build
+
+**Development (andere Branches):**
+
+1. Versucht Release Download (wenn verfügbar)
+2. Falls nicht verfügbar: Installiert Build-Tools (gcc, make, git)
+3. Installiert Rust/Cargo automatisch
+4. Baut Backend + Frontend aus Quellcode (~10-15 Min)
 
 **Was wird automatisch installiert:**
 
 - Node.js 20 LTS (wenn nicht vorhanden)
 - PostgreSQL (automatisch, keine Benutzerinteraktion nötig)
-- Rust/Cargo (falls benötigt für Build)
+- **Build-Tools** (gcc, make, git) - nur für Development
+- **Rust/Cargo** - nur für Development
 - Systemd Service (Backend + Frontend)
 - Datenbank wird automatisch initialisiert
 
-**Voraussetzungen für Build aus Quellcode:**
+**Voraussetzungen:**
 
-- Git (wird automatisch installiert)
-- Rust (wird automatisch installiert wenn fehlend)
-- Node.js 20+ (wird automatisch installiert)
+**Production:**
+
+- Nur curl, systemd (normalerweise schon vorhanden)
+- Keine Build-Tools nötig!
+
+**Development:**
+
+- Wird automatisch installiert: gcc, make, git, Rust
 
 ### Option 2: Docker Installation
 
