@@ -1,5 +1,5 @@
 #!/bin/bash
-# CSF-Core - Vollständige Neuinstallation
+# CSF-Core - Vollstaendige Neuinstallation
 # Dieses Script deinstalliert alles und installiert neu
 
 set +e
@@ -10,17 +10,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     CSF-Core - Vollständige Neuinstallation           ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}     CSF-Core - Vollstaendige Neuinstallation          ${NC}"
+echo -e "${BLUE}════════════════════════════════════════════════════════${NC}"
 echo ""
 
 if [ "$EUID" -ne 0 ]; then 
-    echo -e "${RED}Bitte als root ausführen: sudo $0${NC}"
+    echo -e "${RED}Bitte als root ausfuehren: sudo $0${NC}"
     exit 1
 fi
 
-echo -e "${YELLOW}WARNUNG: Dies wird CSF-Core vollständig deinstallieren und neu installieren!${NC}"
+echo -e "${YELLOW}WARNUNG: Dies wird CSF-Core vollstaendig deinstallieren und neu installieren!${NC}"
 echo ""
 read -p "Fortfahren? (j/N) " -n 1 -r
 echo
@@ -57,23 +57,23 @@ fi
 # Remove user
 userdel csf-core 2>/dev/null || true
 
-echo -e "${GREEN}✓ Deinstallation abgeschlossen${NC}"
+echo -e "${GREEN}Deinstallation abgeschlossen${NC}"
 
 # Step 2: Optional - PostgreSQL neu starten
 echo ""
-echo -e "${BLUE}[2/3] PostgreSQL prüfen...${NC}"
+echo -e "${BLUE}[2/3] PostgreSQL pruefen...${NC}"
 echo ""
 
 if systemctl is-active --quiet postgresql 2>/dev/null; then
-    echo -e "${GREEN}✓ PostgreSQL läuft${NC}"
+    echo -e "${GREEN}PostgreSQL laeuft${NC}"
 else
-    echo -e "${YELLOW}⚠ PostgreSQL läuft nicht, versuche zu starten...${NC}"
+    echo -e "${YELLOW}PostgreSQL laeuft nicht, versuche zu starten...${NC}"
     systemctl start postgresql 2>/dev/null || true
     sleep 2
     if systemctl is-active --quiet postgresql 2>/dev/null; then
-        echo -e "${GREEN}✓ PostgreSQL gestartet${NC}"
+        echo -e "${GREEN}PostgreSQL gestartet${NC}"
     else
-        echo -e "${YELLOW}⚠ PostgreSQL konnte nicht gestartet werden${NC}"
+        echo -e "${YELLOW}PostgreSQL konnte nicht gestartet werden${NC}"
         echo "   Installation wird SQLite verwenden"
     fi
 fi
@@ -92,11 +92,11 @@ echo ""
 curl -sSL "https://raw.githubusercontent.com/CS-Foundry/CSF-Core/${BRANCH}/scripts/install.sh" | bash
 
 echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║     Neuinstallation abgeschlossen!                    ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}========================================================${NC}"
+echo -e "${GREEN}     Neuinstallation abgeschlossen!                    ${NC}"
+echo -e "${GREEN}========================================================${NC}"
 echo ""
-echo "Nächste Schritte:"
+echo "Naechste Schritte:"
 echo ""
 echo "  sudo systemctl start csf-core"
 echo "  sudo systemctl status csf-core"
