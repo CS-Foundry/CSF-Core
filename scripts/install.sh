@@ -238,8 +238,15 @@ create_directories() {
 }
 
 download_release() {
-    print_step "Lade CSF-Core Release herunter..."
+    print_step "Installiere CSF-Core..."
     
+    # Check for BUILD_FROM_SOURCE environment variable
+    if [ -n "$BUILD_FROM_SOURCE" ] || [ "$VERSION" = "dev" ]; then
+        build_from_source
+        return
+    fi
+    
+    # Try to download release first
     local temp_dir=$(mktemp -d)
     cd "$temp_dir"
     
@@ -250,38 +257,119 @@ download_release() {
         local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
     fi
     
-    print_step "Download von: $download_url"
+    print_step "Versuche Release Download von: $download_url"
     
-    if ! curl -L -f "$download_url" -o csf-core.tar.gz; then
-        print_error "Download fehlgeschlagen. Versuche Docker-basierte Installation..."
+    if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
+        tar -xzf csf-core.tar.gz
+        
+        # Copy files to installation directory
+        cp -r backend/* "$INSTALL_DIR/backend/"
+        cp -r frontend/* "$INSTALL_DIR/frontend/"
+        
+        chmod +x "$INSTALL_DIR/backend/backend"
+        
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        
+        print_success "Release heruntergeladen und installiert"
+    else
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        
+        print_warning "Kein Release gefunden, baue aus Quellcode..."
+        build_from_source
+    fi
+}
+
+build_from_source() {
+    print_step "Baue CSF-Core aus Quellcode..."
+    
+    local temp_dir=$(mktemp -d)
+    cd "$temp_dir"
+    
+    # Clone repository
+    BRANCH="${BRANCH:-feat/docker-managment}"
+    print_step "Clone Repository (Branch: $BRANCH)..."
+    
+    if ! git clone -b "$BRANCH" --depth 1 "https://github.com/${GITHUB_REPO}.git" csf-core 2>/dev/null; then
+        print_error "Git clone fehlgeschlagen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
         install_via_docker
         return
     fi
     
-    tar -xzf csf-core.tar.gz
+    cd csf-core
     
-    # Copy files to installation directory
-    cp -r backend/* "$INSTALL_DIR/backend/"
-    cp -r frontend/* "$INSTALL_DIR/frontend/"
+    # Build Backend
+    print_step "Baue Backend (kann mehrere Minuten dauern)..."
+    if command -v cargo &> /dev/null; then
+        cd backend
+        if cargo build --release 2>&1 | grep -v "Compiling" | grep -v "Finished"; then
+            mkdir -p "$INSTALL_DIR/backend"
+            cp target/release/backend "$INSTALL_DIR/backend/"
+            chmod +x "$INSTALL_DIR/backend/backend"
+            print_success "Backend gebaut"
+        else
+            print_error "Backend build fehlgeschlagen"
+            cd "$temp_dir"
+            rm -rf "$temp_dir"
+            install_via_docker
+            return
+        fi
+        cd ..
+    else
+        print_error "Rust/Cargo nicht gefunden, kann nicht bauen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        install_via_docker
+        return
+    fi
     
-    chmod +x "$INSTALL_DIR/backend/backend"
+    # Build Frontend
+    print_step "Baue Frontend (kann mehrere Minuten dauern)..."
+    cd frontend
+    if npm ci 2>&1 | tail -5 && npm run build 2>&1 | tail -5; then
+        mkdir -p "$INSTALL_DIR/frontend"
+        cp -r build "$INSTALL_DIR/frontend/"
+        cp -r node_modules "$INSTALL_DIR/frontend/"
+        cp package.json "$INSTALL_DIR/frontend/"
+        print_success "Frontend gebaut"
+    else
+        print_error "Frontend build fehlgeschlagen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        install_via_docker
+        return
+    fi
     
     cd - > /dev/null
     rm -rf "$temp_dir"
     
-    print_success "Release heruntergeladen und extrahiert"
+    print_success "CSF-Core aus Quellcode gebaut und installiert"
 }
 
 install_via_docker() {
     print_warning "Verwende Docker-basierte Installation als Fallback"
     
     if ! command -v docker &> /dev/null; then
-        print_error "Docker nicht gefunden. Bitte Docker installieren oder manuell bauen."
+        print_error "Docker nicht gefunden."
+        print_error ""
+        print_error "Bitte installiere eine der folgenden Abhängigkeiten:"
+        print_error "  1. Docker: curl -fsSL https://get.docker.com | sh"
+        print_error "  2. Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        print_error "  3. Oder verwende ein vorhandenes Release"
         exit 1
     fi
     
+    print_step "Lade Docker Image..."
+    
     # Pull image and copy binaries
-    docker pull ghcr.io/cs-foundry/csf-core:latest
+    if ! docker pull ghcr.io/cs-foundry/csf-core:latest 2>/dev/null; then
+        print_error "Docker Image konnte nicht geladen werden"
+        print_error "Bitte baue manuell oder warte auf ein Release"
+        exit 1
+    fi
     
     # Create temporary container and copy files
     local container_id=$(docker create ghcr.io/cs-foundry/csf-core:latest)

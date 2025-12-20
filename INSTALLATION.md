@@ -17,14 +17,17 @@ CSF-Core ist ein unified Backend + Frontend Service, der auf Linux als systemd S
 ### Option 1: One-Line Installation (Empfohlen)
 
 ```bash
-# Von main Branch (Stable)
+# Von main Branch (Stable) - versucht Release, baut sonst aus Quellcode
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo bash
 
-# Von einem bestimmten Branch (z.B. feat/docker-management)
+# Von einem bestimmten Branch (z.B. feat/docker-management) - baut aus Quellcode
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo bash
 
 # Von einem bestimmten Tag/Release
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/v1.2.3/scripts/install.sh | sudo bash
+
+# Explizit aus Quellcode bauen (Development)
+curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo VERSION=dev bash
 ```
 
 Das Script:
@@ -35,13 +38,27 @@ Das Script:
 - ✅ Konfiguriert Backend + Frontend
 - ✅ Generiert sichere Secrets (JWT, DB-Passwort)
 - ✅ SQLite Fallback wenn PostgreSQL fehlschlägt
+- ✅ Baut aus Quellcode wenn kein Release verfügbar
+
+**Installation Priorität:**
+
+1. Versucht Release von GitHub herunterzuladen
+2. Falls nicht verfügbar: Baut aus Git-Repository (benötigt Rust + Node.js)
+3. Falls nicht möglich: Verwendet Docker Image
 
 **Was wird automatisch installiert:**
 
 - Node.js 20 LTS (wenn nicht vorhanden)
 - PostgreSQL (automatisch, keine Benutzerinteraktion nötig)
+- Rust/Cargo (falls benötigt für Build)
 - Systemd Service (Backend + Frontend)
 - Datenbank wird automatisch initialisiert
+
+**Voraussetzungen für Build aus Quellcode:**
+
+- Git (wird automatisch installiert)
+- Rust (wird automatisch installiert wenn fehlend)
+- Node.js 20+ (wird automatisch installiert)
 
 ### Option 2: Docker Installation
 
