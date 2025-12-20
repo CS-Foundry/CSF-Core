@@ -71,6 +71,43 @@ check_dependencies() {
     print_success "Alle Abhängigkeiten verfügbar"
 }
 
+install_build_tools() {
+    print_step "Installiere Build-Tools (gcc, make, git)..."
+    
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        export DEBIAN_FRONTEND=noninteractive
+        if apt-get update -qq && apt-get install -y -qq build-essential git 2>&1 | tail -5; then
+            print_success "Build-Tools installiert"
+        else
+            print_error "Build-Tools Installation fehlgeschlagen"
+            return 1
+        fi
+    elif command -v dnf &> /dev/null; then
+        # Fedora/RHEL 8+
+        if dnf install -y -q gcc gcc-c++ make git 2>&1 | tail -5; then
+            print_success "Build-Tools installiert"
+        else
+            print_error "Build-Tools Installation fehlgeschlagen"
+            return 1
+        fi
+    elif command -v yum &> /dev/null; then
+        # RHEL/CentOS
+        if yum install -y -q gcc gcc-c++ make git 2>&1 | tail -5; then
+            print_success "Build-Tools installiert"
+        else
+            print_error "Build-Tools Installation fehlgeschlagen"
+            return 1
+        fi
+    else
+        print_warning "Konnte Build-Tools nicht automatisch installieren"
+        print_warning "Bitte installiere manuell: gcc, g++, make, git"
+        return 1
+    fi
+    
+    return 0
+}
+
 detect_architecture() {
     print_step "Erkenne System-Architektur..."
     
@@ -240,44 +277,83 @@ create_directories() {
 download_release() {
     print_step "Installiere CSF-Core..."
     
-    # Check for BUILD_FROM_SOURCE environment variable
-    if [ -n "$BUILD_FROM_SOURCE" ] || [ "$VERSION" = "dev" ]; then
-        build_from_source
-        return
-    fi
+    # Detect branch from script URL or use environment variable
+    BRANCH="${BRANCH:-main}"
     
-    # Try to download release first
-    local temp_dir=$(mktemp -d)
-    cd "$temp_dir"
-    
-    # Download latest release or specific version
-    if [ "$VERSION" = "latest" ]; then
-        local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/csf-core-linux-${ARCH}.tar.gz"
+    # For main branch (production): ONLY use releases, never build from source
+    if [ "$BRANCH" = "main" ] && [ -z "$BUILD_FROM_SOURCE" ]; then
+        print_step "Production Installation - verwende nur Pre-Built Releases"
+        
+        local temp_dir=$(mktemp -d)
+        cd "$temp_dir"
+        
+        # Download latest release or specific version
+        if [ "$VERSION" = "latest" ]; then
+            local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/csf-core-linux-${ARCH}.tar.gz"
+        else
+            local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
+        fi
+        
+        print_step "Download Release von: $download_url"
+        
+        if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
+            tar -xzf csf-core.tar.gz
+            
+            # Copy files to installation directory
+            cp -r backend/* "$INSTALL_DIR/backend/"
+            cp -r frontend/* "$INSTALL_DIR/frontend/"
+            
+            chmod +x "$INSTALL_DIR/backend/backend"
+            
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            
+            print_success "Release heruntergeladen und installiert"
+        else
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            
+            print_error "Kein Release gefunden für main Branch"
+            print_error "Bitte warte bis GitHub Actions ein Release gebaut hat"
+            print_error "Oder verwende: BUILD_FROM_SOURCE=1 bash install.sh"
+            exit 1
+        fi
     else
-        local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
-    fi
-    
-    print_step "Versuche Release Download von: $download_url"
-    
-    if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
-        tar -xzf csf-core.tar.gz
+        # For development branches: Try release first, then build from source
+        print_step "Development Installation - versuche Release, baue sonst aus Quellcode"
         
-        # Copy files to installation directory
-        cp -r backend/* "$INSTALL_DIR/backend/"
-        cp -r frontend/* "$INSTALL_DIR/frontend/"
+        local temp_dir=$(mktemp -d)
+        cd "$temp_dir"
         
-        chmod +x "$INSTALL_DIR/backend/backend"
+        # Download latest release or specific version
+        if [ "$VERSION" = "latest" ]; then
+            local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/csf-core-linux-${ARCH}.tar.gz"
+        else
+            local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
+        fi
         
-        cd - > /dev/null
-        rm -rf "$temp_dir"
+        print_step "Versuche Release Download von: $download_url"
         
-        print_success "Release heruntergeladen und installiert"
-    else
-        cd - > /dev/null
-        rm -rf "$temp_dir"
-        
-        print_warning "Kein Release gefunden, baue aus Quellcode..."
-        build_from_source
+        if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
+            tar -xzf csf-core.tar.gz
+            
+            # Copy files to installation directory
+            cp -r backend/* "$INSTALL_DIR/backend/"
+            cp -r frontend/* "$INSTALL_DIR/frontend/"
+            
+            chmod +x "$INSTALL_DIR/backend/backend"
+            
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            
+            print_success "Release heruntergeladen und installiert"
+        else
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            
+            print_warning "Kein Release gefunden, baue aus Quellcode..."
+            build_from_source
+        fi
     fi
 }
 
@@ -302,6 +378,16 @@ install_rust() {
 
 build_from_source() {
     print_step "Baue CSF-Core aus Quellcode..."
+    
+    # Install build tools (gcc, make, git) if missing
+    if ! command -v gcc &> /dev/null || ! command -v make &> /dev/null; then
+        print_warning "Build-Tools fehlen, installiere..."
+        if ! install_build_tools; then
+            print_error "Kann Build-Tools nicht installieren"
+            install_via_docker
+            return
+        fi
+    fi
     
     local temp_dir=$(mktemp -d)
     cd "$temp_dir"
