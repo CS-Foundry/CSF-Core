@@ -122,27 +122,74 @@ install_postgresql() {
     
     if command -v psql &> /dev/null; then
         print_success "PostgreSQL bereits installiert"
+        # Prüfe ob Service läuft
+        if systemctl is-active --quiet postgresql; then
+            print_success "PostgreSQL Service läuft"
+        else
+            print_step "Starte PostgreSQL Service..."
+            systemctl start postgresql
+            systemctl enable postgresql
+        fi
         return
     fi
     
-    print_warning "PostgreSQL nicht gefunden"
-    read -p "PostgreSQL jetzt installieren? (j/N) " -n 1 -r
-    echo
+    print_step "PostgreSQL wird automatisch installiert..."
     
-    if [[ $REPLY =~ ^[Jj]$ ]]; then
-        if command -v apt-get &> /dev/null; then
-            apt-get install -y postgresql postgresql-contrib
-            systemctl enable postgresql
-            systemctl start postgresql
-        elif command -v yum &> /dev/null; then
-            yum install -y postgresql-server postgresql-contrib
-            postgresql-setup --initdb
-            systemctl enable postgresql
-            systemctl start postgresql
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq postgresql postgresql-contrib
+        systemctl enable postgresql
+        systemctl start postgresql
+        
+        # Warte bis PostgreSQL bereit ist
+        sleep 3
+        
+        print_success "PostgreSQL installiert und gestartet"
+    elif command -v yum &> /dev/null; then
+        # RHEL/CentOS/Fedora
+        yum install -y postgresql-server postgresql-contrib
+        
+        # Initialize DB if needed
+        if [ ! -d "/var/lib/pgsql/data/base" ]; then
+            postgresql-setup --initdb || /usr/bin/postgresql-setup initdb
         fi
-        print_success "PostgreSQL installiert"
+        
+        systemctl enable postgresql
+        systemctl start postgresql
+        
+        # Warte bis PostgreSQL bereit ist
+        sleep 3
+        
+        print_success "PostgreSQL installiert und gestartet"
+    elif command -v dnf &> /dev/null; then
+        # Fedora/RHEL 8+
+        dnf install -y postgresql-server postgresql-contrib
+        
+        # Initialize DB if needed
+        if [ ! -d "/var/lib/pgsql/data/base" ]; then
+            postgresql-setup --initdb || /usr/bin/postgresql-setup initdb
+        fi
+        
+        systemctl enable postgresql
+        systemctl start postgresql
+        
+        # Warte bis PostgreSQL bereit ist
+        sleep 3
+        
+        print_success "PostgreSQL installiert und gestartet"
     else
-        print_warning "PostgreSQL wird benötigt. Bitte manuell installieren."
+        print_warning "Paketmanager nicht unterstützt. Verwende SQLite als Fallback."
+        USE_SQLITE=true
+        return
+    fi
+    
+    # Verifiziere Installation
+    if ! systemctl is-active --quiet postgresql; then
+        print_error "PostgreSQL konnte nicht gestartet werden"
+        print_warning "Verwende SQLite als Fallback"
+        USE_SQLITE=true
     fi
 }
 
@@ -231,23 +278,52 @@ install_via_docker() {
 setup_database() {
     print_step "Konfiguriere Datenbank..."
     
+    # Check if we should use SQLite (set by install_postgresql if it failed)
+    if [ "$USE_SQLITE" = "true" ]; then
+        print_step "Verwende SQLite als Datenbank..."
+        DATABASE_URL="sqlite:$DATA_DIR/csf-core.db"
+        print_success "SQLite Datenbank konfiguriert: $DATA_DIR/csf-core.db"
+        return
+    fi
+    
     # Generate random password
     local db_password=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
     
-    # Try to create database and user
-    if command -v psql &> /dev/null; then
-        sudo -u postgres psql <<EOF
+    # Try to create database and user with PostgreSQL
+    if command -v psql &> /dev/null && systemctl is-active --quiet postgresql; then
+        print_step "Erstelle PostgreSQL Datenbank und Benutzer..."
+        
+        # Drop existing database/user if exists (for re-installation)
+        sudo -u postgres psql -c "DROP DATABASE IF EXISTS csf_core;" 2>/dev/null || true
+        sudo -u postgres psql -c "DROP USER IF EXISTS csf_core;" 2>/dev/null || true
+        
+        # Create new database and user
+        if sudo -u postgres psql <<EOF
 CREATE USER csf_core WITH PASSWORD '$db_password';
 CREATE DATABASE csf_core OWNER csf_core;
 GRANT ALL PRIVILEGES ON DATABASE csf_core TO csf_core;
 EOF
-        
-        print_success "Datenbank 'csf_core' erstellt"
-        DATABASE_URL="postgres://csf_core:$db_password@localhost/csf_core"
+        then
+            print_success "PostgreSQL Datenbank 'csf_core' erstellt"
+            DATABASE_URL="postgres://csf_core:$db_password@localhost/csf_core"
+            
+            # Test connection
+            if PGPASSWORD="$db_password" psql -U csf_core -d csf_core -h localhost -c "SELECT 1;" &>/dev/null; then
+                print_success "Datenbankverbindung erfolgreich getestet"
+            else
+                print_warning "Datenbankverbindung konnte nicht getestet werden, aber Datenbank wurde erstellt"
+            fi
+        else
+            print_error "PostgreSQL Datenbank konnte nicht erstellt werden"
+            print_warning "Verwende SQLite als Fallback"
+            DATABASE_URL="sqlite:$DATA_DIR/csf-core.db"
+        fi
     else
         print_warning "PostgreSQL nicht verfügbar, verwende SQLite"
         DATABASE_URL="sqlite:$DATA_DIR/csf-core.db"
     fi
+    
+    print_success "Datenbank konfiguriert"
 }
 
 generate_jwt_secret() {
@@ -387,6 +463,18 @@ print_next_steps() {
     echo -e "${BLUE}║         Installation erfolgreich abgeschlossen!       ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
+    
+    # Show database info
+    echo -e "${GREEN}Installierte Komponenten:${NC}"
+    echo "  • Backend: Rust/Axum"
+    echo "  • Frontend: SvelteKit/Node.js $(node -v)"
+    if [[ $DATABASE_URL == postgres* ]]; then
+        echo "  • Datenbank: PostgreSQL"
+    else
+        echo "  • Datenbank: SQLite"
+    fi
+    echo ""
+    
     echo -e "${GREEN}Nächste Schritte:${NC}"
     echo ""
     echo "1. Service aktivieren (Auto-Start beim Boot):"

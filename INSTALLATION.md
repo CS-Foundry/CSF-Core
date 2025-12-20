@@ -29,11 +29,19 @@ curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/v1.2.3/scripts/i
 
 Das Script:
 
-- ✅ Installiert alle Abhängigkeiten
-- ✅ Erstellt PostgreSQL-Datenbank
+- ✅ Installiert alle Abhängigkeiten (Node.js 20, PostgreSQL)
+- ✅ Erstellt PostgreSQL-Datenbank automatisch
 - ✅ Richtet systemd Service ein
 - ✅ Konfiguriert Backend + Frontend
-- ✅ Generiert sichere Secrets
+- ✅ Generiert sichere Secrets (JWT, DB-Passwort)
+- ✅ SQLite Fallback wenn PostgreSQL fehlschlägt
+
+**Was wird automatisch installiert:**
+
+- Node.js 20 LTS (wenn nicht vorhanden)
+- PostgreSQL (automatisch, keine Benutzerinteraktion nötig)
+- Systemd Service (Backend + Frontend)
+- Datenbank wird automatisch initialisiert
 
 ### Option 2: Docker Installation
 
