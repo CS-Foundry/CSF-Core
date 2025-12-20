@@ -281,6 +281,23 @@ download_release() {
     fi
 }
 
+install_rust() {
+    print_step "Installiere Rust/Cargo..."
+    
+    # Install rustup (official Rust installer)
+    if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable 2>&1 | grep -v "info:"; then
+        # Source cargo env
+        export PATH="$HOME/.cargo/bin:$PATH"
+        source "$HOME/.cargo/env" 2>/dev/null || true
+        
+        print_success "Rust/Cargo installiert"
+        return 0
+    else
+        print_error "Rust Installation fehlgeschlagen"
+        return 1
+    fi
+}
+
 build_from_source() {
     print_step "Baue CSF-Core aus Quellcode..."
     
@@ -301,30 +318,33 @@ build_from_source() {
     
     cd csf-core
     
-    # Build Backend
-    print_step "Baue Backend (kann mehrere Minuten dauern)..."
-    if command -v cargo &> /dev/null; then
-        cd backend
-        if cargo build --release 2>&1 | grep -v "Compiling" | grep -v "Finished"; then
-            mkdir -p "$INSTALL_DIR/backend"
-            cp target/release/backend "$INSTALL_DIR/backend/"
-            chmod +x "$INSTALL_DIR/backend/backend"
-            print_success "Backend gebaut"
-        else
-            print_error "Backend build fehlgeschlagen"
+    # Check for Cargo, install if missing
+    if ! command -v cargo &> /dev/null; then
+        print_warning "Rust/Cargo nicht gefunden, installiere..."
+        if ! install_rust; then
             cd "$temp_dir"
             rm -rf "$temp_dir"
             install_via_docker
             return
         fi
-        cd ..
+    fi
+    
+    # Build Backend
+    print_step "Baue Backend (kann mehrere Minuten dauern)..."
+    cd backend
+    if cargo build --release 2>&1 | grep -v "Compiling" | grep -v "Finished"; then
+        mkdir -p "$INSTALL_DIR/backend"
+        cp target/release/backend "$INSTALL_DIR/backend/"
+        chmod +x "$INSTALL_DIR/backend/backend"
+        print_success "Backend gebaut"
     else
-        print_error "Rust/Cargo nicht gefunden, kann nicht bauen"
-        cd - > /dev/null
+        print_error "Backend build fehlgeschlagen"
+        cd "$temp_dir"
         rm -rf "$temp_dir"
         install_via_docker
         return
     fi
+    cd ..
     
     # Build Frontend
     print_step "Baue Frontend (kann mehrere Minuten dauern)..."
