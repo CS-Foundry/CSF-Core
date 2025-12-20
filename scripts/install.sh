@@ -365,6 +365,9 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
 
+# Load environment from config file (if exists)
+EnvironmentFile=-${INSTALL_DIR}/config.env
+
 # Environment variables
 Environment="DATABASE_URL=${DATABASE_URL}"
 Environment="JWT_SECRET=${JWT_SECRET}"
@@ -383,9 +386,8 @@ ReadWritePaths=${INSTALL_DIR}
 ReadWritePaths=${DATA_DIR}
 ReadWritePaths=${LOG_DIR}
 
-# Start script
-ExecStartPre=/bin/bash -c 'cd ${INSTALL_DIR}/frontend && node build/index.js &'
-ExecStart=${INSTALL_DIR}/backend/backend
+# Use startup script
+ExecStart=${INSTALL_DIR}/start.sh
 
 # Process management
 Restart=on-failure
@@ -393,6 +395,7 @@ RestartSec=10
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
+TimeoutStartSec=60
 
 # Resource limits
 LimitNOFILE=65536
@@ -414,35 +417,63 @@ EOF
 create_startup_script() {
     print_step "Erstelle Startup-Script..."
     
-    cat > ${INSTALL_DIR}/start.sh <<'EOF'
+    # Ensure directory exists
+    mkdir -p ${INSTALL_DIR}
+    
+    cat > ${INSTALL_DIR}/start.sh <<'EOFSCRIPT'
 #!/bin/bash
 # CSF-Core Unified Startup Script
 
-# Start Frontend in background
-cd /opt/csf-core/frontend
-PORT=3000 node build/index.js > /var/log/csf-core/frontend.log 2>&1 &
-FRONTEND_PID=$!
+set -e
 
-# Wait for frontend to be ready
-echo "Waiting for frontend to start..."
-for i in {1..30}; do
-    if curl -s http://localhost:3000 > /dev/null; then
-        echo "Frontend ready!"
-        break
-    fi
-    sleep 1
-done
+SCRIPT_DIR="/opt/csf-core"
+FRONTEND_DIR="${SCRIPT_DIR}/frontend"
+BACKEND_BIN="${SCRIPT_DIR}/backend/backend"
+LOG_DIR="/var/log/csf-core"
 
-# Start Backend (with frontend proxy)
-cd /opt/csf-core
-exec ./backend/backend
-EOF
+# Erstelle Log-Verzeichnis falls nicht vorhanden
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+
+echo "🚀 Starting CSF-Core..."
+
+# Start Frontend in background if it exists
+if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
+    echo "▶️  Starting Frontend (Port ${PORT:-3000})..."
+    cd "$FRONTEND_DIR"
+    PORT=${PORT:-3000} node build/index.js > "$LOG_DIR/frontend.log" 2>&1 &
+    FRONTEND_PID=$!
+    echo "   Frontend PID: $FRONTEND_PID"
+    
+    # Wait for frontend to be ready
+    echo "⏳ Waiting for frontend to start..."
+    for i in {1..30}; do
+        if curl -s http://localhost:${PORT:-3000} > /dev/null 2>&1; then
+            echo "✅ Frontend ready!"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo "⚠️  Frontend did not start in time, continuing anyway..."
+        fi
+        sleep 1
+    done
+else
+    echo "⚠️  Frontend directory not found, skipping..."
+fi
+
+# Start Backend
+echo "▶️  Starting Backend (Port 8000)..."
+cd "$SCRIPT_DIR"
+
+if [ -f "$BACKEND_BIN" ]; then
+    exec "$BACKEND_BIN"
+else
+    echo "❌ Backend binary not found: $BACKEND_BIN"
+    exit 1
+fi
+EOFSCRIPT
 
     chmod +x ${INSTALL_DIR}/start.sh
     chown ${SERVICE_USER}:${SERVICE_USER} ${INSTALL_DIR}/start.sh
-    
-    # Update service to use startup script
-    sed -i "s|ExecStart=.*|ExecStart=${INSTALL_DIR}/start.sh|" /etc/systemd/system/${SERVICE_NAME}.service
     
     print_success "Startup-Script erstellt"
 }
@@ -566,13 +597,6 @@ main() {
     create_config_file || { print_error "Config file creation failed"; exit 1; }
     
     echo -e "${BLUE}[DEBUG] Installation complete!${NC}"
-    print_next_steps
-}
-    generate_jwt_secret
-    install_systemd_service
-    create_startup_script
-    reload_systemd
-    create_config_file
     print_next_steps
 }
 
