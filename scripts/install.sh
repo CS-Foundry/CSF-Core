@@ -520,6 +520,13 @@ EOF
         cp -r build "$INSTALL_DIR/frontend/"
         cp -r node_modules "$INSTALL_DIR/frontend/"
         cp package.json "$INSTALL_DIR/frontend/"
+        
+        # Copy .env file if it exists
+        if [ -f ".env" ]; then
+            cp .env "$INSTALL_DIR/frontend/"
+            print_success ".env Datei kopiert"
+        fi
+        
         print_success "Frontend gebaut"
     else
         print_error "Frontend build Verzeichnis nicht gefunden"
