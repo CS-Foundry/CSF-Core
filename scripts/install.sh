@@ -26,6 +26,10 @@ VERSION="${VERSION:-latest}"
 # Beispiel: PUBLIC_API_BASE_URL=http://localhost:8000/api bash install.sh
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-/api}"
 
+# Optional: Pfad zu einer existierenden .env Datei für Frontend
+# Beispiel: FRONTEND_ENV_FILE=/path/to/.env bash install.sh
+FRONTEND_ENV_FILE="${FRONTEND_ENV_FILE:-}"
+
 print_header() {
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║         CSF-Core Installation Script                  ║${NC}"
@@ -465,12 +469,26 @@ build_from_source() {
     
     print_step "Node.js $(node -v) gefunden"
     
-    # Create .env file for build (required by SvelteKit)
-    print_step "Erstelle Frontend .env Datei..."
-    cat > .env << EOF
+    # Create or copy .env file for build (required by SvelteKit)
+    if [ -n "$FRONTEND_ENV_FILE" ]; then
+        if [ -f "$FRONTEND_ENV_FILE" ]; then
+            print_step "Kopiere Frontend .env Datei von: $FRONTEND_ENV_FILE"
+            cp "$FRONTEND_ENV_FILE" .env
+            print_success ".env kopiert von $FRONTEND_ENV_FILE"
+        else
+            print_error ".env Datei nicht gefunden: $FRONTEND_ENV_FILE"
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            install_via_docker
+            return
+        fi
+    else
+        print_step "Erstelle Frontend .env Datei..."
+        cat > .env << EOF
 PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}
 EOF
-    print_success ".env erstellt mit PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}"
+        print_success ".env erstellt mit PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}"
+    fi
     
     # Clean install with retries
     print_step "Installiere Frontend Dependencies..."
@@ -762,6 +780,29 @@ EOF
     print_success "Konfiguration gespeichert in: ${INSTALL_DIR}/config.env"
 }
 
+open_firewall_ports() {
+    print_step "Öffne Firewall-Ports für externen Zugriff..."
+    
+    # Port 8000 für Backend/Frontend
+    if command -v ufw &> /dev/null; then
+        print_step "Verwende ufw (Ubuntu/Debian)..."
+        ufw allow 8000/tcp 2>/dev/null || true
+        ufw reload 2>/dev/null || true
+        print_success "Port 8000 in ufw geöffnet"
+    elif command -v firewall-cmd &> /dev/null; then
+        print_step "Verwende firewalld (RHEL/CentOS)..."
+        firewall-cmd --permanent --add-port=8000/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
+        print_success "Port 8000 in firewalld geöffnet"
+    else
+        print_warning "Keine Firewall (ufw/firewalld) gefunden"
+        print_warning "Falls iptables verwendet wird:"
+        print_warning "  sudo iptables -A INPUT -p tcp --dport 8000 -j ACCEPT"
+    fi
+    
+    return 0
+}
+
 print_next_steps() {
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
@@ -799,7 +840,18 @@ print_next_steps() {
     echo -e "   ${YELLOW}sudo systemctl restart ${SERVICE_NAME}${NC}"
     echo ""
     echo -e "${GREEN}Zugriff:${NC}"
-    echo "  • Web Interface: http://localhost:8000"
+    echo "  • Lokal: http://localhost:8000"
+    
+    # Externe IP ermitteln
+    local external_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -n "$external_ip" ]; then
+        echo "  • Extern: http://$external_ip:8000"
+        echo ""
+        echo "  ${YELLOW}Wichtig:${NC} Port 8000 muss in der Firewall geöffnet sein!"
+        echo "  Falls nicht erreichbar, prüfe: sudo ufw status"
+    fi
+    
+    echo ""
     echo "  • API Docs: http://localhost:8000/swagger-ui"
     echo "  • API: http://localhost:8000/api"
     echo ""
@@ -850,6 +902,9 @@ main() {
     
     echo -e "${BLUE}[DEBUG] Creating config file...${NC}"
     create_config_file || { print_error "Config file creation failed"; exit 1; }
+    
+    echo -e "${BLUE}[DEBUG] Opening firewall ports...${NC}"
+    open_firewall_ports || { print_warning "Firewall configuration had issues, continuing..."; }
     
     echo -e "${BLUE}[DEBUG] Installation complete!${NC}"
     print_next_steps
