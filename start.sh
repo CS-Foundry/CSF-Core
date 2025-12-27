@@ -22,23 +22,9 @@ echo ""
 if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
     echo "▶️  Starting Frontend (Port ${PORT:-3000})..."
     cd "$FRONTEND_DIR"
-    
-    # Load config.env for environment variables
-    if [ -f "$SCRIPT_DIR/config.env" ]; then
-        set -a
-        source "$SCRIPT_DIR/config.env"
-        set +a
-    fi
-    
-    # Set PUBLIC_API_BASE_URL for runtime (Frontend erreichbar über Backend Port 8000)
-    export PUBLIC_API_BASE_URL="/api"
-    export ORIGIN="${ORIGIN:-http://localhost:8000}"
-    
     PORT=${PORT:-3000} node build/index.js > "$LOG_DIR/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     echo "   Frontend PID: $FRONTEND_PID"
-    echo "   PUBLIC_API_BASE_URL: $PUBLIC_API_BASE_URL"
-    echo "   Frontend läuft intern auf Port ${PORT:-3000}, extern über Backend auf Port 8000"
     
     # Wait for frontend to be ready
     echo "⏳ Waiting for frontend to start..."

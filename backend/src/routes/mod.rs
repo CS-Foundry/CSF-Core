@@ -22,22 +22,11 @@ pub fn create_router() -> Router<AppState> {
     let frontend_url =
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
-    // Get allowed origins from ORIGIN env var (comma-separated)
-    let allowed_origins = std::env::var("ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:8000".to_string());
-
     tracing::info!("CORS configured for frontend URL: {}", frontend_url);
-    tracing::info!("CORS allowed origins: {}", allowed_origins);
 
-    // Parse allowed origins
-    let origins: Vec<HeaderValue> = allowed_origins
-        .split(',')
-        .filter_map(|origin| origin.trim().parse::<HeaderValue>().ok())
-        .collect();
-
-    // Create CORS layer with multiple allowed origins
+    // a permissive CORS layer is used for development
     let cors = CorsLayer::new()
-        .allow_origin(origins)
+        .allow_origin(frontend_url.parse::<HeaderValue>().unwrap())
         .allow_methods(vec![
             Method::GET,
             Method::POST,

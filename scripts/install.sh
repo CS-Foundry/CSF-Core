@@ -520,13 +520,6 @@ EOF
         cp -r build "$INSTALL_DIR/frontend/"
         cp -r node_modules "$INSTALL_DIR/frontend/"
         cp package.json "$INSTALL_DIR/frontend/"
-        
-        # Copy .env file if it exists
-        if [ -f ".env" ]; then
-            cp .env "$INSTALL_DIR/frontend/"
-            print_success ".env Datei kopiert"
-        fi
-        
         print_success "Frontend gebaut"
     else
         print_error "Frontend build Verzeichnis nicht gefunden"
@@ -768,16 +761,6 @@ reload_systemd() {
 create_config_file() {
     print_step "Erstelle Konfigurationsdatei..."
     
-    # Auto-detect externe IP für ORIGIN falls nicht gesetzt
-    if [ -z "$ORIGIN" ]; then
-        local external_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-        if [ -n "$external_ip" ]; then
-            ORIGIN="http://${external_ip}:8000,http://localhost:8000"
-        else
-            ORIGIN="http://localhost:8000"
-        fi
-    fi
-    
     cat > ${INSTALL_DIR}/config.env <<EOF
 # CSF-Core Configuration
 DATABASE_URL=${DATABASE_URL}
@@ -788,10 +771,6 @@ NODE_ENV=production
 # Frontend läuft auf Port 3000 (intern)
 PORT=3000
 FRONTEND_URL=${FRONTEND_URL}
-
-# CORS Origins - erlaubte URLs für API-Zugriff
-# Mehrere Origins mit Komma trennen
-ORIGIN=${ORIGIN}
 
 # Backend Port (extern erreichbar)
 BACKEND_PORT=8000
