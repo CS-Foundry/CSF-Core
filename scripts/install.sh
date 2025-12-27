@@ -448,18 +448,35 @@ build_from_source() {
     print_step "Baue Frontend (kann mehrere Minuten dauern)..."
     cd frontend
     
-    # Install dependencies
-    if ! npm ci 2>&1 | tail -10; then
-        print_error "npm ci fehlgeschlagen"
+    # Check Node.js version
+    local node_version=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [ "$node_version" -lt 20 ]; then
+        print_error "Node.js Version zu alt: $(node -v). Benötigt: >= 20"
         cd - > /dev/null
         rm -rf "$temp_dir"
         install_via_docker
         return
     fi
     
-    # Build frontend
-    if ! npm run build 2>&1 | tail -10; then
+    print_step "Node.js $(node -v) gefunden"
+    
+    # Clean install with retries
+    print_step "Installiere Frontend Dependencies..."
+    rm -rf node_modules package-lock.json 2>/dev/null || true
+    
+    if ! npm install --legacy-peer-deps 2>&1 | tail -15; then
+        print_error "npm install fehlgeschlagen"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        install_via_docker
+        return
+    fi
+    
+    # Build frontend - show more output for debugging
+    print_step "Baue Frontend (npm run build)..."
+    if ! npm run build 2>&1 | tail -30; then
         print_error "Frontend build fehlgeschlagen"
+        print_error "Siehe Fehler oben für Details"
         cd - > /dev/null
         rm -rf "$temp_dir"
         install_via_docker
