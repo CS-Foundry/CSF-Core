@@ -21,13 +21,22 @@ LOG_DIR="/var/log/csf-core"
 GITHUB_REPO="CS-Foundry/CSF-Core"
 VERSION="${VERSION:-latest}"
 
-# Frontend API URL - kann überschrieben werden
+# Environment-Variablen für URLs
 # Standard: /api (relative path für Production)
-# Beispiel: PUBLIC_API_BASE_URL=http://localhost:8000/api bash install.sh
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-/api}"
 
-# Optional: Pfad zu einer existierenden .env Datei für Frontend
-# Beispiel: FRONTEND_ENV_FILE=/path/to/.env bash install.sh
+# FRONTEND_URL für Backend (wohin Backend das Frontend proxied)
+# Standard: http://localhost:3000
+FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+
+# ORIGIN für CORS (erlaubte Origins)
+# Standard: wird automatisch gesetzt basierend auf externer IP
+ORIGIN="${ORIGIN:-}"
+
+# Optional: Pfad zu einer existierenden .env Datei
+# Diese wird dann für Frontend-Build verwendet
+# Beispiel: ENV_FILE=/path/to/.env bash install.sh
+ENV_FILE="${ENV_FILE:-}"
 FRONTEND_ENV_FILE="${FRONTEND_ENV_FILE:-}"
 
 print_header() {
@@ -470,18 +479,10 @@ build_from_source() {
     print_step "Node.js $(node -v) gefunden"
     
     # Create or copy .env file for build (required by SvelteKit)
-    if [ -n "$FRONTEND_ENV_FILE" ]; then
-        if [ -f "$FRONTEND_ENV_FILE" ]; then
-            print_step "Kopiere Frontend .env Datei von: $FRONTEND_ENV_FILE"
-            cp "$FRONTEND_ENV_FILE" .env
-            print_success ".env kopiert von $FRONTEND_ENV_FILE"
-        else
-            print_error ".env Datei nicht gefunden: $FRONTEND_ENV_FILE"
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            install_via_docker
-            return
-        fi
+    if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
+        print_step "Kopiere .env Datei von: $ENV_FILE"
+        cp "$ENV_FILE" .env
+        print_success ".env kopiert von $ENV_FILE"
     else
         print_step "Erstelle Frontend .env Datei..."
         cat > .env << EOF
@@ -760,15 +761,33 @@ reload_systemd() {
 create_config_file() {
     print_step "Erstelle Konfigurationsdatei..."
     
+    # Auto-detect externe IP für ORIGIN falls nicht gesetzt
+    if [ -z "$ORIGIN" ]; then
+        local external_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        if [ -n "$external_ip" ]; then
+            ORIGIN="http://${external_ip}:8000,http://localhost:8000"
+        else
+            ORIGIN="http://localhost:8000"
+        fi
+    fi
+    
     cat > ${INSTALL_DIR}/config.env <<EOF
 # CSF-Core Configuration
 DATABASE_URL=${DATABASE_URL}
 JWT_SECRET=${JWT_SECRET}
 RUST_LOG=info
 NODE_ENV=production
+
+# Frontend läuft auf Port 3000 (intern)
 PORT=3000
-FRONTEND_URL=http://localhost:3000
-ORIGIN=http://localhost:8000
+FRONTEND_URL=${FRONTEND_URL}
+
+# CORS Origins - erlaubte URLs für API-Zugriff
+# Mehrere Origins mit Komma trennen
+ORIGIN=${ORIGIN}
+
+# Backend Port (extern erreichbar)
+BACKEND_PORT=8000
 
 # You can edit these values and restart the service:
 # sudo systemctl restart csf-core
