@@ -11,6 +11,7 @@ mod init;
 mod routes;
 mod utils;
 mod rbac_service;
+mod system_collector;
 
 
 

@@ -47,9 +47,9 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🚀 New Version Available!" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ghcr.io/codemaster4711/financevault:${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/cs-foundry/csf-core:${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
             echo "# or" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ghcr.io/codemaster4711/financevault:latest" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/cs-foundry/csf-core:latest" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ **No Release Created**" >> $GITHUB_STEP_SUMMARY

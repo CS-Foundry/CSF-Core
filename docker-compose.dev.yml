@@ -15,7 +15,7 @@ services:
     environment:
       - NODE_ENV=development
       - JWT_SECRET=${JWT_SECRET}
-    command: sh -c "npm ci && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
+    command: sh -c "npm install && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
 
   postgres:
     image: postgres:16-alpine
