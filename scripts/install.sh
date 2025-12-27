@@ -460,6 +460,13 @@ build_from_source() {
     
     print_step "Node.js $(node -v) gefunden"
     
+    # Create .env file for build (required by SvelteKit)
+    print_step "Erstelle Frontend .env Datei..."
+    cat > .env << EOF
+PUBLIC_API_BASE_URL=/api
+EOF
+    print_success ".env erstellt"
+    
     # Clean install with retries
     print_step "Installiere Frontend Dependencies..."
     rm -rf node_modules package-lock.json 2>/dev/null || true
