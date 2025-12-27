@@ -23,12 +23,22 @@ curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/ins
 # Von Development Branch - baut aus Quellcode (installiert gcc, Rust automatisch)
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo BRANCH=feat/docker-managment bash
 
+# Mit custom API URL (z.B. für externes Backend)
+curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/feat/docker-managment/scripts/install.sh | sudo BRANCH=feat/docker-managment PUBLIC_API_BASE_URL=http://your-backend.com/api bash
+
 # Von einem bestimmten Tag/Release
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/v1.2.3/scripts/install.sh | sudo bash
 
 # Explizit aus Quellcode bauen (auch für main Branch)
 curl -sSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo BUILD_FROM_SOURCE=1 bash
 ```
+
+**Environment-Variablen:**
+
+- `BRANCH` - Git Branch zum Klonen (Standard: main bzw. feat/docker-managment)
+- `PUBLIC_API_BASE_URL` - Frontend API URL (Standard: `/api` für relative Pfade)
+- `BUILD_FROM_SOURCE` - Erzwingt Build aus Quellcode (Standard: nur für Development)
+- `VERSION` - Spezifische Version/Tag (Standard: `latest`)
 
 Das Script:
 

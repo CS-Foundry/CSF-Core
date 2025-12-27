@@ -21,6 +21,11 @@ LOG_DIR="/var/log/csf-core"
 GITHUB_REPO="CS-Foundry/CSF-Core"
 VERSION="${VERSION:-latest}"
 
+# Frontend API URL - kann überschrieben werden
+# Standard: /api (relative path für Production)
+# Beispiel: PUBLIC_API_BASE_URL=http://localhost:8000/api bash install.sh
+PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-/api}"
+
 print_header() {
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║         CSF-Core Installation Script                  ║${NC}"
@@ -463,9 +468,9 @@ build_from_source() {
     # Create .env file for build (required by SvelteKit)
     print_step "Erstelle Frontend .env Datei..."
     cat > .env << EOF
-PUBLIC_API_BASE_URL=/api
+PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}
 EOF
-    print_success ".env erstellt"
+    print_success ".env erstellt mit PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}"
     
     # Clean install with retries
     print_step "Installiere Frontend Dependencies..."
