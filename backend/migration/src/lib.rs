@@ -8,6 +8,7 @@ mod m20251030_192944_expenses;
 mod m20251101_200000_subscriptions;
 mod m20251215_175420_add_user_2fa_fields;
 mod m20251215_180000_add_rbac_tables;
+mod m20251228_000000_add_agents_and_metrics;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251101_200000_subscriptions::Migration),
             Box::new(m20251215_175420_add_user_2fa_fields::Migration),
             Box::new(m20251215_180000_add_rbac_tables::Migration),
+            Box::new(m20251228_000000_add_agents_and_metrics::Migration),
         ]
     }
 }

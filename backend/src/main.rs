@@ -11,6 +11,7 @@ mod init;
 mod routes;
 mod utils;
 mod rbac_service;
+mod self_monitor;
 
 
 
@@ -105,7 +106,13 @@ async fn main() {
     }
 
     // Create application state
-    let state = AppState { db_conn };
+    let state = AppState {
+        db_conn: db_conn.clone(),
+    };
+
+    // Start self-monitoring service
+    tracing::info!("🔄 Starting self-monitoring service...");
+    self_monitor::start_self_monitoring(std::sync::Arc::new(db_conn)).await;
 
     // build our application with a route
     let app = routes::create_router()
