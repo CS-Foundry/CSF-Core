@@ -11,6 +11,8 @@ export interface Resource {
   created_at: string;
   updated_at: string;
   tags?: Record<string, string>;
+  container_id?: string;
+  stack_name?: string;
 }
 
 export interface CreateResourceRequest {

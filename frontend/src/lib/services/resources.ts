@@ -53,3 +53,8 @@ export async function deleteResource(id: string): Promise<void> {
     await handleResponse(response);
   }
 }
+
+export async function performResourceAction(id: string, action: 'start' | 'stop' | 'restart'): Promise<Resource> {
+  const response = await ApiClient.post(`/resources/${id}/action`, { action });
+  return handleResponse<Resource>(response);
+}

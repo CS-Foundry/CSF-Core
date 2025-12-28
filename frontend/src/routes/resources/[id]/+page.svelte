@@ -6,12 +6,15 @@
     getResource,
     updateResource,
     deleteResource,
+    performResourceAction,
   } from "$lib/services/resources";
   import type { Resource } from "$lib/types/resource";
   import { Button } from "$lib/components/ui/button";
   import * as Card from "$lib/components/ui/card";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Badge } from "$lib/components/ui/badge";
+  import { Input } from "$lib/components/ui/input";
+  import { Label } from "$lib/components/ui/label";
   import {
     ArrowLeft,
     Server,
@@ -21,12 +24,23 @@
     RefreshCw,
     Trash2,
     Edit,
+    Save,
+    X,
   } from "@lucide/svelte";
 
   let resource: Resource | null = null;
   let loading = true;
   let error = "";
   let showDeleteDialog = false;
+  let showEditDialog = false;
+  let actionInProgress = false;
+
+  // Edit form state
+  let editName = "";
+  let editDescription = "";
+  let editImage = "";
+  let editPorts = "";
+  let editEnvironment = "";
 
   $: resourceId = $page.params.id;
 
@@ -35,6 +49,8 @@
   });
 
   async function loadResource() {
+    if (!resourceId) return;
+
     try {
       loading = true;
       error = "";
@@ -43,6 +59,76 @@
       error = e.message || "Failed to load resource";
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleAction(action: "start" | "stop" | "restart") {
+    if (!resource) return;
+
+    try {
+      actionInProgress = true;
+      error = "";
+      resource = await performResourceAction(resource.id, action);
+    } catch (e: any) {
+      error = e.message || `Failed to ${action} resource`;
+    } finally {
+      actionInProgress = false;
+    }
+  }
+
+  function openEditDialog() {
+    if (!resource) return;
+
+    editName = resource.name;
+    editDescription = resource.description || "";
+
+    if (
+      resource.resource_type === "docker-container" &&
+      resource.configuration
+    ) {
+      editImage = resource.configuration.image || "";
+      editPorts = JSON.stringify(resource.configuration.ports || [], null, 2);
+      editEnvironment = JSON.stringify(
+        resource.configuration.environment || {},
+        null,
+        2
+      );
+    }
+
+    showEditDialog = true;
+  }
+
+  async function handleSaveEdit() {
+    if (!resource) return;
+
+    try {
+      error = "";
+      let configuration = resource.configuration;
+
+      // Update configuration for docker containers
+      if (resource.resource_type === "docker-container") {
+        try {
+          configuration = {
+            ...configuration,
+            image: editImage,
+            ports: editPorts ? JSON.parse(editPorts) : [],
+            environment: editEnvironment ? JSON.parse(editEnvironment) : {},
+          };
+        } catch (e) {
+          error = "Ungültiges JSON-Format in Ports oder Environment";
+          return;
+        }
+      }
+
+      resource = await updateResource(resource.id, {
+        name: editName,
+        description: editDescription || undefined,
+        configuration,
+      });
+
+      showEditDialog = false;
+    } catch (e: any) {
+      error = e.message || "Failed to update resource";
     }
   }
 
@@ -123,7 +209,39 @@
             </div>
             <div class="flex gap-2">
               <Button
+                variant="outline"
+                size="sm"
+                onclick={() => handleAction("start")}
+                disabled={actionInProgress || resource.status === "running"}
+              >
+                <Play class="h-4 w-4 mr-2" />
+                Starten
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onclick={() => handleAction("stop")}
+                disabled={actionInProgress || resource.status === "stopped"}
+              >
+                <Square class="h-4 w-4 mr-2" />
+                Stoppen
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onclick={() => handleAction("restart")}
+                disabled={actionInProgress}
+              >
+                <RefreshCw class="h-4 w-4 mr-2" />
+                Neustarten
+              </Button>
+              <Button variant="outline" size="sm" onclick={openEditDialog}>
+                <Edit class="h-4 w-4 mr-2" />
+                Bearbeiten
+              </Button>
+              <Button
                 variant="destructive"
+                size="sm"
                 onclick={() => (showDeleteDialog = true)}
               >
                 <Trash2 class="h-4 w-4 mr-2" />
@@ -356,6 +474,90 @@
         Abbrechen
       </Button>
       <Button variant="destructive" onclick={handleDelete}>Löschen</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- Edit Resource Dialog -->
+<Dialog.Root bind:open={showEditDialog}>
+  <Dialog.Content class="max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog.Header>
+      <Dialog.Title>Ressource bearbeiten</Dialog.Title>
+      <Dialog.Description>
+        Ändern Sie die Konfiguration der Ressource "{resource?.name}".
+      </Dialog.Description>
+    </Dialog.Header>
+
+    <div class="space-y-4 py-4">
+      <div class="space-y-2">
+        <Label for="edit-name">Name</Label>
+        <Input
+          id="edit-name"
+          bind:value={editName}
+          placeholder="Ressource Name"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label for="edit-description">Beschreibung</Label>
+        <textarea
+          id="edit-description"
+          bind:value={editDescription}
+          placeholder="Optional: Beschreibung der Ressource"
+          rows={3}
+          class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        ></textarea>
+      </div>
+
+      {#if resource?.resource_type === "docker-container"}
+        <div class="space-y-2">
+          <Label for="edit-image">Docker Image</Label>
+          <Input
+            id="edit-image"
+            bind:value={editImage}
+            placeholder="z.B. nginx:latest"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <Label for="edit-ports">Ports (JSON)</Label>
+          <textarea
+            id="edit-ports"
+            bind:value={editPorts}
+            placeholder={'[{"container": 80, "host": 8080}]'}
+            rows={4}
+            class="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          ></textarea>
+          <p class="text-xs text-gray-500">
+            Format: [{"{"}container: 80, host: 8080{"}"}]
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <Label for="edit-environment">Environment Variables (JSON)</Label>
+          <textarea
+            id="edit-environment"
+            bind:value={editEnvironment}
+            placeholder={'{"KEY": "value"}'}
+            rows={6}
+            class="flex min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          ></textarea>
+          <p class="text-xs text-gray-500">
+            Format: {"{"}KEY: "value"{"}"}
+          </p>
+        </div>
+      {/if}
+    </div>
+
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (showEditDialog = false)}>
+        <X class="h-4 w-4 mr-2" />
+        Abbrechen
+      </Button>
+      <Button onclick={handleSaveEdit}>
+        <Save class="h-4 w-4 mr-2" />
+        Speichern
+      </Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

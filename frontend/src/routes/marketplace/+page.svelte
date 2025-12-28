@@ -126,10 +126,16 @@
   }
 
   $: filteredTemplates = templates.filter((template) => {
+    // Filter nur Docker Container und Docker Stacks
+    const isDockerResource =
+      template.resource_type === "docker-container" ||
+      template.resource_type === "docker-stack";
+
     const matchesSearch =
       template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       template.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
+
+    return isDockerResource && matchesSearch;
   });
 </script>
 
