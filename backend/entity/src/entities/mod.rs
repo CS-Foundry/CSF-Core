@@ -12,6 +12,8 @@ pub mod subscription;
 pub mod user;
 pub mod user_organization;
 
+pub use agent_metrics::Entity as AgentMetrics;
+pub use agents::Entity as Agents;
 pub use config::Entity as Config;
 pub use expenses::Entity as Expenses;
 pub use invalid_jwt::Entity as InvalidJwt;

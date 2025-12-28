@@ -2,6 +2,36 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.2.0](https://github.com/CS-Foundry/CSF-Core/compare/v0.1.0...v0.2.0) (2025-12-27)
+
+
+### Bug Fixes
+
+* add ENV_FILE support and auto-detect ORIGIN for CORS, improve config.env ([7767d84](https://github.com/CS-Foundry/CSF-Core/commit/7767d84d336d009f1c96dda578e198a6ce46c81a))
+* backend as deamon service ([ca14d20](https://github.com/CS-Foundry/CSF-Core/commit/ca14d207a6254e2381b9ba7c8824aeb25dd4e5a9))
+* create .env file for frontend build with PUBLIC_API_BASE_URL ([d6050ed](https://github.com/CS-Foundry/CSF-Core/commit/d6050ed146e01ca8b384ebe7fd8529d5f06ac599))
+* improve frontend build with better error handling and npm install ([f027a20](https://github.com/CS-Foundry/CSF-Core/commit/f027a20d6d0767d25d2ab0a30287c8eb1a07a512))
+* improve Rust installation and build logic ([91d1c61](https://github.com/CS-Foundry/CSF-Core/commit/91d1c619ecccd46522bc63a64a7aa80eb2e8baf3))
+* installation fix ([709a676](https://github.com/CS-Foundry/CSF-Core/commit/709a676d041695c2e676da9949ef79e9cd4927e0))
+* installation script ([ef58a23](https://github.com/CS-Foundry/CSF-Core/commit/ef58a23bbe86c955c4e5717d25bb7d9259fd315a))
+* installation script ([03fcd72](https://github.com/CS-Foundry/CSF-Core/commit/03fcd72cb5a8491ffc412b85601e474b3602abc7))
+* remove unicode characters causing bash errors ([deff5d9](https://github.com/CS-Foundry/CSF-Core/commit/deff5d90d0518f085d149685b39b0640637fdd8b))
+* service ([23ae2f0](https://github.com/CS-Foundry/CSF-Core/commit/23ae2f08acd405f6e452bd7fc983389b84f21573))
+* support multiple CORS origins from ORIGIN env variable ([b96b530](https://github.com/CS-Foundry/CSF-Core/commit/b96b530796cdd5b6a5f76aaca1c0020d5963ea0c))
+
+
+### Features
+
+* add build-from-source support for development installations ([1e8a1a8](https://github.com/CS-Foundry/CSF-Core/commit/1e8a1a820d53601b5331a1f2f41218f214ab6b3f))
+* add dev install helper script ([53e7314](https://github.com/CS-Foundry/CSF-Core/commit/53e73148b6e2e2067c5ac8c5b6c01ac5cd63a3af))
+* agent and physical server managment ([94919c6](https://github.com/CS-Foundry/CSF-Core/commit/94919c69405016d06c581177584846941712f78d))
+* agent and server architecture ([e9c6877](https://github.com/CS-Foundry/CSF-Core/commit/e9c6877d8348388846d2e6ec36232b5d56a39946))
+* allow PUBLIC_API_BASE_URL to be configured via environment variable ([9c355a7](https://github.com/CS-Foundry/CSF-Core/commit/9c355a71934ab9d3f0e3c607f65c46fd82bd5d8b))
+* auto-install build-essential, separate dev/prod installation logic ([9f933e6](https://github.com/CS-Foundry/CSF-Core/commit/9f933e65092a11c3e3926aaf368cd72c3d524b81))
+* auto-install Rust/Cargo when building from source ([156d548](https://github.com/CS-Foundry/CSF-Core/commit/156d54808ffebe402a7292a14e2d1cf46ec04c74))
+* automatically open firewall port 8000 for external access ([d2e7b10](https://github.com/CS-Foundry/CSF-Core/commit/d2e7b1052720ced1e88fe509430aa25a0cf14175))
+* installer scripts ([8440210](https://github.com/CS-Foundry/CSF-Core/commit/8440210ee6cc1cab24b0acd3988e343557918ebd))
+
 # [0.1.0](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.1...v0.1.0) (2025-12-15)
 
 

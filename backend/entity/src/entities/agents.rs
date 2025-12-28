@@ -13,19 +13,33 @@ pub struct Model {
     pub os_type: String,
     pub os_version: String,
     pub architecture: String,
-    pub status: String,
+    pub status: String, // online, offline, error
     pub last_heartbeat: Option<DateTime>,
     pub registered_at: DateTime,
     pub updated_at: Option<DateTime>,
     pub organization_id: Option<Uuid>,
-    pub tags: Option<serde_json::Value>,
-    pub capabilities: Option<serde_json::Value>,
+    pub tags: Option<Json>,
+    pub capabilities: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::organization::Entity",
+        from = "Column::OrganizationId",
+        to = "super::organization::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Organization,
     #[sea_orm(has_many = "super::agent_metrics::Entity")]
     AgentMetrics,
+}
+
+impl Related<super::organization::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organization.def()
+    }
 }
 
 impl Related<super::agent_metrics::Entity> for Entity {

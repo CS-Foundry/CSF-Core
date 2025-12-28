@@ -12,6 +12,7 @@ mod routes;
 mod utils;
 mod rbac_service;
 mod self_monitor;
+mod system_collector;
 
 
 

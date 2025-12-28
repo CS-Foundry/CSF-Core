@@ -36,8 +36,8 @@ pub struct Model {
     pub hostname: Option<String>,
     pub uptime_seconds: Option<i64>,
 
-    // Custom
-    pub custom_metrics: Option<serde_json::Value>,
+    // Custom metrics (JSON)
+    pub custom_metrics: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -45,7 +45,9 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::agents::Entity",
         from = "Column::AgentId",
-        to = "super::agents::Column::Id"
+        to = "super::agents::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
     )]
     Agent,
 }
