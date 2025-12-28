@@ -1,7 +1,9 @@
 use anyhow::Result;
 use chrono::Utc;
 use entity::entities::{agent_metrics, agents};
-use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, DbConn, EntityTrait, QueryFilter};
+use sea_orm::{
+    prelude::Json, ActiveModelTrait, ActiveValue, ColumnTrait, DbConn, EntityTrait, QueryFilter,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use sysinfo::{Disks, Networks, System};
@@ -84,7 +86,9 @@ impl SelfMonitor {
                 updated_at: ActiveValue::Set(None),
                 organization_id: ActiveValue::Set(None),
                 tags: ActiveValue::Set(None),
-                capabilities: ActiveValue::Set(Some(serde_json::json!(["self-monitor"]))),
+                capabilities: ActiveValue::Set(Some(Json::Array(vec![Json::String(
+                    "self-monitor".to_string(),
+                )]))),
             };
 
             let agent = new_agent.insert(db_conn.as_ref()).await?;
