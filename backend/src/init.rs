@@ -2,7 +2,10 @@ use entity::{
     key, organization, permission, role, role_permission, user, user_organization, Key,
     Organization, Permission, Role, RolePermission, User, UserOrganization,
 };
-use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter,
+};
 use uuid::Uuid;
 
 use crate::auth::crypto::{generate_salt, hash_password, RsaKeyPair};
@@ -217,6 +220,377 @@ pub async fn initialize_database(
         tracing::info!("Admin user already exists");
     }
 
+    // 6. Initialize marketplace templates
+    initialize_marketplace_templates(db).await?;
+
     tracing::info!("Database initialization completed");
+    Ok(())
+}
+
+async fn initialize_marketplace_templates(
+    db: &DatabaseConnection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use entity::{marketplace_templates, MarketplaceTemplates};
+
+    // Check if templates already exist
+    let template_count = MarketplaceTemplates::find().count(db).await?;
+
+    if template_count > 0 {
+        tracing::info!(
+            "Marketplace templates already initialized ({} templates)",
+            template_count
+        );
+        return Ok(());
+    }
+
+    tracing::info!("Initializing marketplace templates...");
+
+    let default_templates = vec![
+        // Base Templates
+        (
+            "docker-container",
+            "Docker Container",
+            "Leerer Docker Container. Wähle dein eigenes Image und konfiguriere es nach deinen Wünschen.",
+            "🐳",
+            "base",
+            "docker-container",
+            serde_json::json!({
+                "image": "nginx:alpine",
+                "ports": [{"container": 80, "host": 8080}],
+                "environment": {},
+                "volumes": [],
+                "restart_policy": "unless-stopped"
+            }),
+            false,
+        ),
+        (
+            "docker-stack",
+            "Docker Stack",
+            "Leerer Docker Stack. Erstelle einen Multi-Container Stack mit mehreren Services.",
+            "📦",
+            "base",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "app",
+                        "image": "nginx:alpine",
+                        "ports": [{"container": 80, "host": 8080}],
+                        "environment": {},
+                        "volumes": [],
+                        "restart_policy": "unless-stopped"
+                    }
+                ]
+            }),
+            false,
+        ),
+        // Popular Stacks
+        (
+            "wordpress",
+            "WordPress + MySQL",
+            "Vollständiger WordPress Stack mit MySQL Datenbank. Perfekt für Blogs, Websites und Content Management.",
+            "📝",
+            "cms",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "wordpress",
+                        "image": "wordpress:latest",
+                        "ports": [{"container": 80, "host": 8080}],
+                        "environment": {
+                            "WORDPRESS_DB_HOST": "db:3306",
+                            "WORDPRESS_DB_USER": "wordpress",
+                            "WORDPRESS_DB_PASSWORD": "wordpress",
+                            "WORDPRESS_DB_NAME": "wordpress"
+                        },
+                        "depends_on": ["db"],
+                        "restart_policy": "always"
+                    },
+                    {
+                        "name": "db",
+                        "image": "mysql:8.0",
+                        "environment": {
+                            "MYSQL_DATABASE": "wordpress",
+                            "MYSQL_USER": "wordpress",
+                            "MYSQL_PASSWORD": "wordpress",
+                            "MYSQL_RANDOM_ROOT_PASSWORD": "1"
+                        },
+                        "volumes": [{"host": "./db_data", "container": "/var/lib/mysql"}],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        (
+            "mern-stack",
+            "MERN Stack",
+            "MongoDB + Express + React + Node.js Entwicklungsumgebung. Komplett JavaScript Stack.",
+            "🚀",
+            "development",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "mongodb",
+                        "image": "mongo:7",
+                        "ports": [{"container": 27017, "host": 27017}],
+                        "volumes": [{"host": "./mongodb_data", "container": "/data/db"}],
+                        "restart_policy": "always"
+                    },
+                    {
+                        "name": "backend",
+                        "image": "node:20-alpine",
+                        "ports": [{"container": 5000, "host": 5000}],
+                        "environment": {
+                            "MONGODB_URI": "mongodb://mongodb:27017/app",
+                            "NODE_ENV": "development"
+                        },
+                        "depends_on": ["mongodb"],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        // Databases
+        (
+            "postgresql",
+            "PostgreSQL Database",
+            "Leistungsstarke open-source relationale Datenbank. Perfekt für Production-Workloads.",
+            "🐘",
+            "database",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "postgres",
+                        "image": "postgres:16-alpine",
+                        "ports": [{"container": 5432, "host": 5432}],
+                        "environment": {
+                            "POSTGRES_USER": "admin",
+                            "POSTGRES_PASSWORD": "changeme",
+                            "POSTGRES_DB": "maindb"
+                        },
+                        "volumes": [{"host": "./postgres_data", "container": "/var/lib/postgresql/data"}],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        (
+            "mysql",
+            "MySQL Database",
+            "Beliebte open-source relationale Datenbank. Weit verbreitet und zuverlässig.",
+            "🔷",
+            "database",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "mysql",
+                        "image": "mysql:8.0",
+                        "ports": [{"container": 3306, "host": 3306}],
+                        "environment": {
+                            "MYSQL_ROOT_PASSWORD": "rootpass",
+                            "MYSQL_DATABASE": "appdb",
+                            "MYSQL_USER": "appuser",
+                            "MYSQL_PASSWORD": "apppass"
+                        },
+                        "volumes": [{"host": "./mysql_data", "container": "/var/lib/mysql"}],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        (
+            "mongodb",
+            "MongoDB Database",
+            "NoSQL Datenbank für moderne Anwendungen. Flexibles Schema und horizontal skalierbar.",
+            "🍃",
+            "database",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "mongodb",
+                        "image": "mongo:7",
+                        "ports": [{"container": 27017, "host": 27017}],
+                        "environment": {
+                            "MONGO_INITDB_ROOT_USERNAME": "admin",
+                            "MONGO_INITDB_ROOT_PASSWORD": "changeme"
+                        },
+                        "volumes": [{"host": "./mongodb_data", "container": "/data/db"}],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        (
+            "redis",
+            "Redis Cache",
+            "In-Memory Datenstruktur-Speicher. Perfekt als Cache, Message Broker oder Session Store.",
+            "⚡",
+            "cache",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "redis",
+                        "image": "redis:7-alpine",
+                        "ports": [{"container": 6379, "host": 6379}],
+                        "volumes": [{"host": "./redis_data", "container": "/data"}],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+        // Web Servers & Proxies
+        (
+            "nginx",
+            "NGINX Web Server",
+            "Hochperformanter Web Server und Reverse Proxy. Ideal für Static Files und Load Balancing.",
+            "🌐",
+            "web",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "nginx",
+                        "image": "nginx:alpine",
+                        "ports": [{"container": 80, "host": 8080}],
+                        "volumes": [
+                            {"host": "./html", "container": "/usr/share/nginx/html"},
+                            {"host": "./nginx.conf", "container": "/etc/nginx/nginx.conf"}
+                        ],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            false,
+        ),
+        (
+            "traefik",
+            "Traefik Reverse Proxy",
+            "Moderner HTTP Reverse Proxy und Load Balancer. Automatische SSL und Service Discovery.",
+            "🔀",
+            "proxy",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "traefik",
+                        "image": "traefik:v2.10",
+                        "ports": [
+                            {"container": 80, "host": 80},
+                            {"container": 443, "host": 443},
+                            {"container": 8080, "host": 8080}
+                        ],
+                        "volumes": [
+                            {"host": "/var/run/docker.sock", "container": "/var/run/docker.sock"},
+                            {"host": "./traefik.yml", "container": "/etc/traefik/traefik.yml"}
+                        ],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            false,
+        ),
+        // Development Tools
+        (
+            "portainer",
+            "Portainer",
+            "Docker Management UI. Verwalte Container, Images, Volumes und Networks grafisch.",
+            "🐳",
+            "management",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "portainer",
+                        "image": "portainer/portainer-ce:latest",
+                        "ports": [
+                            {"container": 9000, "host": 9000},
+                            {"container": 8000, "host": 8000}
+                        ],
+                        "volumes": [
+                            {"host": "/var/run/docker.sock", "container": "/var/run/docker.sock"},
+                            {"host": "./portainer_data", "container": "/data"}
+                        ],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            false,
+        ),
+        // Monitoring & Analytics
+        (
+            "grafana-prometheus",
+            "Grafana + Prometheus",
+            "Monitoring Stack. Metriken sammeln mit Prometheus und visualisieren mit Grafana.",
+            "📊",
+            "monitoring",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "prometheus",
+                        "image": "prom/prometheus:latest",
+                        "ports": [{"container": 9090, "host": 9090}],
+                        "volumes": [
+                            {"host": "./prometheus.yml", "container": "/etc/prometheus/prometheus.yml"},
+                            {"host": "./prometheus_data", "container": "/prometheus"}
+                        ],
+                        "restart_policy": "always"
+                    },
+                    {
+                        "name": "grafana",
+                        "image": "grafana/grafana:latest",
+                        "ports": [{"container": 3000, "host": 3000}],
+                        "environment": {
+                            "GF_SECURITY_ADMIN_PASSWORD": "admin"
+                        },
+                        "volumes": [{"host": "./grafana_data", "container": "/var/lib/grafana"}],
+                        "depends_on": ["prometheus"],
+                        "restart_policy": "always"
+                    }
+                ]
+            }),
+            true,
+        ),
+    ];
+
+    let now = chrono::Utc::now().naive_utc();
+    let mut created_count = 0;
+
+    for (template_id, name, description, icon, category, resource_type, configuration, popular) in
+        default_templates
+    {
+        let template = marketplace_templates::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            template_id: ActiveValue::Set(template_id.to_string()),
+            name: ActiveValue::Set(name.to_string()),
+            description: ActiveValue::Set(description.to_string()),
+            icon: ActiveValue::Set(icon.to_string()),
+            category: ActiveValue::Set(category.to_string()),
+            resource_type: ActiveValue::Set(resource_type.to_string()),
+            configuration: ActiveValue::Set(configuration),
+            popular: ActiveValue::Set(popular),
+            install_count: ActiveValue::Set(0),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
+        };
+
+        if template.insert(db).await.is_ok() {
+            created_count += 1;
+        }
+    }
+
+    tracing::info!("✅ Created {} marketplace templates", created_count);
     Ok(())
 }

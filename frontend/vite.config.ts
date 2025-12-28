@@ -6,13 +6,5 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	define: {
 		'process.env.JWT_SECRET': JSON.stringify(process.env.JWT_SECRET)
-	},
-	server: {
-		proxy: {
-			'/api': {
-				target: 'http://localhost:8000',
-				changeOrigin: true,
-			}
-		}
 	}
 });

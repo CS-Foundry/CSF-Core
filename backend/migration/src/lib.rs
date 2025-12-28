@@ -10,6 +10,7 @@ mod m20251215_175420_add_user_2fa_fields;
 mod m20251215_180000_add_rbac_tables;
 mod m20251216_190000_add_agents_and_metrics;
 mod m20251228_120000_add_resource_groups;
+mod m20251228_140000_add_docker_resources;
 
 pub struct Migrator;
 
@@ -27,6 +28,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251215_180000_add_rbac_tables::Migration),
             Box::new(m20251216_190000_add_agents_and_metrics::Migration),
             Box::new(m20251228_120000_add_resource_groups::Migration),
+            Box::new(m20251228_140000_add_docker_resources::Migration),
         ]
     }
 }

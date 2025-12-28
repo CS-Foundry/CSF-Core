@@ -20,13 +20,13 @@
 
   // Browser-compatible UUID generation
   function generateUUID() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return crypto.randomUUID();
     }
     // Fallback for browsers without crypto.randomUUID
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }
@@ -90,15 +90,32 @@
         response.token
       );
 
+      console.log("[FinanceVault] Logging in user", {
+        username: response.username,
+        userId: response.user_id,
+      });
+
       // Set cookie via API
-      await fetch("/api/set-auth-cookie", {
+      const cookieResponse = await fetch("/api/set-auth-cookie", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: response.token }),
       });
 
-      // Redirect to home
-      goto("/");
+      if (!cookieResponse.ok) {
+        console.error(
+          "Failed to set auth cookie:",
+          await cookieResponse.text()
+        );
+        errorMessage = "Failed to set authentication cookie";
+        isLoading = false;
+        return;
+      }
+
+      console.log("[FinanceVault] Login successful, redirecting to home");
+
+      // Force reload to ensure auth state is fully updated
+      window.location.href = "/";
     } catch (error) {
       if (error instanceof Error && error.message === "2FA_REQUIRED") {
         // Store credentials in sessionStorage and redirect to OTP page

@@ -15,7 +15,10 @@ services:
     environment:
       - NODE_ENV=development
       - JWT_SECRET=${JWT_SECRET}
+      - PUBLIC_API_BASE_URL=http://backend-dev:8000/api
     command: sh -c "npm install && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
+    depends_on:
+      - backend-dev
 
   postgres:
     image: postgres:16-alpine

@@ -12,8 +12,10 @@ use tracing::{info_span, Span};
 pub mod agents;
 pub mod expenses;
 pub mod frontend;
+pub mod marketplace;
 pub mod organizations;
 pub mod resource_groups;
+pub mod resources;
 pub mod subscriptions;
 pub mod system;
 pub mod users;
@@ -41,8 +43,10 @@ pub fn create_router() -> Router<AppState> {
     let api_router = Router::new()
         .merge(agents::agents_routes())
         .merge(expenses::expenses_routes())
+        .merge(marketplace::marketplace_routes())
         .merge(organizations::routes())
         .merge(resource_groups::resource_groups_routes())
+        .merge(resources::resources_routes())
         .merge(subscriptions::subscriptions_routes())
         .merge(system::routes())
         .merge(users::users_routes());

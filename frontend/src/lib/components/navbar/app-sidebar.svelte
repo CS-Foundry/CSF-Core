@@ -11,6 +11,8 @@
     FileText,
     Server,
     FolderOpen,
+    ShoppingBag,
+    Package,
   } from "@lucide/svelte";
 
   // Data for FinanceVault app
@@ -42,6 +44,16 @@
         title: "Resource Groups",
         url: "/resource-groups",
         icon: FolderOpen,
+      },
+      {
+        title: "Resources",
+        url: "/resources",
+        icon: Package,
+      },
+      {
+        title: "Marketplace",
+        url: "/marketplace",
+        icon: ShoppingBag,
       },
       {
         title: "Customers",
