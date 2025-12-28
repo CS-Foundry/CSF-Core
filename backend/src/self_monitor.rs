@@ -108,8 +108,8 @@ impl SelfMonitor {
     pub fn collect_metrics(&mut self) -> LocalSystemMetrics {
         // Refresh all data
         self.system.refresh_all();
-        self.networks.refresh(true);
-        self.disks.refresh(true);
+        self.networks.refresh();
+        self.disks.refresh();
 
         // CPU info
         let cpu_model = self
@@ -278,7 +278,7 @@ pub async fn start_self_monitoring(db_conn: Arc<DbConn>) {
     match SelfMonitor::new(db_conn).await {
         Ok(monitor) => {
             tokio::spawn(async move {
-                monitor.run().await;
+                let _ = monitor.run().await;
             });
         }
         Err(e) => {
