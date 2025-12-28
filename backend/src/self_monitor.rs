@@ -84,7 +84,7 @@ impl SelfMonitor {
                 updated_at: ActiveValue::Set(None),
                 organization_id: ActiveValue::Set(None),
                 tags: ActiveValue::Set(None),
-                capabilities: ActiveValue::Set(Some(vec!["self-monitor".to_string()])),
+                capabilities: ActiveValue::Set(Some(serde_json::json!(["self-monitor"]))),
             };
 
             let agent = new_agent.insert(db_conn.as_ref()).await?;

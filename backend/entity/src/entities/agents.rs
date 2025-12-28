@@ -19,7 +19,7 @@ pub struct Model {
     pub updated_at: Option<DateTime>,
     pub organization_id: Option<Uuid>,
     pub tags: Option<serde_json::Value>,
-    pub capabilities: Option<Vec<String>>,
+    pub capabilities: Option<serde_json::Value>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
