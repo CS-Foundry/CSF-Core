@@ -10,6 +10,7 @@
     FolderKanban,
     FileText,
     Server,
+    FolderOpen,
   } from "@lucide/svelte";
 
   // Data for FinanceVault app
@@ -36,6 +37,11 @@
         title: "Physical Servers",
         url: "/physical-servers",
         icon: Server,
+      },
+      {
+        title: "Resource Groups",
+        url: "/resource-groups",
+        icon: FolderOpen,
       },
       {
         title: "Customers",
