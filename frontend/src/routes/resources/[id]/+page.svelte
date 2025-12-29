@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import {
@@ -47,6 +47,10 @@
   let execCommand = "";
   let execOutput = "";
   let execRunning = false;
+  let activeTab = "info";
+  let logsLoaded = false;
+  let logsInterval: ReturnType<typeof setInterval> | null = null;
+  let logsContainer: HTMLDivElement;
 
   // Edit form state
   let editName = "";
@@ -56,6 +60,56 @@
   let editEnvironment = "";
 
   $: resourceId = $page.params.id;
+
+  // Auto-load logs when switching to logs tab
+  $: if (activeTab === "logs" && resource?.container_id && !logsLoaded) {
+    loadLogs();
+  }
+
+  // Auto-refresh logs every 2 seconds when in logs tab
+  $: {
+    if (activeTab === "logs" && resource?.container_id) {
+      if (!logsInterval) {
+        logsInterval = setInterval(() => {
+          loadLogs();
+        }, 2000);
+      }
+    } else {
+      if (logsInterval) {
+        clearInterval(logsInterval);
+        logsInterval = null;
+      }
+    }
+  }
+
+  onDestroy(() => {
+    if (logsInterval) {
+      clearInterval(logsInterval);
+    }
+  });
+
+  async function loadLogs() {
+    if (!resource?.container_id || loadingLogs) return;
+
+    loadingLogs = true;
+    try {
+      const response = await getResourceLogs(resource.id);
+      containerLogs = response.logs || "Keine Logs verfügbar";
+      logsLoaded = true;
+
+      // Auto-scroll to bottom after logs update
+      setTimeout(() => {
+        if (logsContainer) {
+          logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+      }, 100);
+    } catch (e: any) {
+      error = e.message || "Fehler beim Laden der Logs";
+      containerLogs = `Fehler: ${error}`;
+    } finally {
+      loadingLogs = false;
+    }
+  }
 
   onMount(async () => {
     await loadResource();
@@ -288,7 +342,7 @@
       </Card.Root>
 
       <!-- Tabs Section -->
-      <Tabs.Root value="info" class="w-full">
+      <Tabs.Root bind:value={activeTab} class="w-full">
         <Tabs.List class="grid w-full grid-cols-4">
           <Tabs.Trigger value="info">
             <Info class="h-4 w-4 mr-2" />
@@ -540,16 +594,8 @@
                   size="sm"
                   onclick={async () => {
                     if (!resource?.container_id) return;
-                    loadingLogs = true;
-                    try {
-                      const response = await getResourceLogs(resource.id);
-                      containerLogs = response.logs || "Keine Logs verfügbar";
-                    } catch (e: any) {
-                      error = e.message || "Fehler beim Laden der Logs";
-                      containerLogs = `Fehler: ${error}`;
-                    } finally {
-                      loadingLogs = false;
-                    }
+                    logsLoaded = false;
+                    await loadLogs();
                   }}
                   disabled={loadingLogs || !resource?.container_id}
                 >
@@ -568,10 +614,11 @@
                 </p>
               {:else}
                 <div
-                  class="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-96 whitespace-pre-wrap"
+                  bind:this={logsContainer}
+                  class="bg-black text-green-400 p-4 rounded font-mono text-xs max-h-96 whitespace-pre-wrap overflow-y-auto scrollbar-hide"
+                  style="scroll-behavior: smooth;"
                 >
-                  {containerLogs ||
-                    "Klicke auf 'Aktualisieren' um Logs zu laden..."}
+                  {containerLogs || "Logs werden automatisch geladen..."}
                 </div>
               {/if}
             </Card.Content>
