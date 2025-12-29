@@ -39,6 +39,17 @@ pub struct ResourceActionRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct DeployContainerRequest {
+    pub name: String,
+    pub image: String,
+    pub resource_group_id: Uuid,
+    pub description: Option<String>,
+    pub ports: Option<Vec<serde_json::Value>>,
+    pub environment: Option<serde_json::Value>,
+    pub volumes: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ResourceResponse {
     pub id: Uuid,
     pub name: String,
@@ -865,6 +876,183 @@ async fn perform_resource_action(
     }
 }
 
+/// Deploy a new Docker container with configuration
+async fn deploy_container(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<DeployContainerRequest>,
+) -> impl IntoResponse {
+    let db = &state.db_conn;
+
+    // Verify Docker service is available
+    let docker = match &state.docker {
+        Some(d) => d,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "Docker service not available"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Verify resource group exists
+    let rg = match ResourceGroups::find_by_id(payload.resource_group_id)
+        .one(db)
+        .await
+    {
+        Ok(Some(rg)) => rg,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Resource group not found"
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to get resource group: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to retrieve resource group"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Build configuration
+    let mut configuration = serde_json::json!({
+        "image": payload.image,
+    });
+
+    if let Some(ports) = payload.ports {
+        configuration["ports"] = serde_json::Value::Array(ports);
+    }
+
+    if let Some(env) = payload.environment {
+        configuration["environment"] = env;
+    }
+
+    if let Some(volumes) = payload.volumes {
+        configuration["volumes"] = serde_json::Value::Array(volumes);
+    }
+
+    tracing::info!(
+        "Deploying Docker container '{}' with image '{}'",
+        payload.name,
+        payload.image
+    );
+
+    // Pull the image first
+    match docker.pull_image(&payload.image).await {
+        Ok(_) => {
+            tracing::info!("Successfully pulled image: {}", payload.image);
+        }
+        Err(e) => {
+            tracing::error!("Failed to pull image {}: {}", payload.image, e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Failed to pull image: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    // Create and start the container
+    let container_id = match docker
+        .create_and_start_container(&payload.name, &payload.image, &configuration)
+        .await
+    {
+        Ok(id) => {
+            tracing::info!("Successfully created and started container: {}", id);
+            id
+        }
+        Err(e) => {
+            tracing::error!("Failed to create container: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to create container: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Save to database
+    let now = chrono::Utc::now().naive_utc();
+    let new_resource = docker_resources::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        name: ActiveValue::Set(payload.name.clone()),
+        resource_type: ActiveValue::Set("docker-container".to_string()),
+        description: ActiveValue::Set(payload.description.clone()),
+        resource_group_id: ActiveValue::Set(payload.resource_group_id),
+        configuration: ActiveValue::Set(Some(configuration.clone())),
+        status: ActiveValue::Set("running".to_string()),
+        created_by: ActiveValue::Set(Some(user.user_id)),
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+        tags: ActiveValue::NotSet,
+        container_id: ActiveValue::Set(Some(container_id.clone())),
+        stack_name: ActiveValue::NotSet,
+    };
+
+    match new_resource.insert(db).await {
+        Ok(resource) => {
+            tracing::info!(
+                "Deployed container resource: {} ({})",
+                resource.name,
+                resource.id
+            );
+
+            let response = ResourceResponse {
+                id: resource.id,
+                name: resource.name,
+                resource_type: resource.resource_type,
+                description: resource.description,
+                resource_group_id: resource.resource_group_id,
+                resource_group_name: rg.name,
+                configuration: resource.configuration,
+                status: resource.status,
+                created_by: resource.created_by,
+                created_at: resource.created_at.to_string(),
+                updated_at: resource.updated_at.to_string(),
+                tags: resource.tags,
+                container_id: resource.container_id,
+                stack_name: resource.stack_name,
+            };
+
+            (StatusCode::CREATED, Json(response)).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to save deployed resource: {}", e);
+
+            // Try to clean up the container
+            if let Err(cleanup_err) = docker.stop_container(&container_id).await {
+                tracing::error!(
+                    "Failed to cleanup container after DB error: {}",
+                    cleanup_err
+                );
+            }
+
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to save deployed resource"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// List all Docker containers from Docker daemon
 async fn list_docker_containers(
     State(state): State<AppState>,
@@ -899,6 +1087,7 @@ pub fn resources_routes() -> Router<AppState> {
         .route("/resources", get(list_resources))
         .route("/resources/:id", get(get_resource))
         .route("/resources", post(create_resource))
+        .route("/resources/deploy", post(deploy_container))
         .route("/resources/:id", put(update_resource))
         .route("/resources/:id", delete(delete_resource))
         .route("/resources/:id/action", post(perform_resource_action))

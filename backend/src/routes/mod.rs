@@ -27,9 +27,22 @@ pub fn create_router() -> Router<AppState> {
 
     tracing::info!("CORS configured for frontend URL: {}", frontend_url);
 
-    // a permissive CORS layer is used for development
+    // Allow multiple origins for development (both Docker container and localhost)
+    let allowed_origins = vec![
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        &frontend_url,
+    ];
+
     let cors = CorsLayer::new()
-        .allow_origin(frontend_url.parse::<HeaderValue>().unwrap())
+        .allow_origin(
+            allowed_origins
+                .into_iter()
+                .filter_map(|origin| origin.parse::<HeaderValue>().ok())
+                .collect::<Vec<_>>(),
+        )
         .allow_methods(vec![
             Method::GET,
             Method::POST,

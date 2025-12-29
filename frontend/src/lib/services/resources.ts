@@ -58,3 +58,18 @@ export async function performResourceAction(id: string, action: 'start' | 'stop'
   const response = await ApiClient.post(`/resources/${id}/action`, { action });
   return handleResponse<Resource>(response);
 }
+
+export interface DeployContainerRequest {
+  name: string;
+  image: string;
+  resource_group_id: string;
+  description?: string;
+  ports?: Array<{ container: number; host: number }>;
+  environment?: Record<string, string>;
+  volumes?: Array<{ host: string; container: string }>;
+}
+
+export async function deployContainer(data: DeployContainerRequest): Promise<Resource> {
+  const response = await ApiClient.post('/resources/deploy', data);
+  return handleResponse<Resource>(response);
+}

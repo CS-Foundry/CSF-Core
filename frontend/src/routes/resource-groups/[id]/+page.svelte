@@ -55,6 +55,7 @@
     installTemplate,
     type MarketplaceTemplate,
   } from "$lib/services/marketplace";
+  import DeployDockerContainerDialog from "$lib/components/DeployDockerContainerDialog.svelte";
 
   let resourceGroup = $state<ResourceGroup | null>(null);
   let resources = $state<Resource[]>([]);
@@ -69,6 +70,15 @@
   let selectedTemplate = $state<MarketplaceTemplate | null>(null);
   let installing = $state(false);
   let customResourceName = $state("");
+
+  // Container dialog
+  let showContainerDialog = $state(false);
+
+  // Stack dialog
+  let showStackDialog = $state(false);
+  let selectedStackTemplate = $state<MarketplaceTemplate | null>(null);
+  let stackName = $state("");
+  let stackResourceGroupId = $state("");
 
   const resourceGroupId = $derived($page.params.id);
 
@@ -112,26 +122,73 @@
     }
   }
 
-  async function handleInstallTemplate() {
-    if (!selectedTemplate || !customResourceName || !resourceGroupId) {
-      error = "Bitte Template auswählen und Namen eingeben";
+  function selectTemplate(template: MarketplaceTemplate) {
+    selectedTemplate = template;
+    showMarketplaceDialog = false;
+
+    if (template.resource_type === "docker-container") {
+      showContainerDialog = true;
+    } else if (template.resource_type === "docker-stack") {
+      selectedStackTemplate = template;
+      stackName = `${template.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
+      stackResourceGroupId = resourceGroupId || "";
+      showStackDialog = true;
+    }
+  }
+
+  async function handleDeployContainer(event: CustomEvent) {
+    const config = event.detail;
+
+    try {
+      installing = true;
+      error = null;
+
+      await createResource({
+        name: config.name,
+        description: config.description,
+        resource_type: "docker-container",
+        resource_group_id: resourceGroupId || "",
+        configuration: {
+          image: config.image,
+          ports: config.ports,
+          environment: config.environment,
+          volumes: config.volumes,
+        },
+      });
+
+      showContainerDialog = false;
+      await loadResourceGroup();
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to deploy container";
+    } finally {
+      installing = false;
+    }
+  }
+
+  function handleCancelContainer() {
+    showContainerDialog = false;
+  }
+
+  async function handleDeployStack() {
+    if (!selectedStackTemplate || !stackName || !stackResourceGroupId) {
+      error = "Bitte füllen Sie alle Felder aus";
       return;
     }
 
-    installing = true;
-    error = null;
-
     try {
+      installing = true;
+      error = null;
+
       await installTemplate({
-        template_id: selectedTemplate.template_id,
-        name: customResourceName,
-        resource_group_id: resourceGroupId,
+        template_id: selectedStackTemplate.template_id,
+        name: stackName,
+        resource_group_id: stackResourceGroupId,
       });
 
-      showMarketplaceDialog = false;
+      showStackDialog = false;
       await loadResourceGroup();
     } catch (e) {
-      error = e instanceof Error ? e.message : "Installation fehlgeschlagen";
+      error = e instanceof Error ? e.message : "Failed to deploy stack";
     } finally {
       installing = false;
     }
@@ -442,10 +499,7 @@
             template.template_id
               ? 'border-blue-600 bg-blue-50'
               : 'border-gray-200 hover:border-gray-300'}"
-            onclick={() => {
-              selectedTemplate = template;
-              customResourceName = template.name;
-            }}
+            onclick={() => selectTemplate(template)}
           >
             <div class="flex items-start gap-3 w-full">
               <span class="text-3xl flex-shrink-0">{template.icon}</span>
@@ -493,59 +547,89 @@
           </button>
         {/each}
       </div>
-
-      {#if selectedTemplate}
-        <div class="space-y-4 border-t pt-4">
-          <div class="space-y-2">
-            <Label for="resourceName">Ressourcenname *</Label>
-            <Input
-              id="resourceName"
-              bind:value={customResourceName}
-              placeholder="z.B. webserver-prod"
-              disabled={installing}
-            />
-          </div>
-
-          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div class="flex gap-3">
-              <div class="text-2xl">ℹ️</div>
-              <div class="text-sm">
-                <p class="font-semibold mb-1">Template Info:</p>
-                <p class="text-gray-700">
-                  {selectedTemplate.description}
-                </p>
-                {#if selectedTemplate.configuration?.services}
-                  <p class="text-gray-700 mt-2">
-                    Enthält {selectedTemplate.configuration.services.length} Service(s)
-                  </p>
-                {/if}
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
     </div>
 
     <Dialog.Footer>
-      <Button
-        variant="outline"
-        onclick={() => (showMarketplaceDialog = false)}
-        disabled={installing}
-      >
+      <Button variant="outline" onclick={() => (showMarketplaceDialog = false)}>
         Abbrechen
       </Button>
-      <Button
-        onclick={handleInstallTemplate}
-        disabled={installing || !selectedTemplate || !customResourceName}
-      >
-        {#if installing}
-          <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-          Installiere...
-        {:else}
-          <Plus class="h-4 w-4 mr-2" />
-          Installieren
-        {/if}
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- Container Deploy Dialog -->
+<DeployDockerContainerDialog
+  bind:open={showContainerDialog}
+  resourceGroups={resourceGroup
+    ? [{ id: resourceGroup.id, name: resourceGroup.name }]
+    : []}
+  on:deploy={handleDeployContainer}
+  on:cancel={handleCancelContainer}
+/>
+
+<!-- Stack Deploy Dialog -->
+<Dialog.Root bind:open={showStackDialog}>
+  <Dialog.Content class="max-w-2xl">
+    <Dialog.Header>
+      <Dialog.Title>
+        Docker Stack bereitstellen: {selectedStackTemplate?.name}
+      </Dialog.Title>
+      <Dialog.Description>
+        Konfigurieren Sie die Bereitstellung dieses Docker Stacks
+      </Dialog.Description>
+    </Dialog.Header>
+
+    <div class="space-y-4 py-4">
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+        <div class="flex items-start gap-3">
+          <span class="text-3xl">{selectedStackTemplate?.icon}</span>
+          <div>
+            <h3 class="font-semibold">{selectedStackTemplate?.name}</h3>
+            <p class="text-sm text-gray-600 mt-1">
+              {selectedStackTemplate?.description}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="border rounded-lg p-4 bg-gray-50">
+        <p class="font-semibold mb-2 text-sm">Stack Konfiguration:</p>
+        <div class="space-y-2">
+          {#each selectedStackTemplate?.configuration.services || [] as service}
+            <div class="flex items-center justify-between text-sm">
+              <div>
+                <span class="font-mono font-semibold">{service.name}</span>
+                <span class="text-gray-500 ml-2">{service.image}</span>
+              </div>
+              {#if service.ports && service.ports.length > 0}
+                <Badge variant="outline">
+                  {service.ports
+                    .map(
+                      (p: any) => `${p.container}${p.host ? ":" + p.host : ""}`
+                    )
+                    .join(", ")}
+                </Badge>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <Label for="stackName">Name *</Label>
+        <Input
+          id="stackName"
+          bind:value={stackName}
+          placeholder="z.B. wordpress-prod"
+        />
+      </div>
+    </div>
+
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (showStackDialog = false)}>
+        Abbrechen
       </Button>
+      <Button onclick={handleDeployStack}>Bereitstellen</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

@@ -1,13 +1,21 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { listResources, deleteResource } from "$lib/services/resources";
+  import {
+    listResources,
+    deleteResource,
+    deployContainer,
+    type DeployContainerRequest,
+  } from "$lib/services/resources";
+  import { listResourceGroups } from "$lib/services/resource-groups";
   import type { Resource } from "$lib/types/resource";
+  import type { ResourceGroup } from "$lib/types/resource-group";
   import { Button } from "$lib/components/ui/button";
   import * as Card from "$lib/components/ui/card";
   import * as Table from "$lib/components/ui/table";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Badge } from "$lib/components/ui/badge";
+  import DeployDockerContainerDialog from "$lib/components/DeployDockerContainerDialog.svelte";
   import {
     Plus,
     Server,
@@ -16,9 +24,11 @@
     Play,
     Square,
     RefreshCw,
+    Rocket,
   } from "@lucide/svelte";
 
   let resources: Resource[] = [];
+  let resourceGroups: ResourceGroup[] = [];
   let loading = true;
   let error = "";
 
@@ -26,8 +36,11 @@
   let showDeleteDialog = false;
   let resourceToDelete: Resource | null = null;
 
+  // Deploy dialog
+  let showDeployDialog = false;
+
   onMount(async () => {
-    await loadResources();
+    await Promise.all([loadResources(), loadResourceGroups()]);
   });
 
   async function loadResources() {
@@ -39,6 +52,25 @@
       error = e.message || "Failed to load resources";
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadResourceGroups() {
+    try {
+      resourceGroups = await listResourceGroups();
+    } catch (e: any) {
+      console.error("Failed to load resource groups:", e);
+    }
+  }
+
+  async function handleDeploy(event: CustomEvent<DeployContainerRequest>) {
+    try {
+      error = "";
+      await deployContainer(event.detail);
+      showDeployDialog = false;
+      await loadResources();
+    } catch (e: any) {
+      error = e.message || "Failed to deploy container";
     }
   }
 
@@ -103,9 +135,13 @@
         <RefreshCw class="h-4 w-4 mr-2" />
         Aktualisieren
       </Button>
+      <Button variant="default" onclick={() => (showDeployDialog = true)}>
+        <Rocket class="h-4 w-4 mr-2" />
+        Container bereitstellen
+      </Button>
       <Button onclick={() => goto("/marketplace")}>
         <Plus class="h-4 w-4 mr-2" />
-        Aus Marketplace hinzufügen
+        Aus Marketplace
       </Button>
     </div>
   </div>
@@ -336,3 +372,11 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<!-- Deploy Container Dialog -->
+<DeployDockerContainerDialog
+  bind:open={showDeployDialog}
+  resourceGroups={resourceGroups.map((rg) => ({ id: rg.id, name: rg.name }))}
+  on:deploy={handleDeploy}
+  on:cancel={() => (showDeployDialog = false)}
+/>
