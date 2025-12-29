@@ -8,8 +8,5 @@
     "url": "https://github.com/CS-Foundry/CSF-Core.git"
   },
   "author": "CS-Foundry",
-  "license": "MIT",
-  "scripts": {
-    "release": "semantic-release"
-  }
+  "license": "MIT"
 }
