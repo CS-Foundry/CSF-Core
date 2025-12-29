@@ -73,3 +73,25 @@ export async function deployContainer(data: DeployContainerRequest): Promise<Res
   const response = await ApiClient.post('/resources/deploy', data);
   return handleResponse<Resource>(response);
 }
+
+export interface ResourceLogsResponse {
+  logs: string;
+}
+
+export async function getResourceLogs(id: string): Promise<ResourceLogsResponse> {
+  const response = await ApiClient.get(`/resources/${id}/logs`);
+  return handleResponse<ResourceLogsResponse>(response);
+}
+
+export interface ExecCommandRequest {
+  command: string;
+}
+
+export interface ExecCommandResponse {
+  output: string;
+}
+
+export async function execCommand(id: string, command: string): Promise<ExecCommandResponse> {
+  const response = await ApiClient.post(`/resources/${id}/exec`, { command });
+  return handleResponse<ExecCommandResponse>(response);
+}

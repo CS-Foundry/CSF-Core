@@ -231,7 +231,7 @@ impl DockerService {
             }
         }
 
-        let restart_policy = config
+        let _restart_policy = config
             .get("restart_policy")
             .and_then(|r| r.as_str())
             .unwrap_or("unless-stopped");
@@ -281,5 +281,92 @@ impl DockerService {
         self.start_container(&container_id).await?;
 
         Ok(container_id)
+    }
+
+    /// Get container logs
+    pub async fn get_container_logs(
+        &self,
+        id: &str,
+        tail: Option<usize>,
+    ) -> Result<String, DockerError> {
+        use bollard::container::LogsOptions;
+        use futures_util::stream::StreamExt;
+
+        let options = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            follow: false,
+            tail: tail.unwrap_or(100).to_string(),
+            ..Default::default()
+        };
+
+        let mut stream = self.client.logs(id, Some(options));
+        let mut logs = String::new();
+
+        while let Some(log) = stream.next().await {
+            match log {
+                Ok(output) => {
+                    logs.push_str(&output.to_string());
+                }
+                Err(e) => {
+                    tracing::error!("Error reading logs: {}", e);
+                    break;
+                }
+            }
+        }
+
+        Ok(logs)
+    }
+
+    /// Execute a command in a container
+    pub async fn exec_in_container(
+        &self,
+        id: &str,
+        cmd: Vec<String>,
+    ) -> Result<String, DockerError> {
+        use bollard::exec::{CreateExecOptions, StartExecResults};
+        use futures_util::stream::StreamExt;
+
+        // Create exec instance
+        let exec_config = CreateExecOptions {
+            cmd: Some(cmd),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            ..Default::default()
+        };
+
+        let exec = self.client.create_exec(id, exec_config).await?;
+
+        // Start exec
+        let start_result = self
+            .client
+            .start_exec(&exec.id, None::<bollard::exec::StartExecOptions>)
+            .await?;
+
+        let mut output = String::new();
+
+        match start_result {
+            StartExecResults::Attached {
+                output: mut stream,
+                input: _,
+            } => {
+                while let Some(msg) = stream.next().await {
+                    match msg {
+                        Ok(log_output) => {
+                            output.push_str(&log_output.to_string());
+                        }
+                        Err(e) => {
+                            tracing::error!("Error reading exec output: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+            StartExecResults::Detached => {
+                tracing::warn!("Exec started in detached mode");
+            }
+        }
+
+        Ok(output)
     }
 }

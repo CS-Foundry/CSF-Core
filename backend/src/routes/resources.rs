@@ -1082,6 +1082,181 @@ async fn list_docker_containers(
     }
 }
 
+/// Get container logs
+async fn get_resource_logs(
+    State(state): State<AppState>,
+    AuthenticatedUser(_user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    let db = &state.db_conn;
+
+    // Get the resource
+    let resource = match DockerResources::find_by_id(id).one(db).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Resource not found"
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get resource: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to retrieve resource"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Check if resource has a container_id
+    if resource.container_id.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Resource does not have a container ID"
+            })),
+        )
+            .into_response();
+    }
+
+    let container_id = resource.container_id.unwrap();
+
+    // Get logs from Docker
+    match &state.docker {
+        Some(docker) => match docker.get_container_logs(&container_id, Some(500)).await {
+            Ok(logs) => (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "logs": logs
+                })),
+            )
+                .into_response(),
+            Err(e) => {
+                tracing::error!("Failed to get container logs: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to get container logs: {}", e)
+                    })),
+                )
+                    .into_response()
+            }
+        },
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "Docker service not available"
+            })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ExecRequest {
+    command: String,
+}
+
+/// Execute command in container
+async fn exec_in_resource(
+    State(state): State<AppState>,
+    AuthenticatedUser(_user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ExecRequest>,
+) -> impl IntoResponse {
+    let db = &state.db_conn;
+
+    // Get the resource
+    let resource = match DockerResources::find_by_id(id).one(db).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Resource not found"
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get resource: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to retrieve resource"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Check if resource has a container_id
+    if resource.container_id.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Resource does not have a container ID"
+            })),
+        )
+            .into_response();
+    }
+
+    let container_id = resource.container_id.unwrap();
+
+    // Parse command - split by whitespace for shell execution
+    let cmd_parts: Vec<String> = payload
+        .command
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
+
+    if cmd_parts.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Command cannot be empty"
+            })),
+        )
+            .into_response();
+    }
+
+    // Execute command in container
+    match &state.docker {
+        Some(docker) => match docker.exec_in_container(&container_id, cmd_parts).await {
+            Ok(output) => (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "output": output
+                })),
+            )
+                .into_response(),
+            Err(e) => {
+                tracing::error!("Failed to execute command in container: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to execute command: {}", e)
+                    })),
+                )
+                    .into_response()
+            }
+        },
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "Docker service not available"
+            })),
+        )
+            .into_response(),
+    }
+}
+
 pub fn resources_routes() -> Router<AppState> {
     Router::new()
         .route("/resources", get(list_resources))
@@ -1091,6 +1266,8 @@ pub fn resources_routes() -> Router<AppState> {
         .route("/resources/:id", put(update_resource))
         .route("/resources/:id", delete(delete_resource))
         .route("/resources/:id/action", post(perform_resource_action))
+        .route("/resources/:id/logs", get(get_resource_logs))
+        .route("/resources/:id/exec", post(exec_in_resource))
         .route("/docker/containers", get(list_docker_containers))
         .route(
             "/resource-groups/:resource_group_id/resources",
