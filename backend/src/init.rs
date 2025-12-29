@@ -2,7 +2,10 @@ use entity::{
     key, organization, permission, role, role_permission, user, user_organization, Key,
     Organization, Permission, Role, RolePermission, User, UserOrganization,
 };
-use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter,
+};
 use uuid::Uuid;
 
 use crate::auth::crypto::{generate_salt, hash_password, RsaKeyPair};
@@ -217,6 +220,99 @@ pub async fn initialize_database(
         tracing::info!("Admin user already exists");
     }
 
+    // 6. Initialize marketplace templates
+    initialize_marketplace_templates(db).await?;
+
     tracing::info!("Database initialization completed");
+    Ok(())
+}
+
+async fn initialize_marketplace_templates(
+    db: &DatabaseConnection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use entity::{marketplace_templates, MarketplaceTemplates};
+
+    // Check if templates already exist
+    let template_count = MarketplaceTemplates::find().count(db).await?;
+
+    if template_count > 0 {
+        tracing::info!(
+            "Marketplace templates already initialized ({} templates)",
+            template_count
+        );
+        return Ok(());
+    }
+
+    tracing::info!("Initializing marketplace templates...");
+
+    let default_templates = vec![
+        // Docker Container
+        (
+            "docker-container",
+            "Docker Container",
+            "Leerer Docker Container. Wähle dein eigenes Image und konfiguriere es nach deinen Wünschen.",
+            "🐳",
+            "base",
+            "docker-container",
+            serde_json::json!({
+                "image": "nginx:alpine",
+                "ports": [{"container": 80, "host": 8080}],
+                "environment": {},
+                "volumes": [],
+                "restart_policy": "unless-stopped"
+            }),
+            false,
+        ),
+        // Docker Stack
+        (
+            "docker-stack",
+            "Docker Stack",
+            "Leerer Docker Stack. Erstelle einen Multi-Container Stack mit mehreren Services.",
+            "📦",
+            "base",
+            "docker-stack",
+            serde_json::json!({
+                "services": [
+                    {
+                        "name": "app",
+                        "image": "nginx:alpine",
+                        "ports": [{"container": 80, "host": 8080}],
+                        "environment": {},
+                        "volumes": [],
+                        "restart_policy": "unless-stopped"
+                    }
+                ]
+            }),
+            false,
+        ),
+    ];
+
+    let now = chrono::Utc::now().naive_utc();
+    let mut created_count = 0;
+
+    for (template_id, name, description, icon, category, resource_type, configuration, popular) in
+        default_templates
+    {
+        let template = marketplace_templates::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            template_id: ActiveValue::Set(template_id.to_string()),
+            name: ActiveValue::Set(name.to_string()),
+            description: ActiveValue::Set(description.to_string()),
+            icon: ActiveValue::Set(icon.to_string()),
+            category: ActiveValue::Set(category.to_string()),
+            resource_type: ActiveValue::Set(resource_type.to_string()),
+            configuration: ActiveValue::Set(configuration),
+            popular: ActiveValue::Set(popular),
+            install_count: ActiveValue::Set(0),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
+        };
+
+        if template.insert(db).await.is_ok() {
+            created_count += 1;
+        }
+    }
+
+    tracing::info!("✅ Created {} marketplace templates", created_count);
     Ok(())
 }

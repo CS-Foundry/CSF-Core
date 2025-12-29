@@ -11,7 +11,9 @@ mod init;
 mod routes;
 mod utils;
 mod rbac_service;
+mod self_monitor;
 mod system_collector;
+mod docker_service;
 
 
 
@@ -67,6 +69,7 @@ pub struct ApiDoc;
 #[derive(Clone)]
 pub struct AppState {
     pub db_conn: DbConn,
+    pub docker: Option<docker_service::DockerService>,
 }
 
 impl Default for AppState {
@@ -105,8 +108,32 @@ async fn main() {
         std::process::exit(1);
     }
 
+    // Initialize Docker service
+    let docker = match docker_service::DockerService::new() {
+        Ok(docker) => {
+            if docker.is_available().await {
+                tracing::info!("🐳 Docker service initialized successfully");
+                Some(docker)
+            } else {
+                tracing::warn!("⚠️  Docker is installed but not running");
+                None
+            }
+        }
+        Err(e) => {
+            tracing::warn!("⚠️  Docker service not available: {}. Container management will be limited.", e);
+            None
+        }
+    };
+
     // Create application state
-    let state = AppState { db_conn };
+    let state = AppState {
+        db_conn: db_conn.clone(),
+        docker,
+    };
+
+    // Start self-monitoring service
+    tracing::info!("🔄 Starting self-monitoring service...");
+    self_monitor::start_self_monitoring(std::sync::Arc::new(db_conn)).await;
 
     // build our application with a route
     let app = routes::create_router()
