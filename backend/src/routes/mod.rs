@@ -18,6 +18,7 @@ pub mod resource_groups;
 pub mod resources;
 pub mod subscriptions;
 pub mod system;
+pub mod updates;
 pub mod users;
 
 /// Creates the main application router and logs all registered routes.
@@ -62,6 +63,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(resources::resources_routes())
         .merge(subscriptions::subscriptions_routes())
         .merge(system::routes())
+        .merge(updates::routes())
         .merge(users::users_routes());
 
     Router::new()

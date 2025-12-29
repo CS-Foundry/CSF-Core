@@ -105,6 +105,7 @@
   import NavProjects from "./nav-projects.svelte";
   import NavUser from "./nav-user.svelte";
   import TeamSwitcher from "./team-switcher.svelte";
+  import UpdateNotifier from "./update-notifier.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import type { ComponentProps } from "svelte";
 
@@ -120,6 +121,7 @@
     <TeamSwitcher />
   </Sidebar.Header>
   <Sidebar.Content>
+    <UpdateNotifier />
     <NavMain items={data.navMain} />
     <NavFavorites favorites={data.favorites} />
   </Sidebar.Content>

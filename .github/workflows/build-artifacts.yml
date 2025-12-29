@@ -1,13 +1,17 @@
 name: Build Release Artifacts
 
 on:
+  push:
+    branches: [main, feat/server-monitoring]
+    tags:
+      - "v*"
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       version:
         description: "Version (e.g., 1.0.0)"
-        required: true
+        required: false
 
 jobs:
   build-artifacts:
@@ -26,6 +30,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +'%Y.%m.%d')-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install system dependencies
         run: |
@@ -49,6 +64,14 @@ jobs:
           mkdir -p ../release/backend
           cp target/${{ matrix.target }}/release/backend ../release/backend/
 
+      - name: Build Agent
+        run: |
+          cd agent
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p ../release/agent
+          cp target/${{ matrix.target }}/release/csf-agent ../release/agent/
+          cp config.toml ../release/agent/
+
       - name: Build Frontend
         run: |
           cd frontend
@@ -60,24 +83,94 @@ jobs:
           cp -r node_modules ../release/frontend/
           cp package.json ../release/frontend/
 
+      - name: Create version file
+        run: |
+          echo "${{ steps.version.outputs.version }}" > release/VERSION
+          echo "${{ github.sha }}" > release/COMMIT
+
+      - name: Copy installation scripts
+        run: |
+          mkdir -p release/scripts
+          cp scripts/install.sh release/scripts/
+          cp scripts/uninstall.sh release/scripts/
+          cp install-daemon.sh release/
+          cp csf-core.service release/
+
       - name: Create archive
         run: |
           cd release
-          tar -czf csf-core-linux-${{ matrix.arch }}.tar.gz backend frontend
+          tar -czf csf-core-linux-${{ matrix.arch }}.tar.gz backend agent frontend scripts VERSION COMMIT install-daemon.sh csf-core.service
+
+      - name: Calculate checksums
+        run: |
+          cd release
+          sha256sum csf-core-linux-${{ matrix.arch }}.tar.gz > csf-core-linux-${{ matrix.arch }}.tar.gz.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: csf-core-linux-${{ matrix.arch }}
-          path: release/csf-core-linux-${{ matrix.arch }}.tar.gz
+          path: |
+            release/csf-core-linux-${{ matrix.arch }}.tar.gz
+            release/csf-core-linux-${{ matrix.arch }}.tar.gz.sha256
 
       - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} \
+            release/csf-core-linux-${{ matrix.arch }}.tar.gz \
+            release/csf-core-linux-${{ matrix.arch }}.tar.gz.sha256 \
+            --clobber
+
+  create-manifest:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +'%Y.%m.%d')-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/csf-core-linux-${{ matrix.arch }}.tar.gz
-          asset_name: csf-core-linux-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          path: artifacts
+
+      - name: Create release manifest
+        run: |
+          cat > release-manifest.json << EOF
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "commit": "${{ github.sha }}",
+            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "branch": "${{ github.ref_name }}",
+            "artifacts": {
+              "amd64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/csf-core-linux-amd64.tar.gz",
+                "checksum": "$(cat artifacts/csf-core-linux-amd64/csf-core-linux-amd64.tar.gz.sha256 | cut -d' ' -f1)"
+              },
+              "arm64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/csf-core-linux-arm64.tar.gz",
+                "checksum": "$(cat artifacts/csf-core-linux-arm64/csf-core-linux-arm64.tar.gz.sha256 | cut -d' ' -f1)"
+              }
+            }
+          }
+          EOF
+
+      - name: Upload manifest
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} release-manifest.json --clobber
