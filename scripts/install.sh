@@ -293,13 +293,10 @@ create_directories() {
 }
 
 get_latest_version() {
-    print_step "Ermittle neueste Release-Version..."
-    
     local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
     local latest_version=$(curl -s "$api_url" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
     
     if [ -z "$latest_version" ]; then
-        print_error "Konnte neueste Version nicht ermitteln"
         return 1
     fi
     
@@ -344,8 +341,14 @@ download_release() {
             ;;
     esac
     
+    # If ARM64 detected, fallback to source build
+    if [ "$BUILD_FROM_SOURCE" = "true" ]; then
+        build_from_source
+        return
+    fi
+    
     # For main branch (production): ONLY use releases, never build from source
-    if [ "$BRANCH" = "main" ] && [ -z "$BUILD_FROM_SOURCE" ]; then
+    if [ "$BRANCH" = "main" ]; then
         print_step "Production Installation - verwende Pre-Built Binaries"
         
         local temp_dir=$(mktemp -d)
@@ -353,20 +356,22 @@ download_release() {
         
         # Get version
         if [ "$VERSION" = "latest" ]; then
+            print_step "Ermittle neueste Release-Version..."
             VERSION=$(get_latest_version)
-            if [ $? -ne 0 ]; then
+            if [ $? -ne 0 ] || [ -z "$VERSION" ]; then
                 print_error "Konnte neueste Version nicht ermitteln"
                 exit 1
             fi
+            print_success "Neueste Version: v${VERSION}"
         fi
         
         print_step "Installiere Version: v${VERSION}"
         
         # Download backend binary
         local backend_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-backend-${OS_NAME}-${ARCH_NAME}"
-        print_step "Download Backend Binary..."
+        print_step "Download Backend Binary von: ${backend_url}"
         
-        if curl -L -f "$backend_url" -o backend 2>/dev/null; then
+        if curl -L -f "$backend_url" -o backend 2>&1 | grep -v "^[0-9 ]*$"; then
             chmod +x backend
             mkdir -p "$INSTALL_DIR/backend"
             cp backend "$INSTALL_DIR/backend/"
