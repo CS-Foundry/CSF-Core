@@ -334,7 +334,9 @@ download_release() {
             ARCH_NAME="amd64"
             ;;
         aarch64|arm64)
-            ARCH_NAME="arm64"
+            print_warning "ARM64 Binaries sind noch nicht verfügbar"
+            print_step "Falle zurück auf Source-Build..."
+            BUILD_FROM_SOURCE=true
             ;;
         *)
             print_error "Nicht unterstützte Architektur: $arch"
