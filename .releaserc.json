@@ -1,7 +1,6 @@
 {
   "branches": [
-    "main",
-    {"name": "feat/*", "prerelease": true}
+    "main"
   ],
   "plugins": [
     [

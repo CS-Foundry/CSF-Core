@@ -10,7 +10,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  packages: write
 
 jobs:
   # Step 1: Run Release Workflow
@@ -19,21 +18,11 @@ jobs:
     uses: ./.github/workflows/release.yml
     secrets: inherit
 
-  # Step 2: Docker Build (only if new release was created)
-  docker-build:
-    name: 🐳 Docker Build & Push
-    needs: release
-    if: needs.release.outputs.new_release_published == 'true'
-    uses: ./.github/workflows/docker-build-push.yml
-    secrets: inherit
-    with:
-      version: ${{ needs.release.outputs.new_release_version }}
-
-  # Step 3: Summary
+  # Step 2: Summary
   summary:
     name: 📊 Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [release, docker-build]
+    needs: [release]
     if: always()
     steps:
       - name: Generate Summary
@@ -43,13 +32,15 @@ jobs:
 
           if [ "${{ needs.release.outputs.new_release_published }}" == "true" ]; then
             echo "✅ **Release Created:** v${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
-            echo "✅ **Docker Build:** Completed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Binaries Built:** Available for download" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🚀 New Version Available!" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ghcr.io/cs-foundry/csf-core:${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
-            echo "# or" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ghcr.io/cs-foundry/csf-core:latest" >> $GITHUB_STEP_SUMMARY
+            echo "# Install latest version" >> $GITHUB_STEP_SUMMARY
+            echo "curl -fsSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo bash" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Or download specific binary:" >> $GITHUB_STEP_SUMMARY
+            echo "# https://github.com/CS-Foundry/CSF-Core/releases/tag/v${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ **No Release Created**" >> $GITHUB_STEP_SUMMARY
