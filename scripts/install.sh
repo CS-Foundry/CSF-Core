@@ -360,25 +360,6 @@ download_release() {
         
         print_step "Installiere Version: v${VERSION}"
         
-        # Download agent binary
-        local agent_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-agent-${OS_NAME}-${ARCH_NAME}"
-        print_step "Download Agent Binary..."
-        
-        if curl -L -f "$agent_url" -o csf-agent 2>/dev/null; then
-            chmod +x csf-agent
-            mkdir -p "$INSTALL_DIR/agent"
-            cp csf-agent "$INSTALL_DIR/agent/"
-            print_success "Agent Binary heruntergeladen"
-        else
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            
-            print_error "Kein Agent Binary gefunden für Version v${VERSION}"
-            print_error "Bitte warte bis GitHub Actions ein Release gebaut hat"
-            print_error "Oder verwende: BUILD_FROM_SOURCE=1 bash install.sh"
-            exit 1
-        fi
-        
         # Download backend binary
         local backend_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-backend-${OS_NAME}-${ARCH_NAME}"
         print_step "Download Backend Binary..."
@@ -389,11 +370,13 @@ download_release() {
             cp backend "$INSTALL_DIR/backend/"
             print_success "Backend Binary heruntergeladen"
         else
-            print_warning "Backend Binary nicht gefunden, baue aus Quellcode..."
             cd - > /dev/null
             rm -rf "$temp_dir"
-            build_from_source
-            return
+            
+            print_error "Kein Backend Binary gefunden für Version v${VERSION}"
+            print_error "Bitte warte bis GitHub Actions ein Release gebaut hat"
+            print_error "Oder verwende: BUILD_FROM_SOURCE=1 bash install.sh"
+            exit 1
         fi
         
         # Download frontend package
@@ -436,19 +419,10 @@ download_release() {
         fi
         
         # Try downloading binaries, fallback to build
-        local agent_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-agent-${OS_NAME}-${ARCH_NAME}"
         local backend_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-backend-${OS_NAME}-${ARCH_NAME}"
         local frontend_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-frontend-${VERSION}.tar.gz"
         
         print_step "Versuche Binaries herunterzuladen..."
-        
-        # Try agent
-        if curl -L -f "$agent_url" -o csf-agent 2>/dev/null; then
-            chmod +x csf-agent
-            mkdir -p "$INSTALL_DIR/agent"
-            cp csf-agent "$INSTALL_DIR/agent/"
-            print_success "Agent Binary heruntergeladen"
-        fi
         
         # Try backend
         if curl -L -f "$backend_url" -o backend 2>/dev/null; then
@@ -468,12 +442,12 @@ download_release() {
         cd - > /dev/null
         rm -rf "$temp_dir"
         
-        # Check if all components were downloaded
-        if [ ! -f "$INSTALL_DIR/agent/csf-agent" ] || [ ! -f "$INSTALL_DIR/backend/backend" ] || [ ! -d "$INSTALL_DIR/frontend/build" ]; then
-            print_warning "Nicht alle Binaries gefunden, baue fehlende aus Quellcode..."
+        # Check if backend was downloaded
+        if [ ! -f "$INSTALL_DIR/backend/backend" ]; then
+            print_warning "Backend Binary nicht gefunden, baue aus Quellcode..."
             build_from_source
         else
-            print_success "Alle Komponenten erfolgreich heruntergeladen"
+            print_success "Backend erfolgreich heruntergeladen"
         fi
     fi
 }

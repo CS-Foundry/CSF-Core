@@ -65,7 +65,7 @@ jobs:
           fi
 
   build-binaries:
-    name: Build Binaries
+    name: Build Backend Binaries
     needs: release
     if: needs.release.outputs.new_release_published == 'true'
     strategy:
@@ -73,27 +73,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            agent_artifact: csf-agent
             backend_artifact: backend
-            agent_asset: csf-agent-linux-amd64
             backend_asset: csf-backend-linux-amd64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            agent_artifact: csf-agent
             backend_artifact: backend
-            agent_asset: csf-agent-linux-arm64
             backend_asset: csf-backend-linux-arm64
           - os: macos-latest
             target: x86_64-apple-darwin
-            agent_artifact: csf-agent
             backend_artifact: backend
-            agent_asset: csf-agent-darwin-amd64
             backend_asset: csf-backend-darwin-amd64
           - os: macos-latest
             target: aarch64-apple-darwin
-            agent_artifact: csf-agent
             backend_artifact: backend
-            agent_asset: csf-agent-darwin-arm64
             backend_asset: csf-backend-darwin-arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -135,59 +127,15 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build agent binary
-        working-directory: agent
-        env:
-          OPENSSL_STATIC: 1
-          OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
-          OPENSSL_INCLUDE_DIR: /usr/include
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            cargo build --release --target ${{ matrix.target }} --features vendored-openssl
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
-
       - name: Build backend binary
         working-directory: backend
-        env:
-          OPENSSL_STATIC: 1
-          OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
-          OPENSSL_INCLUDE_DIR: /usr/include
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            cargo build --release --target ${{ matrix.target }} --features vendored-openssl
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
-
-      - name: Rename agent binary
-        run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp agent/target/${{ matrix.target }}/release/${{ matrix.agent_artifact }} ${{ matrix.agent_asset }}
-          else
-            cp agent/target/${{ matrix.target }}/release/${{ matrix.agent_artifact }} ${{ matrix.agent_asset }}
-            chmod +x ${{ matrix.agent_asset }}
-          fi
-        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename backend binary
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp backend/target/${{ matrix.target }}/release/${{ matrix.backend_artifact }} ${{ matrix.backend_asset }}
-          else
-            cp backend/target/${{ matrix.target }}/release/${{ matrix.backend_artifact }} ${{ matrix.backend_asset }}
-            chmod +x ${{ matrix.backend_asset }}
-          fi
+          cp backend/target/${{ matrix.target }}/release/${{ matrix.backend_artifact }} ${{ matrix.backend_asset }}
+          chmod +x ${{ matrix.backend_asset }}
         shell: bash
-
-      - name: Upload agent binary to release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ needs.release.outputs.new_release_version }}
-          files: ${{ matrix.agent_asset }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload backend binary to release
         uses: softprops/action-gh-release@v1
