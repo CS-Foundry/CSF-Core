@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.0.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.1...v0.0.2) (2026-01-02)
+
+
+### Bug Fixes
+
+* pipeline ([7a0154d](https://github.com/CS-Foundry/CSF-Core/commit/7a0154d9b71931db881783b179f599316d44ce9e))
+
 # [1.1.0](https://github.com/CS-Foundry/CSF-Core/compare/v1.0.0...v1.1.0) (2026-01-02)
 
 
