@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [1.1.0](https://github.com/CS-Foundry/CSF-Core/compare/v1.0.0...v1.1.0) (2026-01-02)
+
+
+### Features
+
+* lint pipeline and fix builds ([78f9dea](https://github.com/CS-Foundry/CSF-Core/commit/78f9dea6c3525efe6a9ad845d9a4545327f99fce))
+
 # 1.0.0 (2026-01-02)
 
 
