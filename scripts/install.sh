@@ -292,50 +292,100 @@ create_directories() {
     print_success "Verzeichnisse erstellt"
 }
 
+get_latest_version() {
+    print_step "Ermittle neueste Release-Version..."
+    
+    local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    local latest_version=$(curl -s "$api_url" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    
+    if [ -z "$latest_version" ]; then
+        print_error "Konnte neueste Version nicht ermitteln"
+        return 1
+    fi
+    
+    echo "$latest_version"
+}
+
 download_release() {
     print_step "Installiere CSF-Core..."
     
     # Detect branch from script URL or use environment variable
     BRANCH="${BRANCH:-main}"
     
+    # Detect OS and architecture
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch=$(uname -m)
+    
+    case $os in
+        linux)
+            OS_NAME="linux"
+            ;;
+        darwin)
+            OS_NAME="darwin"
+            ;;
+        *)
+            print_error "Nicht unterstütztes Betriebssystem: $os"
+            exit 1
+            ;;
+    esac
+    
+    case $arch in
+        x86_64)
+            ARCH_NAME="amd64"
+            ;;
+        aarch64|arm64)
+            ARCH_NAME="arm64"
+            ;;
+        *)
+            print_error "Nicht unterstützte Architektur: $arch"
+            exit 1
+            ;;
+    esac
+    
     # For main branch (production): ONLY use releases, never build from source
     if [ "$BRANCH" = "main" ] && [ -z "$BUILD_FROM_SOURCE" ]; then
-        print_step "Production Installation - verwende nur Pre-Built Releases"
+        print_step "Production Installation - verwende Pre-Built Binaries"
         
         local temp_dir=$(mktemp -d)
         cd "$temp_dir"
         
-        # Download latest release or specific version
+        # Get version
         if [ "$VERSION" = "latest" ]; then
-            local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/csf-core-linux-${ARCH}.tar.gz"
-        else
-            local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
+            VERSION=$(get_latest_version)
+            if [ $? -ne 0 ]; then
+                print_error "Konnte neueste Version nicht ermitteln"
+                exit 1
+            fi
         fi
         
-        print_step "Download Release von: $download_url"
+        print_step "Installiere Version: v${VERSION}"
         
-        if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
-            tar -xzf csf-core.tar.gz
-            
-            # Copy files to installation directory
-            cp -r backend/* "$INSTALL_DIR/backend/"
-            cp -r frontend/* "$INSTALL_DIR/frontend/"
-            
-            chmod +x "$INSTALL_DIR/backend/backend"
-            
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            
-            print_success "Release heruntergeladen und installiert"
+        # Download agent binary
+        local agent_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-agent-${OS_NAME}-${ARCH_NAME}"
+        print_step "Download Agent Binary von: $agent_url"
+        
+        if curl -L -f "$agent_url" -o csf-agent 2>/dev/null; then
+            chmod +x csf-agent
+            mkdir -p "$INSTALL_DIR/agent"
+            cp csf-agent "$INSTALL_DIR/agent/"
+            print_success "Agent Binary heruntergeladen und installiert"
         else
             cd - > /dev/null
             rm -rf "$temp_dir"
             
-            print_error "Kein Release gefunden für main Branch"
+            print_error "Kein Release gefunden für Version v${VERSION}"
             print_error "Bitte warte bis GitHub Actions ein Release gebaut hat"
             print_error "Oder verwende: BUILD_FROM_SOURCE=1 bash install.sh"
             exit 1
         fi
+        
+        # TODO: Download backend and frontend binaries/packages when available
+        # For now, backend and frontend need to be built or packaged separately
+        
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        
+        print_success "Release heruntergeladen und installiert"
     else
         # For development branches: Try release first, then build from source
         print_step "Development Installation - versuche Release, baue sonst aus Quellcode"
@@ -343,35 +393,39 @@ download_release() {
         local temp_dir=$(mktemp -d)
         cd "$temp_dir"
         
-        # Download latest release or specific version
+        # Get version
         if [ "$VERSION" = "latest" ]; then
-            local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/csf-core-linux-${ARCH}.tar.gz"
-        else
-            local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-core-linux-${ARCH}.tar.gz"
+            VERSION=$(get_latest_version)
+            if [ $? -ne 0 ]; then
+                print_warning "Konnte neueste Version nicht ermitteln, baue aus Quellcode..."
+                cd - > /dev/null
+                rm -rf "$temp_dir"
+                build_from_source
+                return
+            fi
         fi
         
-        print_step "Versuche Release Download von: $download_url"
+        # Download agent binary
+        local agent_url="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/csf-agent-${OS_NAME}-${ARCH_NAME}"
+        print_step "Versuche Agent Binary Download von: $agent_url"
         
-        if curl -L -f "$download_url" -o csf-core.tar.gz 2>/dev/null; then
-            tar -xzf csf-core.tar.gz
-            
-            # Copy files to installation directory
-            cp -r backend/* "$INSTALL_DIR/backend/"
-            cp -r frontend/* "$INSTALL_DIR/frontend/"
-            
-            chmod +x "$INSTALL_DIR/backend/backend"
-            
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            
-            print_success "Release heruntergeladen und installiert"
+        if curl -L -f "$agent_url" -o csf-agent 2>/dev/null; then
+            chmod +x csf-agent
+            mkdir -p "$INSTALL_DIR/agent"
+            cp csf-agent "$INSTALL_DIR/agent/"
+            print_success "Agent Binary heruntergeladen"
         else
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            
             print_warning "Kein Release gefunden, baue aus Quellcode..."
+            cd - > /dev/null
+            rm -rf "$temp_dir"
             build_from_source
+            return
         fi
+        
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        
+        print_success "Release heruntergeladen und installiert"
     fi
 }
 
