@@ -72,7 +72,8 @@ export const RESOURCE_TYPES: ResourceTypeTemplate[] = [
   {
     type: 'docker-stack',
     name: 'Docker Stack',
-    description: 'Mehrere zusammenhängende Docker Container. Perfekt für vollständige Anwendungen mit mehreren Services (z.B. Web + Datenbank + Cache).',
+    description:
+      'Mehrere zusammenhängende Docker Container. Perfekt für vollständige Anwendungen mit mehreren Services (z.B. Web + Datenbank + Cache).',
     icon: '📦',
     category: 'stack',
     popular: true,
@@ -83,9 +84,9 @@ export const RESOURCE_TYPES: ResourceTypeTemplate[] = [
           image: 'nginx:alpine',
           ports: [{ container: 80, host: 8080 }],
           environment: {},
-        }
-      ]
-    }
+        },
+      ],
+    },
   },
 ];
 
@@ -125,9 +126,9 @@ export const MARKETPLACE_TEMPLATES = [
           },
           volumes: [{ host: './db_data', container: '/var/lib/mysql' }],
           restart_policy: 'always',
-        }
-      ]
-    }
+        },
+      ],
+    },
   },
   {
     id: 'mern-stack',
@@ -165,9 +166,9 @@ export const MARKETPLACE_TEMPLATES = [
             REACT_APP_API_URL: 'http://localhost:5000',
           },
           restart_policy: 'always',
-        }
-      ]
-    }
+        },
+      ],
+    },
   },
   {
     id: 'nginx-postgres',
@@ -196,8 +197,8 @@ export const MARKETPLACE_TEMPLATES = [
           },
           volumes: [{ host: './postgres_data', container: '/var/lib/postgresql/data' }],
           restart_policy: 'always',
-        }
-      ]
-    }
+        },
+      ],
+    },
   },
 ];

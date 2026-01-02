@@ -1,6 +1,6 @@
 <script lang="ts">
-  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
-  import { StarIcon } from "@lucide/svelte";
+  import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import { StarIcon } from '@lucide/svelte';
 
   let {
     favorites,
@@ -31,12 +31,8 @@
                 {item.initials}
               </div>
               <div class="flex flex-col items-start text-left flex-1 min-w-0">
-                <span class="font-medium text-sm truncate w-full"
-                  >{item.name}</span
-                >
-                <span class="text-xs text-muted-foreground truncate w-full"
-                  >{item.company}</span
-                >
+                <span class="font-medium text-sm truncate w-full">{item.name}</span>
+                <span class="text-xs text-muted-foreground truncate w-full">{item.company}</span>
               </div>
             </div>
           </Sidebar.MenuButton>

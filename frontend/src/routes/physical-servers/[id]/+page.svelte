@@ -1,15 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { page } from "$app/stores";
-  import { goto } from "$app/navigation";
-  import {
-    getAgentDetails,
-    getAgentMetrics,
-    formatBytes,
-  } from "$lib/services/agents";
-  import type { Agent, AgentMetrics } from "$lib/types/agent";
-  import * as Card from "$lib/components/ui/card/index.js";
-  import * as Chart from "$lib/components/ui/chart/index.js";
+  import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+  import { getAgentDetails, getAgentMetrics, formatBytes } from '$lib/services/agents';
+  import type { Agent, AgentMetrics } from '$lib/types/agent';
+  import * as Card from '$lib/components/ui/card/index.js';
+  import * as Chart from '$lib/components/ui/chart/index.js';
   import {
     Table,
     TableBody,
@@ -17,16 +13,16 @@
     TableHead,
     TableHeader,
     TableRow,
-  } from "$lib/components/ui/table";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { PieChart, Text, AreaChart, Area, ChartClipPath } from "layerchart";
-  import { scaleUtc } from "d3-scale";
-  import { curveNatural } from "d3-shape";
-  import ChartContainer from "$lib/components/ui/chart/chart-container.svelte";
-  import { ArrowLeft, Activity, RefreshCw } from "@lucide/svelte";
-  import Icon from "@iconify/svelte";
-  import { cubicInOut } from "svelte/easing";
+  } from '$lib/components/ui/table';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
+  import { PieChart, Text, AreaChart, Area, ChartClipPath } from 'layerchart';
+  import { scaleUtc } from 'd3-scale';
+  import { curveNatural } from 'd3-shape';
+  import ChartContainer from '$lib/components/ui/chart/chart-container.svelte';
+  import { ArrowLeft, Activity, RefreshCw } from '@lucide/svelte';
+  import Icon from '@iconify/svelte';
+  import { cubicInOut } from 'svelte/easing';
 
   let agent = $state<Agent | null>(null);
   let metrics = $state<AgentMetrics[]>([]);
@@ -48,7 +44,7 @@
       loading = false;
       error = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load agent data";
+      error = e instanceof Error ? e.message : 'Failed to load agent data';
       loading = false;
     }
   }
@@ -66,84 +62,84 @@
 
   function formatTimestamp(timestamp: string): string {
     const date = new Date(timestamp);
-    return date.toLocaleString("de-DE", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+    return date.toLocaleString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
   }
 
   function getOsIconName(osType: string): string {
     switch (osType?.toLowerCase()) {
-      case "macos":
-        return "bi:apple";
-      case "linux":
-        return "bi:ubuntu";
-      case "windows":
-        return "bi:windows";
+      case 'macos':
+        return 'bi:apple';
+      case 'linux':
+        return 'bi:ubuntu';
+      case 'windows':
+        return 'bi:windows';
       default:
-        return "bi:pc-display";
+        return 'bi:pc-display';
     }
   }
 
   function getStatusColorClass(status: string): string {
     switch (status?.toLowerCase()) {
-      case "online":
-        return "bg-green-500 hover:bg-green-600 text-white";
-      case "offline":
-        return "bg-red-500 hover:bg-red-600 text-white";
-      case "error":
-      case "degraded":
-        return "bg-yellow-500 hover:bg-yellow-600 text-white";
-      case "stopped":
-        return "bg-gray-500 hover:bg-gray-600 text-white";
+      case 'online':
+        return 'bg-green-500 hover:bg-green-600 text-white';
+      case 'offline':
+        return 'bg-red-500 hover:bg-red-600 text-white';
+      case 'error':
+      case 'degraded':
+        return 'bg-yellow-500 hover:bg-yellow-600 text-white';
+      case 'stopped':
+        return 'bg-gray-500 hover:bg-gray-600 text-white';
       default:
-        return "bg-gray-400 hover:bg-gray-500 text-white";
+        return 'bg-gray-400 hover:bg-gray-500 text-white';
     }
   }
 
   // Chart configurations
   const combinedChartConfig = {
-    cpu: { label: "CPU Usage", color: "oklch(0.646 0.222 41.116)" },
-    memory: { label: "Memory Usage", color: "oklch(0.6 0.118 184.704)" },
-    disk: { label: "Disk Usage", color: "oklch(0.398 0.07 227.392)" },
+    cpu: { label: 'CPU Usage', color: 'oklch(0.646 0.222 41.116)' },
+    memory: { label: 'Memory Usage', color: 'oklch(0.6 0.118 184.704)' },
+    disk: { label: 'Disk Usage', color: 'oklch(0.398 0.07 227.392)' },
   } satisfies Chart.ChartConfig;
 
   // Individuelle Chart-Configs für die Radial Charts
   const cpuRadialConfig = {
-    used: { label: "Used", color: "oklch(0.646 0.222 41.116)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.646 0.222 41.116)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   const memoryRadialConfig = {
-    used: { label: "Used", color: "oklch(0.6 0.118 184.704)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.6 0.118 184.704)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   const diskRadialConfig = {
-    used: { label: "Used", color: "oklch(0.398 0.07 227.392)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.398 0.07 227.392)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   // Funktion zur Bestimmung der Farbe basierend auf Usage
   function getUsageColor(percentage: number): string {
     if (percentage < 80) {
       // Grün für niedrige bis mittlere Nutzung
-      return "oklch(0.646 0.222 41.116)"; // chart-1 - Grün
+      return 'oklch(0.646 0.222 41.116)'; // chart-1 - Grün
     } else if (percentage < 90) {
       // Gelb für hohe Nutzung
-      return "oklch(0.828 0.189 84.429)"; // chart-4 - Gelb
+      return 'oklch(0.828 0.189 84.429)'; // chart-4 - Gelb
     } else {
       // Rot für sehr hohe Nutzung
-      return "oklch(0.577 0.245 27.325)"; // destructive - Rot
+      return 'oklch(0.577 0.245 27.325)'; // destructive - Rot
     }
   }
 
   // Dunkelgrau mit Transparenz für die freie/ungenutzte Seite
-  const freeColor = "oklch(0.5 0.002 286.375 / 0.3)"; // Dunkelgrau mit 30% Opazität
+  const freeColor = 'oklch(0.5 0.002 286.375 / 0.3)'; // Dunkelgrau mit 30% Opazität
 
   const latest = $derived(metrics.length > 0 ? metrics[0] : null);
 
@@ -161,16 +157,12 @@
 </script>
 
 <svelte:head>
-  <title>{agent?.name || "Agent Details"} - CSF Core</title>
+  <title>{agent?.name || 'Agent Details'} - CSF Core</title>
 </svelte:head>
 
 <div class="space-y-6">
   <!-- Back Button -->
-  <Button
-    variant="outline"
-    onclick={() => goto("/physical-servers")}
-    class="m-4"
-  >
+  <Button variant="outline" onclick={() => goto('/physical-servers')} class="m-4">
     <ArrowLeft class="mr-2 h-4 w-4" />
     Back to Physical Servers
   </Button>
@@ -180,9 +172,7 @@
       <RefreshCw class="h-8 w-8 animate-spin text-muted-foreground" />
     </div>
   {:else if error}
-    <div
-      class="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive"
-    >
+    <div class="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
       {error}
     </div>
   {:else if agent}
@@ -191,10 +181,7 @@
       <Card.Header>
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-4">
-            <Icon
-              icon={getOsIconName(agent.os_type)}
-              class="h-16 w-16 text-muted-foreground"
-            />
+            <Icon icon={getOsIconName(agent.os_type)} class="h-16 w-16 text-muted-foreground" />
             <div>
               <Card.Title class="text-3xl">{agent.name}</Card.Title>
               <Card.Description class="mt-1 text-base">
@@ -207,12 +194,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onclick={loadData}
-              disabled={loading}
-            >
+            <Button variant="outline" size="sm" onclick={loadData} disabled={loading}>
               <RefreshCw class="h-4 w-4 {loading ? 'animate-spin' : ''}" />
             </Button>
             <Badge class={getStatusColorClass(agent.status)}>
@@ -262,19 +244,16 @@
             </Card.Description>
           </Card.Header>
           <Card.Content class="flex-1 pb-0">
-            <Chart.Container
-              config={cpuRadialConfig}
-              class="mx-auto aspect-square max-h-[250px]"
-            >
+            <Chart.Container config={cpuRadialConfig} class="mx-auto aspect-square max-h-[250px]">
               <PieChart
                 data={[
                   {
-                    platform: "used",
+                    platform: 'used',
                     visitors: latest.cpu_usage_percent,
                     color: getUsageColor(latest.cpu_usage_percent),
                   },
                   {
-                    platform: "free",
+                    platform: 'free',
                     visitors: 100 - latest.cpu_usage_percent,
                     color: freeColor,
                   },
@@ -317,9 +296,7 @@
           <Card.Header class="items-center pb-0">
             <Card.Title>Memory Usage</Card.Title>
             <Card.Description>
-              {formatBytes(latest.memory_used_bytes)} / {formatBytes(
-                latest.memory_total_bytes
-              )}
+              {formatBytes(latest.memory_used_bytes)} / {formatBytes(latest.memory_total_bytes)}
             </Card.Description>
           </Card.Header>
           <Card.Content class="flex-1 pb-0">
@@ -330,12 +307,12 @@
               <PieChart
                 data={[
                   {
-                    platform: "used",
+                    platform: 'used',
                     visitors: latest.memory_usage_percent,
                     color: getUsageColor(latest.memory_usage_percent),
                   },
                   {
-                    platform: "free",
+                    platform: 'free',
                     visitors: 100 - latest.memory_usage_percent,
                     color: freeColor,
                   },
@@ -378,25 +355,20 @@
           <Card.Header class="items-center pb-0">
             <Card.Title>Disk Usage</Card.Title>
             <Card.Description>
-              {formatBytes(latest.disk_used_bytes)} / {formatBytes(
-                latest.disk_total_bytes
-              )}
+              {formatBytes(latest.disk_used_bytes)} / {formatBytes(latest.disk_total_bytes)}
             </Card.Description>
           </Card.Header>
           <Card.Content class="flex-1 pb-0">
-            <Chart.Container
-              config={diskRadialConfig}
-              class="mx-auto aspect-square max-h-[250px]"
-            >
+            <Chart.Container config={diskRadialConfig} class="mx-auto aspect-square max-h-[250px]">
               <PieChart
                 data={[
                   {
-                    platform: "used",
+                    platform: 'used',
                     visitors: latest.disk_usage_percent,
                     color: getUsageColor(latest.disk_usage_percent),
                   },
                   {
-                    platform: "free",
+                    platform: 'free',
                     visitors: 100 - latest.disk_usage_percent,
                     color: freeColor,
                   },
@@ -444,10 +416,7 @@
             <Card.Description>Last 50 measurements</Card.Description>
           </Card.Header>
           <Card.Content>
-            <ChartContainer
-              config={combinedChartConfig}
-              class="aspect-auto h-[600px] w-full"
-            >
+            <ChartContainer config={combinedChartConfig} class="aspect-auto h-[600px] w-full">
               <AreaChart
                 data={combinedChartData}
                 x="date"
@@ -455,32 +424,32 @@
                 yDomain={[0, 100]}
                 series={[
                   {
-                    key: "cpu",
-                    label: "CPU %",
+                    key: 'cpu',
+                    label: 'CPU %',
                     color: combinedChartConfig.cpu.color,
                   },
                   {
-                    key: "memory",
-                    label: "Memory %",
+                    key: 'memory',
+                    label: 'Memory %',
                     color: combinedChartConfig.memory.color,
                   },
                   {
-                    key: "disk",
-                    label: "Disk %",
+                    key: 'disk',
+                    label: 'Disk %',
                     color: combinedChartConfig.disk.color,
                   },
                 ]}
                 props={{
                   area: {
                     curve: curveNatural,
-                    "fill-opacity": 0.3,
-                    line: { class: "stroke-2" },
+                    'fill-opacity': 0.3,
+                    line: { class: 'stroke-2' },
                   },
                   xAxis: {
                     format: (v) =>
-                      v.toLocaleTimeString("de-DE", {
-                        hour: "2-digit",
-                        minute: "2-digit",
+                      v.toLocaleTimeString('de-DE', {
+                        hour: '2-digit',
+                        minute: '2-digit',
                       }),
                   },
                   yAxis: {
@@ -532,7 +501,7 @@
                     initialWidth={0}
                     motion={{
                       width: {
-                        type: "tween",
+                        type: 'tween',
                         duration: 1000,
                         easing: cubicInOut,
                       },
@@ -541,11 +510,11 @@
                     {#each series as s, i (s.key)}
                       <Area
                         {...getAreaProps(s, i)}
-                        fill={s.key === "cpu"
-                          ? "url(#fillCPU)"
-                          : s.key === "memory"
-                            ? "url(#fillMemory)"
-                            : "url(#fillDisk)"}
+                        fill={s.key === 'cpu'
+                          ? 'url(#fillCPU)'
+                          : s.key === 'memory'
+                            ? 'url(#fillMemory)'
+                            : 'url(#fillDisk)'}
                       />
                     {/each}
                   </ChartClipPath>
@@ -553,7 +522,7 @@
                 {#snippet tooltip()}
                   <Chart.Tooltip
                     labelFormatter={(v: Date) => {
-                      return v.toLocaleString("de-DE");
+                      return v.toLocaleString('de-DE');
                     }}
                     indicator="line"
                   />
@@ -623,9 +592,7 @@
         <Card.Content class="flex h-64 flex-col items-center justify-center">
           <Activity class="mb-4 h-12 w-12 text-muted-foreground" />
           <Card.Title class="mb-2">No Metrics Available</Card.Title>
-          <Card.Description>
-            Waiting for the agent to send metrics data...
-          </Card.Description>
+          <Card.Description>Waiting for the agent to send metrics data...</Card.Description>
         </Card.Content>
       </Card.Root>
     {/if}

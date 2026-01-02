@@ -1,19 +1,19 @@
 <script lang="ts">
-  import * as Avatar from "$lib/components/ui/avatar/index.js";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
-  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
-  import { useSidebar } from "$lib/components/ui/sidebar/index.js";
-  import BadgeCheckIcon from "@lucide/svelte/icons/badge-check";
-  import BellIcon from "@lucide/svelte/icons/bell";
-  import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
-  import CreditCardIcon from "@lucide/svelte/icons/credit-card";
-  import LogOutIcon from "@lucide/svelte/icons/log-out";
-  import SparklesIcon from "@lucide/svelte/icons/sparkles";
-  import UserIcon from "@lucide/svelte/icons/user";
-  import { authStore } from "$lib/stores/auth";
-  import { AuthService } from "$lib/services/auth";
-  import { goto } from "$app/navigation";
-  import { onMount } from "svelte";
+  import * as Avatar from '$lib/components/ui/avatar/index.js';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+  import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import { useSidebar } from '$lib/components/ui/sidebar/index.js';
+  import BadgeCheckIcon from '@lucide/svelte/icons/badge-check';
+  import BellIcon from '@lucide/svelte/icons/bell';
+  import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+  import CreditCardIcon from '@lucide/svelte/icons/credit-card';
+  import LogOutIcon from '@lucide/svelte/icons/log-out';
+  import SparklesIcon from '@lucide/svelte/icons/sparkles';
+  import UserIcon from '@lucide/svelte/icons/user';
+  import { authStore } from '$lib/stores/auth';
+  import { AuthService } from '$lib/services/auth';
+  import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
 
   const sidebar = useSidebar();
 
@@ -22,9 +22,7 @@
 
   // Get user initials for avatar fallback
   let userInitials = $derived(
-    authState.user?.username
-      ? authState.user.username.substring(0, 2).toUpperCase()
-      : "U"
+    authState.user?.username ? authState.user.username.substring(0, 2).toUpperCase() : 'U'
   );
 
   async function handleLogout() {
@@ -34,9 +32,9 @@
       }
 
       // Clear auth cookie
-      await fetch("/api/set-auth-cookie", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      await fetch('/api/set-auth-cookie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: null }),
       });
 
@@ -44,12 +42,12 @@
       authStore.logout();
 
       // Redirect to signin
-      await goto("/signin");
+      await goto('/signin');
     } catch (error) {
-      console.error("Logout failed:", error);
+      console.error('Logout failed:', error);
       // Even if API call fails, clear local state and redirect
       authStore.logout();
-      await goto("/signin");
+      await goto('/signin');
     }
   }
 </script>
@@ -72,9 +70,7 @@
               </Avatar.Fallback>
             </Avatar.Root>
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-medium"
-                >{authState.user?.username || "User"}</span
-              >
+              <span class="truncate font-medium">{authState.user?.username || 'User'}</span>
               <span class="truncate text-xs">CSF-Core</span>
             </div>
             <ChevronsUpDownIcon class="ml-auto size-4" />
@@ -83,7 +79,7 @@
       </DropdownMenu.Trigger>
       <DropdownMenu.Content
         class="w-(--bits-dropdown-menu-anchor-width) min-w-56 rounded-lg"
-        side={sidebar.isMobile ? "bottom" : "right"}
+        side={sidebar.isMobile ? 'bottom' : 'right'}
         align="end"
         sideOffset={4}
       >
@@ -97,9 +93,7 @@
               </Avatar.Fallback>
             </Avatar.Root>
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-medium"
-                >{authState.user?.username || "User"}</span
-              >
+              <span class="truncate font-medium">{authState.user?.username || 'User'}</span>
               <span class="truncate text-xs">CSF-Core</span>
             </div>
           </div>

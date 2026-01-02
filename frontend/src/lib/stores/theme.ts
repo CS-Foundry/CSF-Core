@@ -12,7 +12,8 @@ export const effectiveTheme = derived(theme, ($theme, set) => {
   const update = () => {
     let prefersDark = false;
     try {
-      prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      prefersDark =
+        typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch (e) {
       prefersDark = false;
     }
@@ -46,7 +47,11 @@ export const effectiveTheme = derived(theme, ($theme, set) => {
 
 export function setTheme(t: Theme) {
   theme.set(t);
-  try { localStorage.setItem('theme', t); } catch (e) { /* ignore */ }
+  try {
+    localStorage.setItem('theme', t);
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 export function initThemeFromStorage() {
@@ -60,6 +65,10 @@ export function initThemeFromStorage() {
 }
 
 export function clearStoredTheme() {
-  try { localStorage.removeItem('theme'); } catch (e) { /* ignore */ }
+  try {
+    localStorage.removeItem('theme');
+  } catch (e) {
+    /* ignore */
+  }
   theme.set('system');
 }

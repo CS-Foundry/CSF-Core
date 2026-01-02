@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import {
-    listResourceGroups,
-    deleteResourceGroup,
-  } from "$lib/services/resource-groups";
-  import type { ResourceGroup } from "$lib/types/resource-group";
-  import { Button } from "$lib/components/ui/button";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { listResourceGroups, deleteResourceGroup } from '$lib/services/resource-groups';
+  import type { ResourceGroup } from '$lib/types/resource-group';
+  import { Button } from '$lib/components/ui/button';
   import {
     Table,
     TableBody,
@@ -14,16 +11,16 @@
     TableHead,
     TableHeader,
     TableRow,
-  } from "$lib/components/ui/table";
-  import { Badge } from "$lib/components/ui/badge";
+  } from '$lib/components/ui/table';
+  import { Badge } from '$lib/components/ui/badge';
   import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-  } from "$lib/components/ui/card";
-  import { FolderOpen, Plus, Trash2, Edit, RefreshCw } from "@lucide/svelte";
+  } from '$lib/components/ui/card';
+  import { FolderOpen, Plus, Trash2, Edit, RefreshCw } from '@lucide/svelte';
   import {
     AlertDialog,
     AlertDialogAction,
@@ -33,7 +30,7 @@
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-  } from "$lib/components/ui/alert-dialog";
+  } from '$lib/components/ui/alert-dialog';
 
   let resourceGroups = $state<ResourceGroup[]>([]);
   let loading = $state(true);
@@ -47,14 +44,14 @@
     try {
       resourceGroups = await listResourceGroups();
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load resource groups";
+      error = e instanceof Error ? e.message : 'Failed to load resource groups';
     } finally {
       loading = false;
     }
   }
 
   function handleCreateGroup() {
-    goto("/resource-groups/create");
+    goto('/resource-groups/create');
   }
 
   function handleEditGroup(id: string) {
@@ -79,17 +76,16 @@
       groupToDelete = null;
       await loadResourceGroups();
     } catch (e) {
-      error =
-        e instanceof Error ? e.message : "Failed to delete resource group";
+      error = e instanceof Error ? e.message : 'Failed to delete resource group';
     }
   }
 
   function formatDate(timestamp: string): string {
     const date = new Date(timestamp);
-    return date.toLocaleDateString("de-DE", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+    return date.toLocaleDateString('de-DE', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
   }
 
@@ -106,8 +102,7 @@
         Resource Groups
       </h1>
       <p class="text-muted-foreground mt-2">
-        Verwalte deine Azure-ähnlichen Resource Groups für Docker, KVM und
-        andere Ressourcen
+        Verwalte deine Azure-ähnlichen Resource Groups für Docker, KVM und andere Ressourcen
       </p>
     </div>
     <div class="flex gap-2">
@@ -158,8 +153,7 @@
       <CardHeader>
         <CardTitle>Resource Groups ({resourceGroups.length})</CardTitle>
         <CardDescription>
-          Klicke auf eine Resource Group, um Details zu sehen und Ressourcen zu
-          verwalten
+          Klicke auf eine Resource Group, um Details zu sehen und Ressourcen zu verwalten
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -182,7 +176,7 @@
               >
                 <TableCell class="font-medium">{group.name}</TableCell>
                 <TableCell class="text-muted-foreground">
-                  {group.description || "—"}
+                  {group.description || '—'}
                 </TableCell>
                 <TableCell>
                   {#if group.location}
@@ -250,8 +244,8 @@
     <AlertDialogHeader>
       <AlertDialogTitle>Resource Group löschen?</AlertDialogTitle>
       <AlertDialogDescription>
-        Möchtest du die Resource Group "{groupToDelete?.name}" wirklich löschen?
-        Diese Aktion kann nicht rückgängig gemacht werden.
+        Möchtest du die Resource Group "{groupToDelete?.name}" wirklich löschen? Diese Aktion kann
+        nicht rückgängig gemacht werden.
       </AlertDialogDescription>
     </AlertDialogHeader>
     <AlertDialogFooter>

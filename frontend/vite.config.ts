@@ -3,8 +3,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
-	define: {
-		'process.env.JWT_SECRET': JSON.stringify(process.env.JWT_SECRET)
-	}
+  plugins: [tailwindcss(), sveltekit()],
+  define: {
+    'process.env.JWT_SECRET': JSON.stringify(process.env.JWT_SECRET),
+  },
 });

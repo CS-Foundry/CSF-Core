@@ -30,7 +30,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     }
     throw new Error(errorMessage);
   }
-  
+
   return response.json();
 }
 

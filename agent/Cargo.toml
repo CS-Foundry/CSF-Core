@@ -38,6 +38,10 @@ chrono = { version = "0.4", features = ["serde"] }
 # Hostname
 hostname = "0.4"
 
+[features]
+default = []
+vendored-openssl = ["reqwest/native-tls-vendored"]
+
 [profile.release]
 opt-level = "z"     # Optimize for size
 lto = true          # Link-time optimization

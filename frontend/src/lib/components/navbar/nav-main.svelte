@@ -1,5 +1,5 @@
 <script lang="ts">
-  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+  import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 
   let {
     items,
@@ -21,10 +21,7 @@
     {#each items as item (item.title)}
       <Sidebar.MenuItem>
         <a href={item.url}>
-          <Sidebar.MenuButton
-            tooltipContent={item.title}
-            active={item.isActive}
-          >
+          <Sidebar.MenuButton tooltipContent={item.title} active={item.isActive}>
             {#if item.icon}
               <item.icon />
             {/if}

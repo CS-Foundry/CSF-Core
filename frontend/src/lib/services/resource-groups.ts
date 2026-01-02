@@ -1,9 +1,13 @@
-import type { ResourceGroup, CreateResourceGroupRequest, UpdateResourceGroupRequest } from '$lib/types/resource-group';
+import type {
+  ResourceGroup,
+  CreateResourceGroupRequest,
+  UpdateResourceGroupRequest,
+} from '$lib/types/resource-group';
 import { ApiClient } from './api-client';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type');
-  
+
   if (!response.ok) {
     // Check if response is JSON
     if (contentType && contentType.includes('application/json')) {
@@ -13,14 +17,14 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // If not JSON, it might be HTML (error page or redirect)
       const text = await response.text();
       console.error('Non-JSON response:', response.status, text.substring(0, 200));
-      
+
       if (response.status === 401) {
         throw new Error('Not authenticated. Please log in again.');
       }
       throw new Error(`Request failed with status ${response.status}`);
     }
   }
-  
+
   // Successful response
   if (contentType && contentType.includes('application/json')) {
     return response.json();
@@ -39,19 +43,24 @@ export async function getResourceGroup(id: string): Promise<ResourceGroup> {
   return handleResponse<ResourceGroup>(response);
 }
 
-export async function createResourceGroup(data: CreateResourceGroupRequest): Promise<ResourceGroup> {
+export async function createResourceGroup(
+  data: CreateResourceGroupRequest
+): Promise<ResourceGroup> {
   const response = await ApiClient.post('/resource-groups', data);
   return handleResponse<ResourceGroup>(response);
 }
 
-export async function updateResourceGroup(id: string, data: UpdateResourceGroupRequest): Promise<ResourceGroup> {
+export async function updateResourceGroup(
+  id: string,
+  data: UpdateResourceGroupRequest
+): Promise<ResourceGroup> {
   const response = await ApiClient.put(`/resource-groups/${id}`, data);
   return handleResponse<ResourceGroup>(response);
 }
 
 export async function deleteResourceGroup(id: string): Promise<void> {
   const response = await ApiClient.delete(`/resource-groups/${id}`);
-  
+
   if (!response.ok) {
     await handleResponse(response);
   }

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { page } from "$app/stores";
-  import { goto } from "$app/navigation";
+  import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import {
     getResource,
     updateResource,
@@ -9,16 +9,16 @@
     performResourceAction,
     getResourceLogs,
     execCommand as execCommandInResource,
-  } from "$lib/services/resources";
-  import type { Resource } from "$lib/types/resource";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as Tabs from "$lib/components/ui/tabs";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Textarea } from "$lib/components/ui/textarea";
+  } from '$lib/services/resources';
+  import type { Resource } from '$lib/types/resource';
+  import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import * as Tabs from '$lib/components/ui/tabs';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
   import {
     ArrowLeft,
     Server,
@@ -34,41 +34,41 @@
     Settings,
     ScrollText,
     Terminal,
-  } from "@lucide/svelte";
+  } from '@lucide/svelte';
 
   let resource: Resource | null = null;
   let loading = true;
-  let error = "";
+  let error = '';
   let showDeleteDialog = false;
   let showEditDialog = false;
   let actionInProgress = false;
-  let containerLogs = "";
+  let containerLogs = '';
   let loadingLogs = false;
-  let execCommand = "";
-  let execOutput = "";
+  let execCommand = '';
+  let execOutput = '';
   let execRunning = false;
-  let activeTab = "info";
+  let activeTab = 'info';
   let logsLoaded = false;
   let logsInterval: ReturnType<typeof setInterval> | null = null;
   let logsContainer: HTMLDivElement;
 
   // Edit form state
-  let editName = "";
-  let editDescription = "";
-  let editImage = "";
-  let editPorts = "";
-  let editEnvironment = "";
+  let editName = '';
+  let editDescription = '';
+  let editImage = '';
+  let editPorts = '';
+  let editEnvironment = '';
 
   $: resourceId = $page.params.id;
 
   // Auto-load logs when switching to logs tab
-  $: if (activeTab === "logs" && resource?.container_id && !logsLoaded) {
+  $: if (activeTab === 'logs' && resource?.container_id && !logsLoaded) {
     loadLogs();
   }
 
   // Auto-refresh logs every 2 seconds when in logs tab
   $: {
-    if (activeTab === "logs" && resource?.container_id) {
+    if (activeTab === 'logs' && resource?.container_id) {
       if (!logsInterval) {
         logsInterval = setInterval(() => {
           loadLogs();
@@ -94,7 +94,7 @@
     loadingLogs = true;
     try {
       const response = await getResourceLogs(resource.id);
-      containerLogs = response.logs || "Keine Logs verfügbar";
+      containerLogs = response.logs || 'Keine Logs verfügbar';
       logsLoaded = true;
 
       // Auto-scroll to bottom after logs update
@@ -104,7 +104,7 @@
         }
       }, 100);
     } catch (e: any) {
-      error = e.message || "Fehler beim Laden der Logs";
+      error = e.message || 'Fehler beim Laden der Logs';
       containerLogs = `Fehler: ${error}`;
     } finally {
       loadingLogs = false;
@@ -120,21 +120,21 @@
 
     try {
       loading = true;
-      error = "";
+      error = '';
       resource = await getResource(resourceId);
     } catch (e: any) {
-      error = e.message || "Failed to load resource";
+      error = e.message || 'Failed to load resource';
     } finally {
       loading = false;
     }
   }
 
-  async function handleAction(action: "start" | "stop" | "restart") {
+  async function handleAction(action: 'start' | 'stop' | 'restart') {
     if (!resource) return;
 
     try {
       actionInProgress = true;
-      error = "";
+      error = '';
       resource = await performResourceAction(resource.id, action);
     } catch (e: any) {
       error = e.message || `Failed to ${action} resource`;
@@ -147,19 +147,12 @@
     if (!resource) return;
 
     editName = resource.name;
-    editDescription = resource.description || "";
+    editDescription = resource.description || '';
 
-    if (
-      resource.resource_type === "docker-container" &&
-      resource.configuration
-    ) {
-      editImage = resource.configuration.image || "";
+    if (resource.resource_type === 'docker-container' && resource.configuration) {
+      editImage = resource.configuration.image || '';
       editPorts = JSON.stringify(resource.configuration.ports || [], null, 2);
-      editEnvironment = JSON.stringify(
-        resource.configuration.environment || {},
-        null,
-        2
-      );
+      editEnvironment = JSON.stringify(resource.configuration.environment || {}, null, 2);
     }
 
     showEditDialog = true;
@@ -169,11 +162,11 @@
     if (!resource) return;
 
     try {
-      error = "";
+      error = '';
       let configuration = resource.configuration;
 
       // Update configuration for docker containers
-      if (resource.resource_type === "docker-container") {
+      if (resource.resource_type === 'docker-container') {
         try {
           configuration = {
             ...configuration,
@@ -182,7 +175,7 @@
             environment: editEnvironment ? JSON.parse(editEnvironment) : {},
           };
         } catch (e) {
-          error = "Ungültiges JSON-Format in Ports oder Environment";
+          error = 'Ungültiges JSON-Format in Ports oder Environment';
           return;
         }
       }
@@ -195,20 +188,20 @@
 
       showEditDialog = false;
     } catch (e: any) {
-      error = e.message || "Failed to update resource";
+      error = e.message || 'Failed to update resource';
     }
   }
 
   function getStatusBadgeVariant(status: string) {
     switch (status) {
-      case "running":
-        return "default";
-      case "stopped":
-        return "secondary";
-      case "error":
-        return "destructive";
+      case 'running':
+        return 'default';
+      case 'stopped':
+        return 'secondary';
+      case 'error':
+        return 'destructive';
       default:
-        return "outline";
+        return 'outline';
     }
   }
 
@@ -216,11 +209,11 @@
     if (!resource) return;
 
     try {
-      error = "";
+      error = '';
       await deleteResource(resource.id);
-      goto("/resources");
+      goto('/resources');
     } catch (e: any) {
-      error = e.message || "Failed to delete resource";
+      error = e.message || 'Failed to delete resource';
       showDeleteDialog = false;
     }
   }
@@ -232,16 +225,14 @@
 
 <div class="container mx-auto p-6 max-w-5xl">
   <div class="mb-6">
-    <Button variant="ghost" onclick={() => goto("/resources")}>
+    <Button variant="ghost" onclick={() => goto('/resources')}>
       <ArrowLeft class="h-4 w-4 mr-2" />
       Zurück zu Ressourcen
     </Button>
   </div>
 
   {#if error}
-    <div
-      class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4"
-    >
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
       {error}
     </div>
   {/if}
@@ -259,7 +250,7 @@
         <Card.Header>
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-4">
-              {#if resource.resource_type === "docker-stack"}
+              {#if resource.resource_type === 'docker-stack'}
                 <Package class="h-12 w-12 text-blue-600" />
               {:else}
                 <Server class="h-12 w-12 text-blue-600" />
@@ -278,8 +269,8 @@
               <Button
                 variant="outline"
                 size="sm"
-                onclick={() => handleAction("start")}
-                disabled={actionInProgress || resource.status === "running"}
+                onclick={() => handleAction('start')}
+                disabled={actionInProgress || resource.status === 'running'}
               >
                 <Play class="h-4 w-4 mr-2" />
                 Starten
@@ -287,8 +278,8 @@
               <Button
                 variant="outline"
                 size="sm"
-                onclick={() => handleAction("stop")}
-                disabled={actionInProgress || resource.status === "stopped"}
+                onclick={() => handleAction('stop')}
+                disabled={actionInProgress || resource.status === 'stopped'}
               >
                 <Square class="h-4 w-4 mr-2" />
                 Stoppen
@@ -296,7 +287,7 @@
               <Button
                 variant="outline"
                 size="sm"
-                onclick={() => handleAction("restart")}
+                onclick={() => handleAction('restart')}
                 disabled={actionInProgress}
               >
                 <RefreshCw class="h-4 w-4 mr-2" />
@@ -306,11 +297,7 @@
                 <Edit class="h-4 w-4 mr-2" />
                 Bearbeiten
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onclick={() => (showDeleteDialog = true)}
-              >
+              <Button variant="destructive" size="sm" onclick={() => (showDeleteDialog = true)}>
                 <Trash2 class="h-4 w-4 mr-2" />
                 Löschen
               </Button>
@@ -334,7 +321,7 @@
             <div>
               <p class="text-sm text-gray-500">Erstellt am</p>
               <p class="font-medium">
-                {new Date(resource.created_at).toLocaleString("de-DE")}
+                {new Date(resource.created_at).toLocaleString('de-DE')}
               </p>
             </div>
           </div>
@@ -413,7 +400,7 @@
                 <div>
                   <dt class="text-sm text-gray-500">Zuletzt aktualisiert</dt>
                   <dd class="font-medium mt-1">
-                    {new Date(resource.updated_at).toLocaleString("de-DE")}
+                    {new Date(resource.updated_at).toLocaleString('de-DE')}
                   </dd>
                 </div>
               </dl>
@@ -429,7 +416,7 @@
             </Card.Header>
             <Card.Content>
               {#if resource.configuration}
-                {#if resource.resource_type === "docker-stack" && resource.configuration.services}
+                {#if resource.resource_type === 'docker-stack' && resource.configuration.services}
                   <div class="space-y-4">
                     <h3 class="font-semibold">
                       Services ({resource.configuration.services.length})
@@ -447,7 +434,7 @@
                             <div class="flex flex-wrap gap-2">
                               {#each service.ports as port}
                                 <Badge variant="outline">
-                                  {port.host || "auto"}:{port.container}
+                                  {port.host || 'auto'}:{port.container}
                                 </Badge>
                               {/each}
                             </div>
@@ -456,15 +443,11 @@
 
                         {#if service.environment}
                           <div class="mt-2">
-                            <p class="text-sm text-gray-500 mb-1">
-                              Environment Variables:
-                            </p>
+                            <p class="text-sm text-gray-500 mb-1">Environment Variables:</p>
                             <div class="space-y-1">
                               {#each Object.entries(service.environment) as [key, value]}
                                 <div class="font-mono text-xs">
-                                  <span class="text-purple-600 font-semibold"
-                                    >{key}</span
-                                  >
+                                  <span class="text-purple-600 font-semibold">{key}</span>
                                   <span class="text-gray-500"> = </span>
                                   <span class="text-gray-900">{value}</span>
                                 </div>
@@ -478,10 +461,7 @@
                             <p class="text-sm text-gray-500 mb-1">Volumes:</p>
                             <div class="space-y-1">
                               {#each service.volumes as volume}
-                                <Badge
-                                  variant="outline"
-                                  class="font-mono text-xs"
-                                >
+                                <Badge variant="outline" class="font-mono text-xs">
                                   {volume.host} → {volume.container}
                                 </Badge>
                               {/each}
@@ -491,14 +471,10 @@
 
                         {#if service.depends_on && service.depends_on.length > 0}
                           <div class="mt-2">
-                            <p class="text-sm text-gray-500 mb-1">
-                              Depends On:
-                            </p>
+                            <p class="text-sm text-gray-500 mb-1">Depends On:</p>
                             <div class="flex flex-wrap gap-1">
                               {#each service.depends_on as dep}
-                                <Badge variant="secondary" class="text-xs"
-                                  >{dep}</Badge
-                                >
+                                <Badge variant="secondary" class="text-xs">{dep}</Badge>
                               {/each}
                             </div>
                           </div>
@@ -506,12 +482,10 @@
                       </div>
                     {/each}
                   </div>
-                {:else if resource.resource_type === "docker-container"}
+                {:else if resource.resource_type === 'docker-container'}
                   <div class="space-y-4">
                     <div>
-                      <p class="text-sm font-medium text-gray-700 mb-2">
-                        Image
-                      </p>
+                      <p class="text-sm font-medium text-gray-700 mb-2">Image</p>
                       <p class="font-mono text-sm">
                         {resource.configuration.image}
                       </p>
@@ -519,13 +493,11 @@
 
                     {#if resource.configuration.ports && resource.configuration.ports.length > 0}
                       <div>
-                        <p class="text-sm font-medium text-gray-700 mb-2">
-                          Ports
-                        </p>
+                        <p class="text-sm font-medium text-gray-700 mb-2">Ports</p>
                         <div class="flex flex-wrap gap-2">
                           {#each resource.configuration.ports as port}
                             <Badge variant="outline">
-                              {port.host || "auto"}:{port.container}
+                              {port.host || 'auto'}:{port.container}
                             </Badge>
                           {/each}
                         </div>
@@ -534,15 +506,11 @@
 
                     {#if resource.configuration.environment && Object.keys(resource.configuration.environment).length > 0}
                       <div>
-                        <p class="text-sm font-medium text-gray-700 mb-2">
-                          Environment Variables
-                        </p>
+                        <p class="text-sm font-medium text-gray-700 mb-2">Environment Variables</p>
                         <div class="space-y-1">
                           {#each Object.entries(resource.configuration.environment) as [key, value]}
                             <div class="font-mono text-sm">
-                              <span class="text-purple-600 font-semibold"
-                                >{key}</span
-                              >
+                              <span class="text-purple-600 font-semibold">{key}</span>
                               <span class="text-gray-500"> = </span>
                               <span class="text-gray-900">{value}</span>
                             </div>
@@ -553,9 +521,7 @@
 
                     {#if resource.configuration.volumes && resource.configuration.volumes.length > 0}
                       <div>
-                        <p class="text-sm font-medium text-gray-700 mb-2">
-                          Volumes
-                        </p>
+                        <p class="text-sm font-medium text-gray-700 mb-2">Volumes</p>
                         <div class="space-y-1">
                           {#each resource.configuration.volumes as volume}
                             <div class="font-mono text-sm">
@@ -569,15 +535,12 @@
                     {/if}
                   </div>
                 {:else}
-                  <pre
-                    class="border rounded p-4 text-xs overflow-auto font-mono">{formatJson(
+                  <pre class="border rounded p-4 text-xs overflow-auto font-mono">{formatJson(
                       resource.configuration
                     )}</pre>
                 {/if}
               {:else}
-                <p class="text-sm text-gray-500">
-                  Keine Konfiguration vorhanden
-                </p>
+                <p class="text-sm text-gray-500">Keine Konfiguration vorhanden</p>
               {/if}
             </Card.Content>
           </Card.Root>
@@ -599,18 +562,15 @@
                   }}
                   disabled={loadingLogs || !resource?.container_id}
                 >
-                  <RefreshCw
-                    class="h-4 w-4 mr-2 {loadingLogs ? 'animate-spin' : ''}"
-                  />
-                  {loadingLogs ? "Laden..." : "Aktualisieren"}
+                  <RefreshCw class="h-4 w-4 mr-2 {loadingLogs ? 'animate-spin' : ''}" />
+                  {loadingLogs ? 'Laden...' : 'Aktualisieren'}
                 </Button>
               </div>
             </Card.Header>
             <Card.Content>
               {#if !resource?.container_id}
                 <p class="text-sm text-gray-500">
-                  Keine Container ID vorhanden. Logs sind nur für laufende
-                  Container verfügbar.
+                  Keine Container ID vorhanden. Logs sind nur für laufende Container verfügbar.
                 </p>
               {:else}
                 <div
@@ -618,7 +578,7 @@
                   class="bg-black text-green-400 p-4 rounded font-mono text-xs max-h-96 whitespace-pre-wrap overflow-y-auto scrollbar-hide"
                   style="scroll-behavior: smooth;"
                 >
-                  {containerLogs || "Logs werden automatisch geladen..."}
+                  {containerLogs || 'Logs werden automatisch geladen...'}
                 </div>
               {/if}
             </Card.Content>
@@ -637,8 +597,7 @@
             <Card.Content class="space-y-4">
               {#if !resource?.container_id}
                 <p class="text-sm text-gray-500">
-                  Keine Container ID vorhanden. Exec ist nur für laufende
-                  Container verfügbar.
+                  Keine Container ID vorhanden. Exec ist nur für laufende Container verfügbar.
                 </p>
               {:else}
                 <div class="space-y-2">
@@ -651,22 +610,14 @@
                       class="font-mono"
                       disabled={execRunning}
                       onkeydown={async (e) => {
-                        if (
-                          e.key === "Enter" &&
-                          execCommand &&
-                          !execRunning &&
-                          resource
-                        ) {
+                        if (e.key === 'Enter' && execCommand && !execRunning && resource) {
                           e.preventDefault();
                           execRunning = true;
                           try {
-                            const response = await execCommandInResource(
-                              resource.id,
-                              execCommand
-                            );
-                            execOutput = `$ ${execCommand}\n${response.output || "(kein Output)"}`;
+                            const response = await execCommandInResource(resource.id, execCommand);
+                            execOutput = `$ ${execCommand}\n${response.output || '(kein Output)'}`;
                           } catch (err: any) {
-                            execOutput = `$ ${execCommand}\nFehler: ${err.message || "Unbekannter Fehler"}`;
+                            execOutput = `$ ${execCommand}\nFehler: ${err.message || 'Unbekannter Fehler'}`;
                           } finally {
                             execRunning = false;
                           }
@@ -678,13 +629,10 @@
                         if (!execCommand || execRunning || !resource) return;
                         execRunning = true;
                         try {
-                          const response = await execCommandInResource(
-                            resource.id,
-                            execCommand
-                          );
-                          execOutput = `$ ${execCommand}\n${response.output || "(kein Output)"}`;
+                          const response = await execCommandInResource(resource.id, execCommand);
+                          execOutput = `$ ${execCommand}\n${response.output || '(kein Output)'}`;
                         } catch (err: any) {
-                          execOutput = `$ ${execCommand}\nFehler: ${err.message || "Unbekannter Fehler"}`;
+                          execOutput = `$ ${execCommand}\nFehler: ${err.message || 'Unbekannter Fehler'}`;
                         } finally {
                           execRunning = false;
                         }
@@ -692,7 +640,7 @@
                       disabled={!execCommand || execRunning}
                     >
                       <Terminal class="h-4 w-4 mr-2" />
-                      {execRunning ? "Ausführen..." : "Ausführen"}
+                      {execRunning ? 'Ausführen...' : 'Ausführen'}
                     </Button>
                   </div>
                 </div>
@@ -738,14 +686,12 @@
     <Dialog.Header>
       <Dialog.Title>Ressource löschen</Dialog.Title>
       <Dialog.Description>
-        Möchten Sie die Ressource "{resource?.name}" wirklich löschen? Diese
-        Aktion kann nicht rückgängig gemacht werden.
+        Möchten Sie die Ressource "{resource?.name}" wirklich löschen? Diese Aktion kann nicht
+        rückgängig gemacht werden.
       </Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (showDeleteDialog = false)}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={() => (showDeleteDialog = false)}>Abbrechen</Button>
       <Button variant="destructive" onclick={handleDelete}>Löschen</Button>
     </Dialog.Footer>
   </Dialog.Content>
@@ -764,11 +710,7 @@
     <div class="space-y-4 py-4">
       <div class="space-y-2">
         <Label for="edit-name">Name</Label>
-        <Input
-          id="edit-name"
-          bind:value={editName}
-          placeholder="Ressource Name"
-        />
+        <Input id="edit-name" bind:value={editName} placeholder="Ressource Name" />
       </div>
 
       <div class="space-y-2">
@@ -782,14 +724,10 @@
         ></textarea>
       </div>
 
-      {#if resource?.resource_type === "docker-container"}
+      {#if resource?.resource_type === 'docker-container'}
         <div class="space-y-2">
           <Label for="edit-image">Docker Image</Label>
-          <Input
-            id="edit-image"
-            bind:value={editImage}
-            placeholder="z.B. nginx:latest"
-          />
+          <Input id="edit-image" bind:value={editImage} placeholder="z.B. nginx:latest" />
         </div>
 
         <div class="space-y-2">
@@ -802,7 +740,7 @@
             class="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           ></textarea>
           <p class="text-xs text-gray-500">
-            Format: [{"{"}container: 80, host: 8080{"}"}]
+            Format: [{'{'}container: 80, host: 8080{'}'}]
           </p>
         </div>
 
@@ -816,7 +754,7 @@
             class="flex min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           ></textarea>
           <p class="text-xs text-gray-500">
-            Format: {"{"}KEY: "value"{"}"}
+            Format: {'{'}KEY: "value"{'}'}
           </p>
         </div>
       {/if}

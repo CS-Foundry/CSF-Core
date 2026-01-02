@@ -1,18 +1,14 @@
 <script lang="ts">
-  import * as Card from "$lib/components/ui/card/index.js";
-  import * as Tabs from "$lib/components/ui/tabs/index.js";
-  import {
-    Field,
-    FieldLabel,
-    FieldDescription,
-  } from "$lib/components/ui/field/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import { Alert, AlertDescription } from "$lib/components/ui/alert/index.js";
-  import { Badge } from "$lib/components/ui/badge/index.js";
-  import { authStore } from "$lib/stores/auth";
-  import { SettingsService } from "$lib/services/settings";
-  import { AuthService } from "$lib/services/auth";
+  import * as Card from '$lib/components/ui/card/index.js';
+  import * as Tabs from '$lib/components/ui/tabs/index.js';
+  import { Field, FieldLabel, FieldDescription } from '$lib/components/ui/field/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Alert, AlertDescription } from '$lib/components/ui/alert/index.js';
+  import { Badge } from '$lib/components/ui/badge/index.js';
+  import { authStore } from '$lib/stores/auth';
+  import { SettingsService } from '$lib/services/settings';
+  import { AuthService } from '$lib/services/auth';
   import {
     UserIcon,
     ShieldCheckIcon,
@@ -21,39 +17,39 @@
     XCircleIcon,
     Building2,
     Users,
-  } from "@lucide/svelte";
-  import { onMount } from "svelte";
-  import OrganizationSettings from "$lib/components/settings/OrganizationSettings.svelte";
+  } from '@lucide/svelte';
+  import { onMount } from 'svelte';
+  import OrganizationSettings from '$lib/components/settings/OrganizationSettings.svelte';
 
   let authState = $derived($authStore);
-  let email = $state("");
-  let currentPassword = $state("");
-  let newPassword = $state("");
-  let confirmPassword = $state("");
+  let email = $state('');
+  let currentPassword = $state('');
+  let newPassword = $state('');
+  let confirmPassword = $state('');
   let isProfileLoading = $state(false);
-  let profileMessage = $state("");
+  let profileMessage = $state('');
 
   let twoFactorEnabled = $state(false);
-  let totpQrCode = $state("");
-  let totpSecret = $state("");
-  let verificationCode = $state("");
-  let disableVerificationCode = $state("");
+  let totpQrCode = $state('');
+  let totpSecret = $state('');
+  let verificationCode = $state('');
+  let disableVerificationCode = $state('');
   let is2FALoading = $state(false);
-  let twoFactorMessage = $state("");
+  let twoFactorMessage = $state('');
 
   onMount(async () => {
     // Wait a tick to ensure authStore is initialized
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    console.log("[Settings] authStore state:", $authStore);
-    console.log("[Settings] Has token:", !!$authStore.token);
+    console.log('[Settings] authStore state:', $authStore);
+    console.log('[Settings] Has token:', !!$authStore.token);
 
     try {
       const profile = await SettingsService.getProfile();
-      email = profile.email || "";
+      email = profile.email || '';
       twoFactorEnabled = profile.two_factor_enabled;
     } catch (error) {
-      console.error("Failed to load profile:", error);
+      console.error('Failed to load profile:', error);
       // Don't show error to user on initial load, just use defaults
       // The profile endpoints are protected, if user is not authenticated
       // they will be redirected by the server-side load function
@@ -63,16 +59,14 @@
   async function handleEmailChange(event: Event) {
     event.preventDefault();
     isProfileLoading = true;
-    profileMessage = "";
+    profileMessage = '';
 
     try {
       await SettingsService.changeEmail(email);
-      profileMessage = "E-Mail erfolgreich aktualisiert";
+      profileMessage = 'E-Mail erfolgreich aktualisiert';
     } catch (error) {
       profileMessage =
-        error instanceof Error
-          ? error.message
-          : "E-Mail-Aktualisierung fehlgeschlagen";
+        error instanceof Error ? error.message : 'E-Mail-Aktualisierung fehlgeschlagen';
     } finally {
       isProfileLoading = false;
     }
@@ -82,43 +76,31 @@
     event.preventDefault();
 
     if (newPassword !== confirmPassword) {
-      profileMessage = "Passwörter stimmen nicht überein";
+      profileMessage = 'Passwörter stimmen nicht überein';
       return;
     }
 
     if (newPassword.length < 6) {
-      profileMessage = "Passwort muss mindestens 6 Zeichen lang sein";
+      profileMessage = 'Passwort muss mindestens 6 Zeichen lang sein';
       return;
     }
 
     isProfileLoading = true;
-    profileMessage = "";
+    profileMessage = '';
 
     try {
       const publicKey = await AuthService.getPublicKey();
-      const encryptedOldPassword = await AuthService.encryptPassword(
-        currentPassword,
-        publicKey
-      );
-      const encryptedNewPassword = await AuthService.encryptPassword(
-        newPassword,
-        publicKey
-      );
+      const encryptedOldPassword = await AuthService.encryptPassword(currentPassword, publicKey);
+      const encryptedNewPassword = await AuthService.encryptPassword(newPassword, publicKey);
 
-      await SettingsService.changePassword(
-        encryptedOldPassword,
-        encryptedNewPassword
-      );
+      await SettingsService.changePassword(encryptedOldPassword, encryptedNewPassword);
 
-      profileMessage = "Passwort erfolgreich geändert";
-      currentPassword = "";
-      newPassword = "";
-      confirmPassword = "";
+      profileMessage = 'Passwort erfolgreich geändert';
+      currentPassword = '';
+      newPassword = '';
+      confirmPassword = '';
     } catch (error) {
-      profileMessage =
-        error instanceof Error
-          ? error.message
-          : "Passwortänderung fehlgeschlagen";
+      profileMessage = error instanceof Error ? error.message : 'Passwortänderung fehlgeschlagen';
     } finally {
       isProfileLoading = false;
     }
@@ -126,16 +108,15 @@
 
   async function handleSetup2FA() {
     is2FALoading = true;
-    twoFactorMessage = "";
+    twoFactorMessage = '';
 
     try {
       const response = await SettingsService.setup2FA();
       totpSecret = response.secret;
       totpQrCode = response.qr_code;
-      twoFactorMessage = "Scannen Sie den QR-Code mit Ihrer Authenticator App";
+      twoFactorMessage = 'Scannen Sie den QR-Code mit Ihrer Authenticator App';
     } catch (error) {
-      twoFactorMessage =
-        error instanceof Error ? error.message : "2FA-Setup fehlgeschlagen";
+      twoFactorMessage = error instanceof Error ? error.message : '2FA-Setup fehlgeschlagen';
     } finally {
       is2FALoading = false;
     }
@@ -145,25 +126,22 @@
     event.preventDefault();
 
     if (!verificationCode || verificationCode.length !== 6) {
-      twoFactorMessage = "Bitte geben Sie einen gültigen 6-stelligen Code ein";
+      twoFactorMessage = 'Bitte geben Sie einen gültigen 6-stelligen Code ein';
       return;
     }
 
     is2FALoading = true;
-    twoFactorMessage = "";
+    twoFactorMessage = '';
 
     try {
       await SettingsService.enable2FA(verificationCode);
       twoFactorEnabled = true;
-      verificationCode = "";
-      totpQrCode = "";
-      totpSecret = "";
-      twoFactorMessage = "2FA erfolgreich aktiviert";
+      verificationCode = '';
+      totpQrCode = '';
+      totpSecret = '';
+      twoFactorMessage = '2FA erfolgreich aktiviert';
     } catch (error) {
-      twoFactorMessage =
-        error instanceof Error
-          ? error.message
-          : "2FA-Aktivierung fehlgeschlagen";
+      twoFactorMessage = error instanceof Error ? error.message : '2FA-Aktivierung fehlgeschlagen';
     } finally {
       is2FALoading = false;
     }
@@ -173,23 +151,21 @@
     event.preventDefault();
 
     if (!disableVerificationCode || disableVerificationCode.length !== 6) {
-      twoFactorMessage = "Bitte geben Sie einen gültigen 6-stelligen Code ein";
+      twoFactorMessage = 'Bitte geben Sie einen gültigen 6-stelligen Code ein';
       return;
     }
 
     is2FALoading = true;
-    twoFactorMessage = "";
+    twoFactorMessage = '';
 
     try {
       await SettingsService.disable2FA(disableVerificationCode);
       twoFactorEnabled = false;
-      disableVerificationCode = "";
-      twoFactorMessage = "2FA erfolgreich deaktiviert";
+      disableVerificationCode = '';
+      twoFactorMessage = '2FA erfolgreich deaktiviert';
     } catch (error) {
       twoFactorMessage =
-        error instanceof Error
-          ? error.message
-          : "2FA-Deaktivierung fehlgeschlagen";
+        error instanceof Error ? error.message : '2FA-Deaktivierung fehlgeschlagen';
     } finally {
       is2FALoading = false;
     }
@@ -199,9 +175,7 @@
 <div class="flex-1 space-y-6 p-8 pt-6">
   <div class="space-y-1">
     <h2 class="text-3xl font-bold tracking-tight">Einstellungen</h2>
-    <p class="text-muted-foreground">
-      Verwalten Sie Ihr Profil und Ihre Sicherheitseinstellungen
-    </p>
+    <p class="text-muted-foreground">Verwalten Sie Ihr Profil und Ihre Sicherheitseinstellungen</p>
   </div>
 
   <Tabs.Root value="profile" class="space-y-6">
@@ -228,18 +202,12 @@
       <Card.Root>
         <Card.Header>
           <Card.Title>E-Mail ändern</Card.Title>
-          <Card.Description
-            >Aktualisieren Sie Ihre E-Mail-Adresse</Card.Description
-          >
+          <Card.Description>Aktualisieren Sie Ihre E-Mail-Adresse</Card.Description>
         </Card.Header>
         <Card.Content>
           <form onsubmit={handleEmailChange} class="space-y-6">
-            {#if profileMessage && !profileMessage.includes("Passwort")}
-              <Alert
-                variant={profileMessage.includes("erfolgreich")
-                  ? "default"
-                  : "destructive"}
-              >
+            {#if profileMessage && !profileMessage.includes('Passwort')}
+              <Alert variant={profileMessage.includes('erfolgreich') ? 'default' : 'destructive'}>
                 <AlertDescription>{profileMessage}</AlertDescription>
               </Alert>
             {/if}
@@ -257,9 +225,7 @@
 
             <Button type="submit" disabled={isProfileLoading}>
               {#if isProfileLoading}
-                <div
-                  class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"
-                ></div>
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
               {/if}
               E-Mail aktualisieren
             </Button>
@@ -270,18 +236,12 @@
       <Card.Root>
         <Card.Header>
           <Card.Title>Passwort ändern</Card.Title>
-          <Card.Description
-            >Ändern Sie Ihr Passwort für mehr Sicherheit</Card.Description
-          >
+          <Card.Description>Ändern Sie Ihr Passwort für mehr Sicherheit</Card.Description>
         </Card.Header>
         <Card.Content>
           <form onsubmit={handlePasswordChange} class="space-y-6">
-            {#if profileMessage && profileMessage.includes("Passwort")}
-              <Alert
-                variant={profileMessage.includes("erfolgreich")
-                  ? "default"
-                  : "destructive"}
-              >
+            {#if profileMessage && profileMessage.includes('Passwort')}
+              <Alert variant={profileMessage.includes('erfolgreich') ? 'default' : 'destructive'}>
                 <AlertDescription>{profileMessage}</AlertDescription>
               </Alert>
             {/if}
@@ -309,8 +269,7 @@
             </Field>
 
             <Field>
-              <FieldLabel for="confirm-password">Passwort bestätigen</FieldLabel
-              >
+              <FieldLabel for="confirm-password">Passwort bestätigen</FieldLabel>
               <Input
                 id="confirm-password"
                 type="password"
@@ -322,9 +281,7 @@
 
             <Button type="submit" disabled={isProfileLoading}>
               {#if isProfileLoading}
-                <div
-                  class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"
-                ></div>
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
               {/if}
               Passwort ändern
             </Button>
@@ -341,17 +298,12 @@
             Zwei-Faktor-Authentifizierung (2FA)
           </Card.Title>
           <Card.Description>
-            Erhöhen Sie die Sicherheit Ihres Kontos mit TOTP (Time-based
-            One-Time Password)
+            Erhöhen Sie die Sicherheit Ihres Kontos mit TOTP (Time-based One-Time Password)
           </Card.Description>
         </Card.Header>
         <Card.Content class="space-y-6">
           {#if twoFactorMessage}
-            <Alert
-              variant={twoFactorMessage.includes("erfolgreich")
-                ? "default"
-                : "destructive"}
-            >
+            <Alert variant={twoFactorMessage.includes('erfolgreich') ? 'default' : 'destructive'}>
               <AlertDescription>{twoFactorMessage}</AlertDescription>
             </Alert>
           {/if}
@@ -377,18 +329,13 @@
                   {/if}
                 </div>
                 <p class="text-sm text-muted-foreground">
-                  Verwenden Sie eine Authenticator App wie Google Authenticator
-                  oder Authy
+                  Verwenden Sie eine Authenticator App wie Google Authenticator oder Authy
                 </p>
               </div>
             </div>
 
             {#if !twoFactorEnabled && !totpQrCode}
-              <Button
-                onclick={handleSetup2FA}
-                disabled={is2FALoading}
-                class="w-full"
-              >
+              <Button onclick={handleSetup2FA} disabled={is2FALoading} class="w-full">
                 {#if is2FALoading}
                   <div
                     class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"
@@ -411,18 +358,14 @@
                     </div>
                     <div class="text-center space-y-2">
                       <p class="text-sm font-medium">Secret Key</p>
-                      <code class="text-xs bg-muted px-2 py-1 rounded"
-                        >{totpSecret}</code
-                      >
+                      <code class="text-xs bg-muted px-2 py-1 rounded">{totpSecret}</code>
                     </div>
                   </div>
                 </div>
 
                 <form onsubmit={handleEnable2FA} class="space-y-4">
                   <Field>
-                    <FieldLabel for="verification-code"
-                      >Verifizierungscode</FieldLabel
-                    >
+                    <FieldLabel for="verification-code">Verifizierungscode</FieldLabel>
                     <Input
                       id="verification-code"
                       bind:value={verificationCode}
@@ -431,8 +374,7 @@
                       disabled={is2FALoading}
                     />
                     <FieldDescription
-                      >Geben Sie den 6-stelligen Code aus Ihrer Authenticator
-                      App ein</FieldDescription
+                      >Geben Sie den 6-stelligen Code aus Ihrer Authenticator App ein</FieldDescription
                     >
                   </Field>
 
@@ -453,16 +395,14 @@
                 <Alert>
                   <CheckCircle2Icon class="h-4 w-4" />
                   <AlertDescription>
-                    2FA ist aktiviert. Sie benötigen bei der Anmeldung einen
-                    Code aus Ihrer Authenticator App.
+                    2FA ist aktiviert. Sie benötigen bei der Anmeldung einen Code aus Ihrer
+                    Authenticator App.
                   </AlertDescription>
                 </Alert>
 
                 <form onsubmit={handleDisable2FA} class="space-y-4">
                   <Field>
-                    <FieldLabel for="disable-code"
-                      >Verifizierungscode zum Deaktivieren</FieldLabel
-                    >
+                    <FieldLabel for="disable-code">Verifizierungscode zum Deaktivieren</FieldLabel>
                     <Input
                       id="disable-code"
                       bind:value={disableVerificationCode}
@@ -497,16 +437,13 @@
       <Card.Root>
         <Card.Header>
           <Card.Title>Organisation</Card.Title>
-          <Card.Description
-            >Verwalten Sie Ihre Organisationseinstellungen</Card.Description
-          >
+          <Card.Description>Verwalten Sie Ihre Organisationseinstellungen</Card.Description>
         </Card.Header>
         <Card.Content>
           <p class="text-muted-foreground mb-4">
             Besuchen Sie die <a
               href="/admin/organization"
-              class="text-primary hover:underline font-medium"
-              >Organisationsverwaltungsseite</a
+              class="text-primary hover:underline font-medium">Organisationsverwaltungsseite</a
             >, um Ihre Organisation zu verwalten.
           </p>
           <Button href="/admin/organization">
@@ -521,15 +458,11 @@
       <Card.Root>
         <Card.Header>
           <Card.Title>Benutzerverwaltung</Card.Title>
-          <Card.Description
-            >Verwalten Sie Benutzer und deren Rollen</Card.Description
-          >
+          <Card.Description>Verwalten Sie Benutzer und deren Rollen</Card.Description>
         </Card.Header>
         <Card.Content>
           <p class="text-muted-foreground mb-4">
-            Besuchen Sie die <a
-              href="/admin/users"
-              class="text-primary hover:underline font-medium"
+            Besuchen Sie die <a href="/admin/users" class="text-primary hover:underline font-medium"
               >Benutzerverwaltungsseite</a
             >, um Benutzer zu erstellen, bearbeiten und löschen.
           </p>

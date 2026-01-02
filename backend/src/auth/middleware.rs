@@ -1,20 +1,27 @@
-use crate::{auth::jwt::{verify_jwt, Claims}, AppState};
-use axum::{async_trait, extract::FromRequestParts, http::{request::Parts, StatusCode}};
+use crate::{
+    auth::jwt::{verify_jwt, Claims},
+    AppState,
+};
+use axum::{
+    async_trait,
+    extract::FromRequestParts,
+    http::{request::Parts, StatusCode},
+};
 use chrono::Utc;
 use entity::InvalidJwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
-
 
 // Custom extractor for authenticated requests
 pub struct AuthenticatedUser(pub Claims);
 
 #[async_trait]
-impl FromRequestParts<AppState> for AuthenticatedUser
-{
+impl FromRequestParts<AppState> for AuthenticatedUser {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         tracing::info!("Request headers: {:?}", parts.headers);
         let token = parts
             .headers
@@ -22,7 +29,8 @@ impl FromRequestParts<AppState> for AuthenticatedUser
             .and_then(|header| header.to_str().ok())
             .and_then(|header| header.strip_prefix("Bearer "))
             .or_else(|| {
-                parts.headers
+                parts
+                    .headers
                     .get("cookie")
                     .and_then(|cookie_header| cookie_header.to_str().ok())
                     .and_then(|cookies| {

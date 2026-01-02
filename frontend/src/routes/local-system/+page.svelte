@@ -1,20 +1,20 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy } from 'svelte';
   import {
     getLocalSystemInfo,
     getLocalSystemMetrics,
     formatUptime,
     type LocalSystemInfo,
     type LocalSystemMetrics,
-  } from "$lib/services/system";
-  import { formatBytes } from "$lib/services/agents";
-  import * as Card from "$lib/components/ui/card/index.js";
-  import * as Chart from "$lib/components/ui/chart/index.js";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { PieChart, Text } from "layerchart";
-  import { RefreshCw, Server, Cpu, HardDrive, Activity } from "@lucide/svelte";
-  import Icon from "@iconify/svelte";
+  } from '$lib/services/system';
+  import { formatBytes } from '$lib/services/agents';
+  import * as Card from '$lib/components/ui/card/index.js';
+  import * as Chart from '$lib/components/ui/chart/index.js';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
+  import { PieChart, Text } from 'layerchart';
+  import { RefreshCw, Server, Cpu, HardDrive, Activity } from '@lucide/svelte';
+  import Icon from '@iconify/svelte';
 
   let systemInfo = $state<LocalSystemInfo | null>(null);
   let currentMetrics = $state<LocalSystemMetrics | null>(null);
@@ -24,16 +24,13 @@
 
   async function loadData() {
     try {
-      const [info, metrics] = await Promise.all([
-        getLocalSystemInfo(),
-        getLocalSystemMetrics(),
-      ]);
+      const [info, metrics] = await Promise.all([getLocalSystemInfo(), getLocalSystemMetrics()]);
       systemInfo = info;
       currentMetrics = metrics;
       loading = false;
       error = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load system data";
+      error = e instanceof Error ? e.message : 'Failed to load system data';
       loading = false;
     }
   }
@@ -50,36 +47,36 @@
   });
 
   function getOsIconName(osName: string): string {
-    const lower = osName?.toLowerCase() || "";
-    if (lower.includes("mac")) return "bi:apple";
-    if (lower.includes("linux") || lower.includes("ubuntu")) return "bi:ubuntu";
-    if (lower.includes("windows")) return "bi:windows";
-    return "bi:pc-display";
+    const lower = osName?.toLowerCase() || '';
+    if (lower.includes('mac')) return 'bi:apple';
+    if (lower.includes('linux') || lower.includes('ubuntu')) return 'bi:ubuntu';
+    if (lower.includes('windows')) return 'bi:windows';
+    return 'bi:pc-display';
   }
 
   // Chart configurations
   const cpuRadialConfig = {
-    used: { label: "Used", color: "oklch(0.646 0.222 41.116)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.646 0.222 41.116)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   const memoryRadialConfig = {
-    used: { label: "Used", color: "oklch(0.6 0.118 184.704)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.6 0.118 184.704)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   const diskRadialConfig = {
-    used: { label: "Used", color: "oklch(0.398 0.07 227.392)" },
-    free: { label: "Free", color: "oklch(0.5 0.002 286.375 / 0.3)" },
+    used: { label: 'Used', color: 'oklch(0.398 0.07 227.392)' },
+    free: { label: 'Free', color: 'oklch(0.5 0.002 286.375 / 0.3)' },
   } satisfies Chart.ChartConfig;
 
   function getUsageColor(percentage: number): string {
-    if (percentage < 80) return "oklch(0.646 0.222 41.116)";
-    else if (percentage < 90) return "oklch(0.828 0.189 84.429)";
-    else return "oklch(0.577 0.245 27.325)";
+    if (percentage < 80) return 'oklch(0.646 0.222 41.116)';
+    else if (percentage < 90) return 'oklch(0.828 0.189 84.429)';
+    else return 'oklch(0.577 0.245 27.325)';
   }
 
-  const freeColor = "oklch(0.5 0.002 286.375 / 0.3)";
+  const freeColor = 'oklch(0.5 0.002 286.375 / 0.3)';
 </script>
 
 <svelte:head>
@@ -90,9 +87,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-3xl font-bold">Local System</h1>
-      <p class="text-muted-foreground">
-        Monitor the system running the CSF Core backend daemon
-      </p>
+      <p class="text-muted-foreground">Monitor the system running the CSF Core backend daemon</p>
     </div>
     <Button variant="outline" size="sm" onclick={loadData} disabled={loading}>
       <RefreshCw class="h-4 w-4 {loading ? 'animate-spin' : ''}" />
@@ -104,9 +99,7 @@
       <RefreshCw class="h-8 w-8 animate-spin text-muted-foreground" />
     </div>
   {:else if error}
-    <div
-      class="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive"
-    >
+    <div class="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
       {error}
     </div>
   {:else if systemInfo && currentMetrics}
@@ -157,7 +150,7 @@
           <div>
             <p class="text-sm text-muted-foreground">Last Update</p>
             <p class="mt-1 text-sm font-medium">
-              {new Date(currentMetrics.timestamp).toLocaleTimeString("de-DE")}
+              {new Date(currentMetrics.timestamp).toLocaleTimeString('de-DE')}
             </p>
           </div>
         </div>
@@ -175,19 +168,16 @@
           </Card.Description>
         </Card.Header>
         <Card.Content class="flex-1 pb-0">
-          <Chart.Container
-            config={cpuRadialConfig}
-            class="mx-auto aspect-square max-h-[250px]"
-          >
+          <Chart.Container config={cpuRadialConfig} class="mx-auto aspect-square max-h-[250px]">
             <PieChart
               data={[
                 {
-                  name: "used",
+                  name: 'used',
                   value: currentMetrics.cpu_usage_percent,
                   color: getUsageColor(currentMetrics.cpu_usage_percent),
                 },
                 {
-                  name: "free",
+                  name: 'free',
                   value: 100 - currentMetrics.cpu_usage_percent,
                   color: freeColor,
                 },
@@ -201,11 +191,7 @@
                 class="text-3xl font-bold tabular-nums"
                 y={-4}
               />
-              <Text
-                value="CPU"
-                class="text-sm font-medium text-muted-foreground"
-                y={16}
-              />
+              <Text value="CPU" class="text-sm font-medium text-muted-foreground" y={16} />
             </PieChart>
           </Chart.Container>
         </Card.Content>
@@ -222,19 +208,16 @@
           </Card.Description>
         </Card.Header>
         <Card.Content class="flex-1 pb-0">
-          <Chart.Container
-            config={memoryRadialConfig}
-            class="mx-auto aspect-square max-h-[250px]"
-          >
+          <Chart.Container config={memoryRadialConfig} class="mx-auto aspect-square max-h-[250px]">
             <PieChart
               data={[
                 {
-                  name: "used",
+                  name: 'used',
                   value: currentMetrics.memory_usage_percent,
                   color: getUsageColor(currentMetrics.memory_usage_percent),
                 },
                 {
-                  name: "free",
+                  name: 'free',
                   value: 100 - currentMetrics.memory_usage_percent,
                   color: freeColor,
                 },
@@ -248,11 +231,7 @@
                 class="text-3xl font-bold tabular-nums"
                 y={-4}
               />
-              <Text
-                value="Memory"
-                class="text-sm font-medium text-muted-foreground"
-                y={16}
-              />
+              <Text value="Memory" class="text-sm font-medium text-muted-foreground" y={16} />
             </PieChart>
           </Chart.Container>
         </Card.Content>
@@ -269,19 +248,16 @@
           </Card.Description>
         </Card.Header>
         <Card.Content class="flex-1 pb-0">
-          <Chart.Container
-            config={diskRadialConfig}
-            class="mx-auto aspect-square max-h-[250px]"
-          >
+          <Chart.Container config={diskRadialConfig} class="mx-auto aspect-square max-h-[250px]">
             <PieChart
               data={[
                 {
-                  name: "used",
+                  name: 'used',
                   value: currentMetrics.disk_usage_percent,
                   color: getUsageColor(currentMetrics.disk_usage_percent),
                 },
                 {
-                  name: "free",
+                  name: 'free',
                   value: 100 - currentMetrics.disk_usage_percent,
                   color: freeColor,
                 },
@@ -295,11 +271,7 @@
                 class="text-3xl font-bold tabular-nums"
                 y={-4}
               />
-              <Text
-                value="Disk"
-                class="text-sm font-medium text-muted-foreground"
-                y={16}
-              />
+              <Text value="Disk" class="text-sm font-medium text-muted-foreground" y={16} />
             </PieChart>
           </Chart.Container>
         </Card.Content>
@@ -316,15 +288,11 @@
           <div class="space-y-4">
             <div class="flex justify-between">
               <span class="text-muted-foreground">Total Received:</span>
-              <span class="font-medium"
-                >{formatBytes(currentMetrics.network_rx_bytes)}</span
-              >
+              <span class="font-medium">{formatBytes(currentMetrics.network_rx_bytes)}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">Total Transmitted:</span>
-              <span class="font-medium"
-                >{formatBytes(currentMetrics.network_tx_bytes)}</span
-              >
+              <span class="font-medium">{formatBytes(currentMetrics.network_tx_bytes)}</span>
             </div>
           </div>
         </Card.Content>
@@ -342,9 +310,7 @@
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">Status:</span>
-              <Badge class="bg-green-500 hover:bg-green-600 text-white">
-                Healthy
-              </Badge>
+              <Badge class="bg-green-500 hover:bg-green-600 text-white">Healthy</Badge>
             </div>
           </div>
         </Card.Content>

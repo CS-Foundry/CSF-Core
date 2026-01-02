@@ -2,9 +2,8 @@ use crate::{auth::middleware::AuthenticatedUser, AppState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get},
-    Json,
-    Router,
+    routing::get,
+    Json, Router,
 };
 use entity::{subscription, Subscription};
 use sea_orm::prelude::Decimal;

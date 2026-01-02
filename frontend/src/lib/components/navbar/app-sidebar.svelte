@@ -13,104 +13,104 @@
     FolderOpen,
     ShoppingBag,
     Package,
-  } from "@lucide/svelte";
+  } from '@lucide/svelte';
 
   // Data for FinanceVault app
   const data = {
     user: {
-      name: "Max Mustermann",
-      email: "max@example.com",
-      avatar: "/avatars/user.jpg",
+      name: 'Max Mustermann',
+      email: 'max@example.com',
+      avatar: '/avatars/user.jpg',
     },
     teams: [
       {
-        name: "CSF Core",
-        plan: "Premium",
+        name: 'CSF Core',
+        plan: 'Premium',
       },
     ],
     navMain: [
       {
-        title: "Dashboard",
-        url: "/",
+        title: 'Dashboard',
+        url: '/',
         icon: LayoutDashboardIcon,
         isActive: true,
       },
       {
-        title: "Physical Servers",
-        url: "/physical-servers",
+        title: 'Physical Servers',
+        url: '/physical-servers',
         icon: Server,
       },
       {
-        title: "Resource Groups",
-        url: "/resource-groups",
+        title: 'Resource Groups',
+        url: '/resource-groups',
         icon: FolderOpen,
       },
       {
-        title: "Resources",
-        url: "/resources",
+        title: 'Resources',
+        url: '/resources',
         icon: Package,
       },
       {
-        title: "Marketplace",
-        url: "/marketplace",
+        title: 'Marketplace',
+        url: '/marketplace',
         icon: ShoppingBag,
       },
       {
-        title: "Customers",
-        url: "/customers",
+        title: 'Customers',
+        url: '/customers',
         icon: Users,
       },
       {
-        title: "Projects",
-        url: "/projects",
+        title: 'Projects',
+        url: '/projects',
         icon: FolderKanban,
       },
       {
-        title: "Documents",
-        url: "/documents",
+        title: 'Documents',
+        url: '/documents',
         icon: FileText,
       },
       {
-        title: "Reports",
-        url: "/reports",
+        title: 'Reports',
+        url: '/reports',
         icon: ChartPieIcon,
       },
     ],
     favorites: [
       {
-        name: "Max Mustermann",
-        company: "Tech Solutions GmbH",
-        url: "/customers/max-mustermann",
-        initials: "M",
+        name: 'Max Mustermann',
+        company: 'Tech Solutions GmbH',
+        url: '/customers/max-mustermann',
+        initials: 'M',
       },
       {
-        name: "Anna Schmidt",
-        company: "Digital Marketing AG",
-        url: "/customers/anna-schmidt",
-        initials: "A",
+        name: 'Anna Schmidt',
+        company: 'Digital Marketing AG',
+        url: '/customers/anna-schmidt',
+        initials: 'A',
       },
       {
-        name: "Stefan Klein",
-        company: "Klein & Partners",
-        url: "/customers/stefan-klein",
-        initials: "S",
+        name: 'Stefan Klein',
+        company: 'Klein & Partners',
+        url: '/customers/stefan-klein',
+        initials: 'S',
       },
     ],
   };
 </script>
 
 <script lang="ts">
-  import NavMain from "./nav-main.svelte";
-  import NavFavorites from "./nav-favorites.svelte";
-  import NavProjects from "./nav-projects.svelte";
-  import NavUser from "./nav-user.svelte";
-  import TeamSwitcher from "./team-switcher.svelte";
-  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
-  import type { ComponentProps } from "svelte";
+  import NavMain from './nav-main.svelte';
+  import NavFavorites from './nav-favorites.svelte';
+  import NavProjects from './nav-projects.svelte';
+  import NavUser from './nav-user.svelte';
+  import TeamSwitcher from './team-switcher.svelte';
+  import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import type { ComponentProps } from 'svelte';
 
   let {
     ref = $bindable(null),
-    collapsible = "icon",
+    collapsible = 'icon',
     ...restProps
   }: ComponentProps<typeof Sidebar.Root> = $props();
 </script>

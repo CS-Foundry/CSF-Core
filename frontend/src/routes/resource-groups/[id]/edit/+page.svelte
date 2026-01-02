@@ -1,33 +1,27 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { page } from "$app/stores";
-  import {
-    getResourceGroup,
-    updateResourceGroup,
-  } from "$lib/services/resource-groups";
-  import type {
-    ResourceGroup,
-    UpdateResourceGroupRequest,
-  } from "$lib/types/resource-group";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Textarea } from "$lib/components/ui/textarea";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { getResourceGroup, updateResourceGroup } from '$lib/services/resource-groups';
+  import type { ResourceGroup, UpdateResourceGroupRequest } from '$lib/types/resource-group';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
   import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-  } from "$lib/components/ui/card";
-  import { ArrowLeft, Save, RefreshCw } from "@lucide/svelte";
+  } from '$lib/components/ui/card';
+  import { ArrowLeft, Save, RefreshCw } from '@lucide/svelte';
 
   let resourceGroup = $state<ResourceGroup | null>(null);
   let formData = $state({
-    name: "",
-    description: "",
-    location: "",
+    name: '',
+    description: '',
+    location: '',
   });
 
   let errors = $state<Record<string, string>>({});
@@ -45,12 +39,11 @@
       resourceGroup = await getResourceGroup(resourceGroupId);
       formData = {
         name: resourceGroup.name,
-        description: resourceGroup.description || "",
-        location: resourceGroup.location || "",
+        description: resourceGroup.description || '',
+        location: resourceGroup.location || '',
       };
     } catch (e) {
-      generalError =
-        e instanceof Error ? e.message : "Failed to load resource group";
+      generalError = e instanceof Error ? e.message : 'Failed to load resource group';
     } finally {
       initialLoading = false;
     }
@@ -60,7 +53,7 @@
     const newErrors: Record<string, string> = {};
 
     if (formData.name.trim() && formData.name.length < 3) {
-      newErrors.name = "Name muss mindestens 3 Zeichen lang sein";
+      newErrors.name = 'Name muss mindestens 3 Zeichen lang sein';
     }
 
     errors = newErrors;
@@ -85,19 +78,18 @@
         payload.name = formData.name.trim();
       }
 
-      if (formData.description.trim() !== (resourceGroup?.description || "")) {
+      if (formData.description.trim() !== (resourceGroup?.description || '')) {
         payload.description = formData.description.trim() || undefined;
       }
 
-      if (formData.location.trim() !== (resourceGroup?.location || "")) {
+      if (formData.location.trim() !== (resourceGroup?.location || '')) {
         payload.location = formData.location.trim() || undefined;
       }
 
       await updateResourceGroup(resourceGroupId, payload);
       goto(`/resource-groups/${resourceGroupId}`);
     } catch (e) {
-      generalError =
-        e instanceof Error ? e.message : "Failed to update resource group";
+      generalError = e instanceof Error ? e.message : 'Failed to update resource group';
     } finally {
       loading = false;
     }
@@ -125,9 +117,7 @@
     <Card class="border-destructive">
       <CardContent class="pt-6">
         <p class="text-destructive">Resource Group nicht gefunden</p>
-        <Button onclick={() => goto("/resource-groups")} class="mt-4">
-          Zurück zur Übersicht
-        </Button>
+        <Button onclick={() => goto('/resource-groups')} class="mt-4">Zurück zur Übersicht</Button>
       </CardContent>
     </Card>
   {:else}
@@ -154,9 +144,7 @@
       <Card>
         <CardHeader>
           <CardTitle>Resource Group Details</CardTitle>
-          <CardDescription>
-            Aktualisiere die Informationen für die Resource Group
-          </CardDescription>
+          <CardDescription>Aktualisiere die Informationen für die Resource Group</CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
           <div class="space-y-2">
@@ -165,7 +153,7 @@
               id="name"
               bind:value={formData.name}
               placeholder="z.B. production-resources"
-              class={errors.name ? "border-destructive" : ""}
+              class={errors.name ? 'border-destructive' : ''}
             />
             {#if errors.name}
               <p class="text-sm text-destructive">{errors.name}</p>
@@ -199,11 +187,9 @@
       <div class="flex gap-2 mt-6">
         <Button type="submit" disabled={loading}>
           <Save class="h-4 w-4 mr-2" />
-          {loading ? "Wird gespeichert..." : "Änderungen speichern"}
+          {loading ? 'Wird gespeichert...' : 'Änderungen speichern'}
         </Button>
-        <Button type="button" variant="outline" onclick={handleCancel}>
-          Abbrechen
-        </Button>
+        <Button type="button" variant="outline" onclick={handleCancel}>Abbrechen</Button>
       </div>
     </form>
   {/if}

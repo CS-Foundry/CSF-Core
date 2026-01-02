@@ -67,6 +67,7 @@ impl RbacService {
     }
 
     /// Get user's organizations
+    #[allow(dead_code)]
     pub async fn get_user_organizations(
         &self,
         user_id: Uuid,
@@ -157,6 +158,7 @@ impl RbacService {
     }
 
     /// Create a new role in an organization
+    #[allow(dead_code)]
     pub async fn create_role(
         &self,
         organization_id: Uuid,
@@ -178,6 +180,7 @@ impl RbacService {
     }
 
     /// Assign permissions to a role
+    #[allow(dead_code)]
     pub async fn assign_permissions_to_role(
         &self,
         role_id: Uuid,

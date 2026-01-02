@@ -1,24 +1,24 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { createResourceGroup } from "$lib/services/resource-groups";
-  import type { CreateResourceGroupRequest } from "$lib/types/resource-group";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Textarea } from "$lib/components/ui/textarea";
+  import { goto } from '$app/navigation';
+  import { createResourceGroup } from '$lib/services/resource-groups';
+  import type { CreateResourceGroupRequest } from '$lib/types/resource-group';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
   import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-  } from "$lib/components/ui/card";
-  import { ArrowLeft, Save } from "@lucide/svelte";
+  } from '$lib/components/ui/card';
+  import { ArrowLeft, Save } from '@lucide/svelte';
 
   let formData = $state<CreateResourceGroupRequest>({
-    name: "",
-    description: "",
-    location: "",
+    name: '',
+    description: '',
+    location: '',
   });
 
   let errors = $state<Record<string, string>>({});
@@ -29,9 +29,9 @@
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = "Name ist erforderlich";
+      newErrors.name = 'Name ist erforderlich';
     } else if (formData.name.length < 3) {
-      newErrors.name = "Name muss mindestens 3 Zeichen lang sein";
+      newErrors.name = 'Name muss mindestens 3 Zeichen lang sein';
     }
 
     errors = newErrors;
@@ -61,17 +61,16 @@
       }
 
       await createResourceGroup(payload);
-      goto("/resource-groups");
+      goto('/resource-groups');
     } catch (e) {
-      generalError =
-        e instanceof Error ? e.message : "Failed to create resource group";
+      generalError = e instanceof Error ? e.message : 'Failed to create resource group';
     } finally {
       loading = false;
     }
   }
 
   function handleCancel() {
-    goto("/resource-groups");
+    goto('/resource-groups');
   }
 </script>
 
@@ -112,7 +111,7 @@
             id="name"
             bind:value={formData.name}
             placeholder="z.B. production-resources"
-            class={errors.name ? "border-destructive" : ""}
+            class={errors.name ? 'border-destructive' : ''}
           />
           {#if errors.name}
             <p class="text-sm text-destructive">{errors.name}</p>
@@ -152,11 +151,9 @@
     <div class="flex gap-2 mt-6">
       <Button type="submit" disabled={loading}>
         <Save class="h-4 w-4 mr-2" />
-        {loading ? "Wird erstellt..." : "Resource Group erstellen"}
+        {loading ? 'Wird erstellt...' : 'Resource Group erstellen'}
       </Button>
-      <Button type="button" variant="outline" onclick={handleCancel}>
-        Abbrechen
-      </Button>
+      <Button type="button" variant="outline" onclick={handleCancel}>Abbrechen</Button>
     </div>
   </form>
 </div>

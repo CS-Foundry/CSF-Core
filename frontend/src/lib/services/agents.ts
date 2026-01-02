@@ -22,7 +22,7 @@ export async function getAgentDetails(agentId: string): Promise<Agent> {
 }
 
 export async function getAgentMetrics(
-  agentId: string, 
+  agentId: string,
   limit: number = 100
 ): Promise<AgentMetrics[]> {
   const response = await ApiClient.get(`/agents/${agentId}/metrics?limit=${limit}`);

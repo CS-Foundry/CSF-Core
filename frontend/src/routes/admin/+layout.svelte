@@ -1,22 +1,22 @@
 <script lang="ts">
-  import { page } from "$app/stores";
-  import { Building2, Users, Settings } from "@lucide/svelte";
+  import { page } from '$app/stores';
+  import { Building2, Users, Settings } from '@lucide/svelte';
 
   const navItems = [
     {
-      href: "/admin/organization",
+      href: '/admin/organization',
       icon: Building2,
-      label: "Organization",
+      label: 'Organization',
     },
     {
-      href: "/admin/users",
+      href: '/admin/users',
       icon: Users,
-      label: "Users",
+      label: 'Users',
     },
     {
-      href: "/settings",
+      href: '/settings',
       icon: Settings,
-      label: "Back to Settings",
+      label: 'Back to Settings',
     },
   ];
 
@@ -29,9 +29,7 @@
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold">Administration</h1>
-          <p class="text-sm text-muted-foreground">
-            Manage your organization and users
-          </p>
+          <p class="text-sm text-muted-foreground">Manage your organization and users</p>
         </div>
       </div>
     </div>

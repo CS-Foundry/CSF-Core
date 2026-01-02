@@ -14,13 +14,13 @@ permissions:
 jobs:
   # Step 1: Run Release Workflow
   release:
-    name: 📦 Semantic Release
+    name: Semantic Release
     uses: ./.github/workflows/release.yml
     secrets: inherit
 
   # Step 2: Summary
   summary:
-    name: 📊 Pipeline Summary
+    name: Pipeline Summary
     runs-on: ubuntu-latest
     needs: [release]
     if: always()

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { organizationService } from "$lib/services/organization";
-  import type { Organization } from "$lib/types/organization";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Building2, Users, ArrowLeft } from "@lucide/svelte";
+  import { onMount } from 'svelte';
+  import { organizationService } from '$lib/services/organization';
+  import type { Organization } from '$lib/types/organization';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Building2, Users, ArrowLeft } from '@lucide/svelte';
 
   let organization = $state<Organization | null>(null);
   let loading = $state(false);
@@ -14,8 +14,8 @@
 
   let editMode = $state(false);
   let formData = $state({
-    name: "",
-    description: "",
+    name: '',
+    description: '',
   });
 
   async function loadOrganization() {
@@ -25,10 +25,10 @@
       organization = await organizationService.getOrganization();
       formData = {
         name: organization.name,
-        description: organization.description || "",
+        description: organization.description || '',
       };
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load organization";
+      error = e instanceof Error ? e.message : 'Failed to load organization';
     } finally {
       loading = false;
     }
@@ -44,10 +44,10 @@
         description: formData.description || null,
       });
       editMode = false;
-      success = "Organization updated successfully";
+      success = 'Organization updated successfully';
       setTimeout(() => (success = null), 3000);
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to update organization";
+      error = e instanceof Error ? e.message : 'Failed to update organization';
     } finally {
       loading = false;
     }
@@ -57,7 +57,7 @@
     if (organization) {
       formData = {
         name: organization.name,
-        description: organization.description || "",
+        description: organization.description || '',
       };
     }
     editMode = false;
@@ -81,26 +81,20 @@
         </div>
         <div>
           <h1 class="text-3xl font-bold">Organization Management</h1>
-          <p class="text-muted-foreground">
-            Manage your organization settings and members
-          </p>
+          <p class="text-muted-foreground">Manage your organization settings and members</p>
         </div>
       </div>
     </div>
   </div>
 
   {#if error}
-    <div
-      class="mb-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive"
-    >
+    <div class="mb-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
       {error}
     </div>
   {/if}
 
   {#if success}
-    <div
-      class="mb-4 rounded-lg border border-green-600 bg-green-600/10 p-4 text-green-600"
-    >
+    <div class="mb-4 rounded-lg border border-green-600 bg-green-600/10 p-4 text-green-600">
       {success}
     </div>
   {/if}
@@ -111,9 +105,7 @@
       <div class="mb-6 flex items-start justify-between">
         <div>
           <h2 class="text-2xl font-bold">Organization Details</h2>
-          <p class="text-sm text-muted-foreground">
-            Basic information about your organization
-          </p>
+          <p class="text-sm text-muted-foreground">Basic information about your organization</p>
         </div>
         {#if !editMode && organization}
           <Button onclick={() => (editMode = true)}>Edit</Button>
@@ -144,7 +136,7 @@
               ></textarea>
             {:else}
               <p class="text-muted-foreground">
-                {organization.description || "No description set"}
+                {organization.description || 'No description set'}
               </p>
             {/if}
           </div>
@@ -158,8 +150,7 @@
                 </p>
               </div>
               <div>
-                <Label class="text-sm text-muted-foreground">Last Updated</Label
-                >
+                <Label class="text-sm text-muted-foreground">Last Updated</Label>
                 <p class="font-medium">
                   {new Date(organization.updated_at).toLocaleString()}
                 </p>
@@ -169,9 +160,7 @@
 
           {#if editMode}
             <div class="flex gap-2 pt-4">
-              <Button onclick={handleUpdate} disabled={loading}
-                >Save Changes</Button
-              >
+              <Button onclick={handleUpdate} disabled={loading}>Save Changes</Button>
               <Button variant="outline" onclick={cancelEdit}>Cancel</Button>
             </div>
           {/if}
@@ -192,9 +181,7 @@
           </div>
           <div>
             <h3 class="font-semibold">Manage Users</h3>
-            <p class="text-sm text-muted-foreground">
-              Create, edit, and manage user accounts
-            </p>
+            <p class="text-sm text-muted-foreground">Create, edit, and manage user accounts</p>
           </div>
         </a>
       </div>

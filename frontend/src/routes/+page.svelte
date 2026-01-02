@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { authStore } from "$lib/stores/auth";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { authStore } from '$lib/stores/auth';
 </script>
 
 <div class="flex items-center justify-center h-screen">

@@ -46,55 +46,58 @@ impl ServerClient {
             api_key: config.api_key.clone(),
         }
     }
-    
+
     pub async fn register(&self, registration: &AgentRegistration) -> Result<RegistrationResponse> {
         let url = format!("{}/api/agents/register", self.server_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("X-API-Key", &self.api_key)
             .json(registration)
             .send()
             .await?;
-        
+
         if response.status().is_success() {
             Ok(response.json().await?)
         } else {
             anyhow::bail!("Registration failed: {}", response.status())
         }
     }
-    
+
     pub async fn send_heartbeat(&self, heartbeat: &Heartbeat) -> Result<()> {
         let url = format!("{}/api/agents/heartbeat", self.server_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("X-API-Key", &self.api_key)
             .json(heartbeat)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             anyhow::bail!("Heartbeat failed: {}", response.status());
         }
-        
+
         Ok(())
     }
-    
+
     pub async fn send_metrics(&self, metrics: &SystemMetrics) -> Result<()> {
         let url = format!("{}/api/agents/metrics", self.server_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("X-API-Key", &self.api_key)
             .json(metrics)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             anyhow::bail!("Metrics upload failed: {}", response.status());
         }
-        
+
         Ok(())
     }
 }

@@ -95,12 +95,6 @@ jobs:
             backend_artifact: backend
             agent_asset: csf-agent-darwin-arm64
             backend_asset: csf-backend-darwin-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            agent_artifact: csf-agent.exe
-            backend_artifact: backend.exe
-            agent_asset: csf-agent-windows-amd64.exe
-            backend_asset: csf-backend-windows-amd64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out Git repository
@@ -143,11 +137,29 @@ jobs:
 
       - name: Build agent binary
         working-directory: agent
-        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          OPENSSL_STATIC: 1
+          OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
+          OPENSSL_INCLUDE_DIR: /usr/include
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cargo build --release --target ${{ matrix.target }} --features vendored-openssl
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Build backend binary
         working-directory: backend
-        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          OPENSSL_STATIC: 1
+          OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
+          OPENSSL_INCLUDE_DIR: /usr/include
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cargo build --release --target ${{ matrix.target }} --features vendored-openssl
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Rename agent binary
         run: |

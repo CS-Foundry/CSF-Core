@@ -1,57 +1,48 @@
 <script lang="ts">
-  import * as Card from "$lib/components/ui/card/index.js";
-  import { Field, FieldLabel } from "$lib/components/ui/field/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import { Alert, AlertDescription } from "$lib/components/ui/alert/index.js";
-  import { SettingsService } from "$lib/services/settings";
-  import { AuthService } from "$lib/services/auth";
-  import { authStore } from "$lib/stores/auth";
-  import { goto } from "$app/navigation";
-  import { KeyIcon } from "@lucide/svelte";
+  import * as Card from '$lib/components/ui/card/index.js';
+  import { Field, FieldLabel } from '$lib/components/ui/field/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Alert, AlertDescription } from '$lib/components/ui/alert/index.js';
+  import { SettingsService } from '$lib/services/settings';
+  import { AuthService } from '$lib/services/auth';
+  import { authStore } from '$lib/stores/auth';
+  import { goto } from '$app/navigation';
+  import { KeyIcon } from '@lucide/svelte';
 
-  let newPassword = $state("");
-  let confirmPassword = $state("");
+  let newPassword = $state('');
+  let confirmPassword = $state('');
   let isLoading = $state(false);
-  let errorMessage = $state("");
+  let errorMessage = $state('');
 
   async function handlePasswordChange(event: Event) {
     event.preventDefault();
 
     if (newPassword !== confirmPassword) {
-      errorMessage = "Passwörter stimmen nicht überein";
+      errorMessage = 'Passwörter stimmen nicht überein';
       return;
     }
 
     if (newPassword.length < 6) {
-      errorMessage = "Passwort muss mindestens 6 Zeichen lang sein";
+      errorMessage = 'Passwort muss mindestens 6 Zeichen lang sein';
       return;
     }
 
     isLoading = true;
-    errorMessage = "";
+    errorMessage = '';
 
     try {
       const publicKey = await AuthService.getPublicKey();
       // For forced password change, we don't need the old password
-      const encryptedOldPassword = "";
-      const encryptedNewPassword = await AuthService.encryptPassword(
-        newPassword,
-        publicKey
-      );
+      const encryptedOldPassword = '';
+      const encryptedNewPassword = await AuthService.encryptPassword(newPassword, publicKey);
 
-      await SettingsService.changePassword(
-        encryptedOldPassword,
-        encryptedNewPassword
-      );
+      await SettingsService.changePassword(encryptedOldPassword, encryptedNewPassword);
 
       // Redirect to home after successful password change
-      goto("/");
+      goto('/');
     } catch (error) {
-      errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Passwortänderung fehlgeschlagen";
+      errorMessage = error instanceof Error ? error.message : 'Passwortänderung fehlgeschlagen';
     } finally {
       isLoading = false;
     }
@@ -66,8 +57,8 @@
       </div>
       <Card.Title class="text-2xl">Passwort ändern erforderlich</Card.Title>
       <Card.Description>
-        Bitte ändern Sie Ihr Passwort, bevor Sie fortfahren. Dies ist
-        erforderlich für Ihre Sicherheit.
+        Bitte ändern Sie Ihr Passwort, bevor Sie fortfahren. Dies ist erforderlich für Ihre
+        Sicherheit.
       </Card.Description>
     </Card.Header>
     <Card.Content>
@@ -106,9 +97,7 @@
 
         <Button type="submit" disabled={isLoading} class="w-full">
           {#if isLoading}
-            <div
-              class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"
-            ></div>
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
           {/if}
           Passwort ändern
         </Button>

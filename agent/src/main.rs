@@ -80,13 +80,13 @@ async fn main() -> Result<()> {
         let mut interval = tokio::time::interval(Duration::from_secs(heartbeat_interval));
         loop {
             interval.tick().await;
-            
+
             let heartbeat = Heartbeat {
                 agent_id: heartbeat_agent_id,
                 timestamp: Utc::now(),
                 status: "online".to_string(),
             };
-            
+
             if let Err(e) = heartbeat_client.send_heartbeat(&heartbeat).await {
                 error!("Failed to send heartbeat: {}", e);
             } else {
@@ -98,20 +98,18 @@ async fn main() -> Result<()> {
     // Main metrics collection loop
     info!("📊 Starting metrics collection...");
     let mut interval = tokio::time::interval(Duration::from_secs(config.collection_interval));
-    
+
     loop {
         interval.tick().await;
-        
+
         // Collect metrics
         let metrics = collector.collect(config.agent_id);
-        
+
         info!(
             "📈 Collected metrics - CPU: {:.1}% | RAM: {:.1}% | Disk: {:.1}%",
-            metrics.cpu_usage_percent,
-            metrics.memory_usage_percent,
-            metrics.disk_usage_percent
+            metrics.cpu_usage_percent, metrics.memory_usage_percent, metrics.disk_usage_percent
         );
-        
+
         // Send to server
         match client.send_metrics(&metrics).await {
             Ok(_) => {
@@ -123,4 +121,3 @@ async fn main() -> Result<()> {
         }
     }
 }
-

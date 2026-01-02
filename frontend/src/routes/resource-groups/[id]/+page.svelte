@@ -1,26 +1,20 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { page } from "$app/stores";
-  import {
-    getResourceGroup,
-    deleteResourceGroup,
-  } from "$lib/services/resource-groups";
-  import {
-    listResourcesByGroup,
-    createResource,
-  } from "$lib/services/resources";
-  import type { ResourceGroup } from "$lib/types/resource-group";
-  import type { Resource } from "$lib/types/resource";
-  import { Button } from "$lib/components/ui/button";
-  import { Badge } from "$lib/components/ui/badge";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { getResourceGroup, deleteResourceGroup } from '$lib/services/resource-groups';
+  import { listResourcesByGroup, createResource } from '$lib/services/resources';
+  import type { ResourceGroup } from '$lib/types/resource-group';
+  import type { Resource } from '$lib/types/resource';
+  import { Button } from '$lib/components/ui/button';
+  import { Badge } from '$lib/components/ui/badge';
   import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-  } from "$lib/components/ui/card";
+  } from '$lib/components/ui/card';
   import {
     ArrowLeft,
     Edit,
@@ -35,7 +29,7 @@
     ShoppingBag,
     Package,
     Box,
-  } from "@lucide/svelte";
+  } from '@lucide/svelte';
   import {
     AlertDialog,
     AlertDialogAction,
@@ -45,17 +39,17 @@
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-  } from "$lib/components/ui/alert-dialog";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Textarea } from "$lib/components/ui/textarea";
+  } from '$lib/components/ui/alert-dialog';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
   import {
     listTemplates,
     installTemplate,
     type MarketplaceTemplate,
-  } from "$lib/services/marketplace";
-  import DeployDockerContainerDialog from "$lib/components/DeployDockerContainerDialog.svelte";
+  } from '$lib/services/marketplace';
+  import DeployDockerContainerDialog from '$lib/components/DeployDockerContainerDialog.svelte';
 
   let resourceGroup = $state<ResourceGroup | null>(null);
   let resources = $state<Resource[]>([]);
@@ -66,10 +60,10 @@
   // Marketplace dialog
   let showMarketplaceDialog = $state(false);
   let marketplaceTemplates = $state<MarketplaceTemplate[]>([]);
-  let searchQuery = $state("");
+  let searchQuery = $state('');
   let selectedTemplate = $state<MarketplaceTemplate | null>(null);
   let installing = $state(false);
-  let customResourceName = $state("");
+  let customResourceName = $state('');
 
   // Container dialog
   let showContainerDialog = $state(false);
@@ -77,8 +71,8 @@
   // Stack dialog
   let showStackDialog = $state(false);
   let selectedStackTemplate = $state<MarketplaceTemplate | null>(null);
-  let stackName = $state("");
-  let stackResourceGroupId = $state("");
+  let stackName = $state('');
+  let stackResourceGroupId = $state('');
 
   const resourceGroupId = $derived($page.params.id);
 
@@ -102,7 +96,7 @@
       resourceGroup = await getResourceGroup(resourceGroupId);
       resources = await listResourcesByGroup(resourceGroupId);
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load resource group";
+      error = e instanceof Error ? e.message : 'Failed to load resource group';
     } finally {
       loading = false;
     }
@@ -110,15 +104,15 @@
 
   async function openMarketplaceDialog() {
     showMarketplaceDialog = true;
-    searchQuery = "";
+    searchQuery = '';
     selectedTemplate = null;
-    customResourceName = "";
+    customResourceName = '';
 
     // Load templates
     try {
       marketplaceTemplates = await listTemplates();
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load marketplace";
+      error = e instanceof Error ? e.message : 'Failed to load marketplace';
     }
   }
 
@@ -126,12 +120,12 @@
     selectedTemplate = template;
     showMarketplaceDialog = false;
 
-    if (template.resource_type === "docker-container") {
+    if (template.resource_type === 'docker-container') {
       showContainerDialog = true;
-    } else if (template.resource_type === "docker-stack") {
+    } else if (template.resource_type === 'docker-stack') {
       selectedStackTemplate = template;
-      stackName = `${template.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
-      stackResourceGroupId = resourceGroupId || "";
+      stackName = `${template.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+      stackResourceGroupId = resourceGroupId || '';
       showStackDialog = true;
     }
   }
@@ -146,8 +140,8 @@
       await createResource({
         name: config.name,
         description: config.description,
-        resource_type: "docker-container",
-        resource_group_id: resourceGroupId || "",
+        resource_type: 'docker-container',
+        resource_group_id: resourceGroupId || '',
         configuration: {
           image: config.image,
           ports: config.ports,
@@ -159,7 +153,7 @@
       showContainerDialog = false;
       await loadResourceGroup();
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to deploy container";
+      error = e instanceof Error ? e.message : 'Failed to deploy container';
     } finally {
       installing = false;
     }
@@ -171,7 +165,7 @@
 
   async function handleDeployStack() {
     if (!selectedStackTemplate || !stackName || !stackResourceGroupId) {
-      error = "Bitte füllen Sie alle Felder aus";
+      error = 'Bitte füllen Sie alle Felder aus';
       return;
     }
 
@@ -188,7 +182,7 @@
       showStackDialog = false;
       await loadResourceGroup();
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to deploy stack";
+      error = e instanceof Error ? e.message : 'Failed to deploy stack';
     } finally {
       installing = false;
     }
@@ -207,26 +201,25 @@
 
     try {
       await deleteResourceGroup(resourceGroupId);
-      goto("/resource-groups");
+      goto('/resource-groups');
     } catch (e) {
-      error =
-        e instanceof Error ? e.message : "Failed to delete resource group";
+      error = e instanceof Error ? e.message : 'Failed to delete resource group';
       deleteDialogOpen = false;
     }
   }
 
   function handleBack() {
-    goto("/resource-groups");
+    goto('/resource-groups');
   }
 
   function formatDate(timestamp: string): string {
     const date = new Date(timestamp);
-    return date.toLocaleDateString("de-DE", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+    return date.toLocaleDateString('de-DE', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
@@ -248,7 +241,7 @@
     <Card class="border-destructive">
       <CardContent class="pt-6">
         <p class="text-destructive">
-          {error || "Resource Group nicht gefunden"}
+          {error || 'Resource Group nicht gefunden'}
         </p>
         <Button onclick={handleBack} class="mt-4">Zurück zur Übersicht</Button>
       </CardContent>
@@ -376,9 +369,7 @@
           {#if resources.length === 0}
             <div class="text-center py-12">
               <Package class="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 class="text-lg font-semibold mb-2">
-                Keine Ressourcen vorhanden
-              </h3>
+              <h3 class="text-lg font-semibold mb-2">Keine Ressourcen vorhanden</h3>
               <p class="text-muted-foreground mb-4">
                 Erstelle deine erste Ressource oder wähle aus dem Marketplace
               </p>
@@ -389,8 +380,7 @@
                 </Button>
                 <Button
                   variant="outline"
-                  onclick={() =>
-                    goto(`/marketplace?resourceGroupId=${resourceGroupId}`)}
+                  onclick={() => goto(`/marketplace?resourceGroupId=${resourceGroupId}`)}
                 >
                   <ShoppingBag class="h-4 w-4 mr-2" />
                   Marketplace
@@ -405,7 +395,7 @@
                   onclick={() => goto(`/resources/${resource.id}`)}
                 >
                   <div class="flex items-center gap-3">
-                    {#if resource.resource_type === "docker-stack"}
+                    {#if resource.resource_type === 'docker-stack'}
                       <Package class="h-8 w-8 text-blue-600" />
                     {:else}
                       <Box class="h-8 w-8 text-green-600" />
@@ -421,11 +411,7 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <Badge
-                      variant={resource.status === "running"
-                        ? "default"
-                        : "secondary"}
-                    >
+                    <Badge variant={resource.status === 'running' ? 'default' : 'secondary'}>
                       {resource.status}
                     </Badge>
                   </div>
@@ -444,16 +430,13 @@
     <AlertDialogHeader>
       <AlertDialogTitle>Resource Group löschen?</AlertDialogTitle>
       <AlertDialogDescription>
-        Möchtest du die Resource Group "{resourceGroup?.name}" wirklich löschen?
-        Diese Aktion kann nicht rückgängig gemacht werden. Alle Ressourcen in
-        dieser Group werden ebenfalls entfernt.
+        Möchtest du die Resource Group "{resourceGroup?.name}" wirklich löschen? Diese Aktion kann
+        nicht rückgängig gemacht werden. Alle Ressourcen in dieser Group werden ebenfalls entfernt.
       </AlertDialogDescription>
     </AlertDialogHeader>
     <AlertDialogFooter>
       <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-      <AlertDialogAction onclick={handleDelete} class="bg-destructive">
-        Löschen
-      </AlertDialogAction>
+      <AlertDialogAction onclick={handleDelete} class="bg-destructive">Löschen</AlertDialogAction>
     </AlertDialogFooter>
   </AlertDialogContent>
 </AlertDialog>
@@ -470,9 +453,7 @@
 
     <div class="space-y-4 py-4">
       {#if error}
-        <div
-          class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded"
-        >
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
           {error}
         </div>
       {/if}
@@ -489,9 +470,7 @@
       </div>
 
       <!-- Templates Grid -->
-      <div
-        class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto"
-      >
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto">
         {#each filteredTemplates as template}
           <button
             type="button"
@@ -518,23 +497,15 @@
                     {template.category}
                   </Badge>
                   <Badge variant="outline" class="text-xs">
-                    {template.resource_type === "docker-stack"
-                      ? "📦 Stack"
-                      : "🐳 Container"}
+                    {template.resource_type === 'docker-stack' ? '📦 Stack' : '🐳 Container'}
                   </Badge>
                 </div>
               </div>
             </div>
             {#if selectedTemplate?.template_id === template.template_id}
               <div class="absolute top-2 right-2">
-                <div
-                  class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center"
-                >
-                  <svg
-                    class="w-3 h-3 text-white"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
+                <div class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
+                  <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fill-rule="evenodd"
                       d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -550,9 +521,7 @@
     </div>
 
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (showMarketplaceDialog = false)}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={() => (showMarketplaceDialog = false)}>Abbrechen</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
@@ -560,9 +529,7 @@
 <!-- Container Deploy Dialog -->
 <DeployDockerContainerDialog
   bind:open={showContainerDialog}
-  resourceGroups={resourceGroup
-    ? [{ id: resourceGroup.id, name: resourceGroup.name }]
-    : []}
+  resourceGroups={resourceGroup ? [{ id: resourceGroup.id, name: resourceGroup.name }] : []}
   on:deploy={handleDeployContainer}
   on:cancel={handleCancelContainer}
 />
@@ -604,10 +571,8 @@
               {#if service.ports && service.ports.length > 0}
                 <Badge variant="outline">
                   {service.ports
-                    .map(
-                      (p: any) => `${p.container}${p.host ? ":" + p.host : ""}`
-                    )
-                    .join(", ")}
+                    .map((p: any) => `${p.container}${p.host ? ':' + p.host : ''}`)
+                    .join(', ')}
                 </Badge>
               {/if}
             </div>
@@ -617,18 +582,12 @@
 
       <div class="space-y-2">
         <Label for="stackName">Name *</Label>
-        <Input
-          id="stackName"
-          bind:value={stackName}
-          placeholder="z.B. wordpress-prod"
-        />
+        <Input id="stackName" bind:value={stackName} placeholder="z.B. wordpress-prod" />
       </div>
     </div>
 
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (showStackDialog = false)}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={() => (showStackDialog = false)}>Abbrechen</Button>
       <Button onclick={handleDeployStack}>Bereitstellen</Button>
     </Dialog.Footer>
   </Dialog.Content>

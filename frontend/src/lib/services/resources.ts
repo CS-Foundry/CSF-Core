@@ -12,12 +12,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
     }
     throw new Error(errorMessage);
   }
-  
+
   // Handle 204 No Content
   if (response.status === 204) {
     return undefined as T;
   }
-  
+
   return response.json();
 }
 
@@ -48,13 +48,16 @@ export async function updateResource(id: string, data: UpdateResourceRequest): P
 
 export async function deleteResource(id: string): Promise<void> {
   const response = await ApiClient.delete(`/resources/${id}`);
-  
+
   if (!response.ok) {
     await handleResponse(response);
   }
 }
 
-export async function performResourceAction(id: string, action: 'start' | 'stop' | 'restart'): Promise<Resource> {
+export async function performResourceAction(
+  id: string,
+  action: 'start' | 'stop' | 'restart'
+): Promise<Resource> {
   const response = await ApiClient.post(`/resources/${id}/action`, { action });
   return handleResponse<Resource>(response);
 }

@@ -1,36 +1,27 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import {
     listResources,
     deleteResource,
     deployContainer,
     type DeployContainerRequest,
-  } from "$lib/services/resources";
-  import { listResourceGroups } from "$lib/services/resource-groups";
-  import type { Resource } from "$lib/types/resource";
-  import type { ResourceGroup } from "$lib/types/resource-group";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import * as Table from "$lib/components/ui/table";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Badge } from "$lib/components/ui/badge";
-  import DeployDockerContainerDialog from "$lib/components/DeployDockerContainerDialog.svelte";
-  import {
-    Plus,
-    Server,
-    Package,
-    Trash2,
-    Play,
-    Square,
-    RefreshCw,
-    Rocket,
-  } from "@lucide/svelte";
+  } from '$lib/services/resources';
+  import { listResourceGroups } from '$lib/services/resource-groups';
+  import type { Resource } from '$lib/types/resource';
+  import type { ResourceGroup } from '$lib/types/resource-group';
+  import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
+  import * as Table from '$lib/components/ui/table';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { Badge } from '$lib/components/ui/badge';
+  import DeployDockerContainerDialog from '$lib/components/DeployDockerContainerDialog.svelte';
+  import { Plus, Server, Package, Trash2, Play, Square, RefreshCw, Rocket } from '@lucide/svelte';
 
   let resources: Resource[] = [];
   let resourceGroups: ResourceGroup[] = [];
   let loading = true;
-  let error = "";
+  let error = '';
 
   // Delete confirmation dialog
   let showDeleteDialog = false;
@@ -46,10 +37,10 @@
   async function loadResources() {
     try {
       loading = true;
-      error = "";
+      error = '';
       resources = await listResources();
     } catch (e: any) {
-      error = e.message || "Failed to load resources";
+      error = e.message || 'Failed to load resources';
     } finally {
       loading = false;
     }
@@ -59,36 +50,36 @@
     try {
       resourceGroups = await listResourceGroups();
     } catch (e: any) {
-      console.error("Failed to load resource groups:", e);
+      console.error('Failed to load resource groups:', e);
     }
   }
 
   async function handleDeploy(event: CustomEvent<DeployContainerRequest>) {
     try {
-      error = "";
+      error = '';
       await deployContainer(event.detail);
       showDeployDialog = false;
       await loadResources();
     } catch (e: any) {
-      error = e.message || "Failed to deploy container";
+      error = e.message || 'Failed to deploy container';
     }
   }
 
   function getStatusBadgeVariant(status: string) {
     switch (status) {
-      case "running":
-        return "default";
-      case "stopped":
-        return "secondary";
-      case "error":
-        return "destructive";
+      case 'running':
+        return 'default';
+      case 'stopped':
+        return 'secondary';
+      case 'error':
+        return 'destructive';
       default:
-        return "outline";
+        return 'outline';
     }
   }
 
   function getResourceIcon(resourceType: string) {
-    if (resourceType === "docker-stack") {
+    if (resourceType === 'docker-stack') {
       return Package;
     }
     return Server;
@@ -103,20 +94,18 @@
     if (!resourceToDelete) return;
 
     try {
-      error = "";
+      error = '';
       await deleteResource(resourceToDelete.id);
       showDeleteDialog = false;
       resourceToDelete = null;
       await loadResources();
     } catch (e: any) {
-      error = e.message || "Failed to delete resource";
+      error = e.message || 'Failed to delete resource';
     }
   }
 
-  $: dockerContainers = resources.filter(
-    (r) => r.resource_type === "docker-container"
-  );
-  $: dockerStacks = resources.filter((r) => r.resource_type === "docker-stack");
+  $: dockerContainers = resources.filter((r) => r.resource_type === 'docker-container');
+  $: dockerStacks = resources.filter((r) => r.resource_type === 'docker-stack');
 </script>
 
 <div class="container mx-auto p-6">
@@ -126,9 +115,7 @@
         <Server class="h-8 w-8" />
         Ressourcen
       </h1>
-      <p class="text-muted-foreground mt-2">
-        Verwalte deine Docker Container und Stacks
-      </p>
+      <p class="text-muted-foreground mt-2">Verwalte deine Docker Container und Stacks</p>
     </div>
     <div class="flex gap-2">
       <Button variant="outline" onclick={loadResources}>
@@ -139,7 +126,7 @@
         <Rocket class="h-4 w-4 mr-2" />
         Container bereitstellen
       </Button>
-      <Button onclick={() => goto("/marketplace")}>
+      <Button onclick={() => goto('/marketplace')}>
         <Plus class="h-4 w-4 mr-2" />
         Aus Marketplace
       </Button>
@@ -147,9 +134,7 @@
   </div>
 
   {#if error}
-    <div
-      class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4"
-    >
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
       {error}
     </div>
   {/if}
@@ -166,10 +151,9 @@
         <Server class="h-16 w-16 mx-auto mb-4 text-gray-300" />
         <h3 class="text-lg font-semibold mb-2">Keine Ressourcen vorhanden</h3>
         <p class="text-gray-500 mb-4">
-          Beginne damit, Docker Container oder Stacks aus dem Marketplace
-          hinzuzufügen
+          Beginne damit, Docker Container oder Stacks aus dem Marketplace hinzuzufügen
         </p>
-        <Button onclick={() => goto("/marketplace")}>
+        <Button onclick={() => goto('/marketplace')}>
           <Plus class="h-4 w-4 mr-2" />
           Zum Marketplace
         </Button>
@@ -200,10 +184,7 @@
                 {#each dockerStacks as resource}
                   <Table.Row>
                     <Table.Cell class="font-medium">
-                      <a
-                        href="/resources/{resource.id}"
-                        class="hover:underline"
-                      >
+                      <a href="/resources/{resource.id}" class="hover:underline">
                         {resource.name}
                       </a>
                       {#if resource.description}
@@ -233,9 +214,7 @@
                       </Badge>
                     </Table.Cell>
                     <Table.Cell>
-                      {new Date(resource.created_at).toLocaleDateString(
-                        "de-DE"
-                      )}
+                      {new Date(resource.created_at).toLocaleDateString('de-DE')}
                     </Table.Cell>
                     <Table.Cell class="text-right">
                       <div class="flex justify-end gap-2">
@@ -286,10 +265,7 @@
                 {#each dockerContainers as resource}
                   <Table.Row>
                     <Table.Cell class="font-medium">
-                      <a
-                        href="/resources/{resource.id}"
-                        class="hover:underline"
-                      >
+                      <a href="/resources/{resource.id}" class="hover:underline">
                         {resource.name}
                       </a>
                       {#if resource.description}
@@ -321,9 +297,7 @@
                       </Badge>
                     </Table.Cell>
                     <Table.Cell>
-                      {new Date(resource.created_at).toLocaleDateString(
-                        "de-DE"
-                      )}
+                      {new Date(resource.created_at).toLocaleDateString('de-DE')}
                     </Table.Cell>
                     <Table.Cell class="text-right">
                       <div class="flex justify-end gap-2">
@@ -360,14 +334,12 @@
     <Dialog.Header>
       <Dialog.Title>Ressource löschen</Dialog.Title>
       <Dialog.Description>
-        Möchten Sie die Ressource "{resourceToDelete?.name}" wirklich löschen?
-        Diese Aktion kann nicht rückgängig gemacht werden.
+        Möchten Sie die Ressource "{resourceToDelete?.name}" wirklich löschen? Diese Aktion kann
+        nicht rückgängig gemacht werden.
       </Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (showDeleteDialog = false)}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={() => (showDeleteDialog = false)}>Abbrechen</Button>
       <Button variant="destructive" onclick={handleDelete}>Löschen</Button>
     </Dialog.Footer>
   </Dialog.Content>

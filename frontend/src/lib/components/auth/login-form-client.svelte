@@ -1,53 +1,52 @@
 <script lang="ts">
-  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Card from '$lib/components/ui/card/index.js';
   import {
     FieldGroup,
     Field,
     FieldLabel,
     FieldDescription,
-  } from "$lib/components/ui/field/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import { Alert, AlertDescription } from "$lib/components/ui/alert/index.js";
-  import { cn } from "$lib/utils.js";
-  import type { HTMLAttributes } from "svelte/elements";
-  import { goto } from "$app/navigation";
-  import { AuthService } from "$lib/services/auth";
-  import { authStore } from "$lib/stores/auth";
+  } from '$lib/components/ui/field/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Alert, AlertDescription } from '$lib/components/ui/alert/index.js';
+  import { cn } from '$lib/utils.js';
+  import type { HTMLAttributes } from 'svelte/elements';
+  import { goto } from '$app/navigation';
+  import { AuthService } from '$lib/services/auth';
+  import { authStore } from '$lib/stores/auth';
 
-  let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> =
-    $props();
+  let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
 
   // Browser-compatible UUID generation
   function generateUUID() {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
     // Fallback for browsers without crypto.randomUUID
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }
 
   const id = generateUUID();
 
-  let username = $state("");
-  let password = $state("");
+  let username = $state('');
+  let password = $state('');
   let isLoading = $state(false);
-  let errorMessage = $state("");
+  let errorMessage = $state('');
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
 
     if (!username.trim() || !password) {
-      errorMessage = "Username and password are required";
+      errorMessage = 'Username and password are required';
       return;
     }
 
     isLoading = true;
-    errorMessage = "";
+    errorMessage = '';
 
     try {
       const response = await AuthService.login(
@@ -69,13 +68,13 @@
           response.token
         );
 
-        await fetch("/api/set-auth-cookie", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        await fetch('/api/set-auth-cookie', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: response.token }),
         });
 
-        goto("/change-password");
+        goto('/change-password');
         return;
       }
 
@@ -90,57 +89,49 @@
         response.token
       );
 
-      console.log("[FinanceVault] Logging in user", {
+      console.log('[FinanceVault] Logging in user', {
         username: response.username,
         userId: response.user_id,
       });
 
       // Set cookie via API
-      const cookieResponse = await fetch("/api/set-auth-cookie", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const cookieResponse = await fetch('/api/set-auth-cookie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: response.token }),
       });
 
       if (!cookieResponse.ok) {
-        console.error(
-          "Failed to set auth cookie:",
-          await cookieResponse.text()
-        );
-        errorMessage = "Failed to set authentication cookie";
+        console.error('Failed to set auth cookie:', await cookieResponse.text());
+        errorMessage = 'Failed to set authentication cookie';
         isLoading = false;
         return;
       }
 
-      console.log("[FinanceVault] Login successful, redirecting to home");
+      console.log('[FinanceVault] Login successful, redirecting to home');
 
       // Force reload to ensure auth state is fully updated
-      window.location.href = "/";
+      window.location.href = '/';
     } catch (error) {
-      if (error instanceof Error && error.message === "2FA_REQUIRED") {
+      if (error instanceof Error && error.message === '2FA_REQUIRED') {
         // Store credentials in sessionStorage and redirect to OTP page
-        sessionStorage.setItem(
-          "totp_pending",
-          JSON.stringify({ username, password })
-        );
-        goto("/otp");
+        sessionStorage.setItem('totp_pending', JSON.stringify({ username, password }));
+        goto('/otp');
       } else {
-        errorMessage = error instanceof Error ? error.message : "Login failed";
+        errorMessage = error instanceof Error ? error.message : 'Login failed';
         isLoading = false;
       }
     }
   }
 </script>
 
-<div class={cn("min-h-screen flex", className)} {...restProps}>
+<div class={cn('min-h-screen flex', className)} {...restProps}>
   <!-- Left Side - Login Form -->
   <div class="flex-1 flex items-center justify-center p-8 bg-background">
     <div class="w-full max-w-md space-y-8">
       <div class="text-center">
         <h1 class="text-3xl font-bold tracking-tight">Willkommen zurück</h1>
-        <p class="text-muted-foreground mt-2">
-          Melden Sie sich in Ihrem CSF-Core Konto an
-        </p>
+        <p class="text-muted-foreground mt-2">Melden Sie sich in Ihrem CSF-Core Konto an</p>
       </div>
 
       <form onsubmit={handleSubmit} class="space-y-6">
@@ -152,9 +143,7 @@
 
         <FieldGroup class="space-y-4">
           <Field>
-            <FieldLabel for="username-{id}" class="text-sm font-medium"
-              >Benutzername</FieldLabel
-            >
+            <FieldLabel for="username-{id}" class="text-sm font-medium">Benutzername</FieldLabel>
             <Input
               id="username-{id}"
               type="text"
@@ -168,9 +157,7 @@
 
           <Field>
             <div class="flex items-center justify-between">
-              <FieldLabel for="password-{id}" class="text-sm font-medium"
-                >Passwort</FieldLabel
-              >
+              <FieldLabel for="password-{id}" class="text-sm font-medium">Passwort</FieldLabel>
               <a
                 href="##"
                 class="text-sm text-primary hover:text-primary/80 underline-offset-2 hover:underline"
@@ -191,11 +178,9 @@
 
           <Button type="submit" class="w-full h-11" disabled={isLoading}>
             {#if isLoading}
-              <div
-                class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"
-              ></div>
+              <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
             {/if}
-            {isLoading ? "Anmeldung läuft..." : "Anmelden"}
+            {isLoading ? 'Anmeldung läuft...' : 'Anmelden'}
           </Button>
         </FieldGroup>
       </form>
@@ -220,9 +205,7 @@
         />
 
         <h2 class="text-4xl font-bold mb-4 text-shadow-glow">CSF-Core</h2>
-        <div class="space-y-2 text-lg text-shadow-glow">
-          The AI-Ready Business Platform
-        </div>
+        <div class="space-y-2 text-lg text-shadow-glow">The AI-Ready Business Platform</div>
       </div>
     </div>
   </div>

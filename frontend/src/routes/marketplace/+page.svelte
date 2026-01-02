@@ -1,39 +1,39 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { page } from "$app/stores";
-  import { listResourceGroups } from "$lib/services/resource-groups";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { listResourceGroups } from '$lib/services/resource-groups';
   import {
     listTemplates,
     listPopularTemplates,
     installTemplate,
     seedMarketplace,
-  } from "$lib/services/marketplace";
-  import type { ResourceGroup } from "$lib/types/resource-group";
-  import type { MarketplaceTemplate } from "$lib/services/marketplace";
-  import { createResource } from "$lib/services/resources";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Badge } from "$lib/components/ui/badge";
-  import * as Select from "$lib/components/ui/select";
-  import { Search, Star, Layers, Container } from "@lucide/svelte";
-  import DeployDockerContainerDialog from "$lib/components/DeployDockerContainerDialog.svelte";
+  } from '$lib/services/marketplace';
+  import type { ResourceGroup } from '$lib/types/resource-group';
+  import type { MarketplaceTemplate } from '$lib/services/marketplace';
+  import { createResource } from '$lib/services/resources';
+  import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Badge } from '$lib/components/ui/badge';
+  import * as Select from '$lib/components/ui/select';
+  import { Search, Star, Layers, Container } from '@lucide/svelte';
+  import DeployDockerContainerDialog from '$lib/components/DeployDockerContainerDialog.svelte';
 
   let resourceGroups: ResourceGroup[] = [];
   let templates: MarketplaceTemplate[] = [];
   let popularTemplates: MarketplaceTemplate[] = [];
   let loading = true;
-  let error = "";
-  let searchQuery = "";
+  let error = '';
+  let searchQuery = '';
 
   // Dialog state für Docker Stacks
   let showStackDialog = false;
   let selectedStackTemplate: MarketplaceTemplate | null = null;
-  let deployName = "";
-  let deployResourceGroupId = "";
+  let deployName = '';
+  let deployResourceGroupId = '';
   let deploying = false;
 
   // Dialog state für Docker Container
@@ -41,14 +41,10 @@
   let selectedContainerTemplate: MarketplaceTemplate | null = null;
 
   // Get resource group ID from URL if present
-  $: preselectedResourceGroupId = $page.url.searchParams.get("resourceGroupId");
+  $: preselectedResourceGroupId = $page.url.searchParams.get('resourceGroupId');
 
   onMount(async () => {
-    await Promise.all([
-      loadResourceGroups(),
-      loadTemplates(),
-      loadPopularTemplates(),
-    ]);
+    await Promise.all([loadResourceGroups(), loadTemplates(), loadPopularTemplates()]);
 
     // If a resource group is preselected, set it
     if (preselectedResourceGroupId) {
@@ -58,23 +54,23 @@
 
   async function loadResourceGroups() {
     try {
-      error = "";
+      error = '';
       const response = await listResourceGroups();
       resourceGroups = response;
     } catch (e: any) {
-      error = e.message || "Failed to load resource groups";
+      error = e.message || 'Failed to load resource groups';
     }
   }
 
   async function loadTemplates() {
     try {
       loading = true;
-      error = "";
+      error = '';
       templates = await listTemplates();
     } catch (e: any) {
-      error = e.message || "Failed to load templates";
+      error = e.message || 'Failed to load templates';
       // If no templates exist, seed them
-      if (e.message.includes("not found") || templates.length === 0) {
+      if (e.message.includes('not found') || templates.length === 0) {
         await handleSeedMarketplace();
       }
     } finally {
@@ -86,7 +82,7 @@
     try {
       popularTemplates = await listPopularTemplates();
     } catch (e: any) {
-      console.error("Failed to load popular templates:", e);
+      console.error('Failed to load popular templates:', e);
     }
   }
 
@@ -96,13 +92,13 @@
       await loadTemplates();
       await loadPopularTemplates();
     } catch (e: any) {
-      console.error("Failed to seed marketplace:", e);
+      console.error('Failed to seed marketplace:', e);
     }
   }
 
   function openStackDialog(template: MarketplaceTemplate) {
     selectedStackTemplate = template;
-    deployName = `${template.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
+    deployName = `${template.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
     showStackDialog = true;
   }
 
@@ -113,13 +109,13 @@
 
   async function handleDeployStack() {
     if (!selectedStackTemplate || !deployName || !deployResourceGroupId) {
-      error = "Bitte füllen Sie alle Felder aus";
+      error = 'Bitte füllen Sie alle Felder aus';
       return;
     }
 
     try {
       deploying = true;
-      error = "";
+      error = '';
 
       await installTemplate({
         template_id: selectedStackTemplate.template_id,
@@ -130,7 +126,7 @@
       showStackDialog = false;
       goto(`/resources`);
     } catch (e: any) {
-      error = e.message || "Failed to deploy resource";
+      error = e.message || 'Failed to deploy resource';
     } finally {
       deploying = false;
     }
@@ -141,12 +137,12 @@
 
     try {
       deploying = true;
-      error = "";
+      error = '';
 
       await createResource({
         name: config.name,
         description: config.description,
-        resource_type: "docker-container",
+        resource_type: 'docker-container',
         resource_group_id: config.resource_group_id,
         configuration: {
           image: config.image,
@@ -159,7 +155,7 @@
       showContainerDialog = false;
       goto(`/resources`);
     } catch (e: any) {
-      error = e.message || "Failed to deploy container";
+      error = e.message || 'Failed to deploy container';
     } finally {
       deploying = false;
     }
@@ -177,27 +173,19 @@
     return matchesSearch;
   });
 
-  $: containerTemplates = filteredTemplates.filter(
-    (t) => t.resource_type === "docker-container"
-  );
+  $: containerTemplates = filteredTemplates.filter((t) => t.resource_type === 'docker-container');
 
-  $: stackTemplates = filteredTemplates.filter(
-    (t) => t.resource_type === "docker-stack"
-  );
+  $: stackTemplates = filteredTemplates.filter((t) => t.resource_type === 'docker-stack');
 </script>
 
 <div class="container mx-auto p-6 max-w-7xl">
   <div class="mb-8">
     <h1 class="text-4xl font-bold mb-2">Marketplace</h1>
-    <p class="text-gray-600">
-      Wählen Sie aus vorgefertigten Docker Stack Vorlagen
-    </p>
+    <p class="text-gray-600">Wählen Sie aus vorgefertigten Docker Stack Vorlagen</p>
   </div>
 
   {#if error}
-    <div
-      class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4"
-    >
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
       {error}
     </div>
   {/if}
@@ -205,9 +193,7 @@
   <!-- Search Bar -->
   <div class="mb-6">
     <div class="relative">
-      <Search
-        class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4"
-      />
+      <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
       <Input
         type="text"
         placeholder="Suchen Sie nach Docker Containern oder Stacks..."
@@ -252,7 +238,7 @@
               <Button
                 class="w-full"
                 onclick={() => {
-                  if (template.resource_type === "docker-container") {
+                  if (template.resource_type === 'docker-container') {
                     openContainerDialog(template);
                   } else {
                     openStackDialog(template);
@@ -328,9 +314,7 @@
               <p class="text-sm text-gray-600 mb-4">{template.description}</p>
 
               <div class="space-y-2">
-                <p class="text-xs font-semibold text-gray-500 uppercase">
-                  Enthaltene Services:
-                </p>
+                <p class="text-xs font-semibold text-gray-500 uppercase">Enthaltene Services:</p>
                 <div class="flex flex-wrap gap-1">
                   {#each template.configuration.services as service}
                     <Badge variant="secondary" class="text-xs">
@@ -341,11 +325,7 @@
               </div>
             </Card.Content>
             <Card.Footer>
-              <Button
-                class="w-full"
-                variant="outline"
-                onclick={() => openStackDialog(template)}
-              >
+              <Button class="w-full" variant="outline" onclick={() => openStackDialog(template)}>
                 Bereitstellen
               </Button>
             </Card.Footer>
@@ -368,9 +348,7 @@
 <Dialog.Root bind:open={showStackDialog}>
   <Dialog.Content class="max-w-2xl">
     <Dialog.Header>
-      <Dialog.Title
-        >Docker Stack bereitstellen: {selectedStackTemplate?.name}</Dialog.Title
-      >
+      <Dialog.Title>Docker Stack bereitstellen: {selectedStackTemplate?.name}</Dialog.Title>
       <Dialog.Description>
         Konfigurieren Sie die Bereitstellung dieses Docker Stacks
       </Dialog.Description>
@@ -401,10 +379,8 @@
               {#if service.ports && service.ports.length > 0}
                 <Badge variant="outline">
                   {service.ports
-                    .map(
-                      (p: any) => `${p.container}${p.host ? ":" + p.host : ""}`
-                    )
-                    .join(", ")}
+                    .map((p: any) => `${p.container}${p.host ? ':' + p.host : ''}`)
+                    .join(', ')}
                 </Badge>
               {/if}
             </div>
@@ -414,11 +390,7 @@
 
       <div class="space-y-2">
         <Label for="deployName">Name *</Label>
-        <Input
-          id="deployName"
-          bind:value={deployName}
-          placeholder="z.B. wordpress-prod"
-        />
+        <Input id="deployName" bind:value={deployName} placeholder="z.B. wordpress-prod" />
       </div>
 
       <div class="space-y-2">
@@ -437,9 +409,7 @@
     </div>
 
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (showStackDialog = false)}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={() => (showStackDialog = false)}>Abbrechen</Button>
       <Button onclick={handleDeployStack}>Bereitstellen</Button>
     </Dialog.Footer>
   </Dialog.Content>

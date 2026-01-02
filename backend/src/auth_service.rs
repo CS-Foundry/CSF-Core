@@ -14,7 +14,7 @@ use crate::auth::{
     jwt::create_jwt,
 };
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum AuthError {
     #[error("Database error: {0}")]
     DatabaseError(#[from] sea_orm::DbErr),
@@ -33,6 +33,7 @@ pub enum AuthError {
     #[error("Invalid 2FA code")]
     InvalidTwoFactorCode,
     #[error("Password change required")]
+    #[allow(dead_code)]
     PasswordChangeRequired,
 }
 

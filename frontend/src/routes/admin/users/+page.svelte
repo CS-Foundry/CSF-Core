@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { organizationService } from "$lib/services/organization";
-  import type { User, Role } from "$lib/types/organization";
-  import { Button } from "$lib/components/ui/button";
+  import { onMount } from 'svelte';
+  import { organizationService } from '$lib/services/organization';
+  import type { User, Role } from '$lib/types/organization';
+  import { Button } from '$lib/components/ui/button';
   import {
     Table,
     TableBody,
@@ -10,9 +10,9 @@
     TableHead,
     TableHeader,
     TableRow,
-  } from "$lib/components/ui/table";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
+  } from '$lib/components/ui/table';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
   import {
     Dialog,
     DialogContent,
@@ -20,8 +20,8 @@
     DialogFooter,
     DialogHeader,
     DialogTitle,
-  } from "$lib/components/ui/dialog";
-  import { Trash2, Edit, Plus, Shield } from "@lucide/svelte";
+  } from '$lib/components/ui/dialog';
+  import { Trash2, Edit, Plus, Shield } from '@lucide/svelte';
 
   let users = $state<User[]>([]);
   let roles = $state<Role[]>([]);
@@ -31,10 +31,10 @@
   // Create user dialog
   let createDialogOpen = $state(false);
   let newUser = $state({
-    username: "",
-    email: "",
-    password: "",
-    role_id: "",
+    username: '',
+    email: '',
+    password: '',
+    role_id: '',
     force_password_change: false,
   });
 
@@ -42,14 +42,14 @@
   let editDialogOpen = $state(false);
   let editingUser = $state<User | null>(null);
   let editForm = $state({
-    email: "",
+    email: '',
     force_password_change: false,
   });
 
   // Edit role dialog
   let roleDialogOpen = $state(false);
   let roleEditingUser = $state<User | null>(null);
-  let newRoleId = $state("");
+  let newRoleId = $state('');
 
   // Delete confirmation
   let deleteDialogOpen = $state(false);
@@ -64,7 +64,7 @@
         organizationService.getRoles(),
       ]);
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load data";
+      error = e instanceof Error ? e.message : 'Failed to load data';
     } finally {
       loading = false;
     }
@@ -72,7 +72,7 @@
 
   async function handleCreateUser() {
     if (!newUser.username || !newUser.password || !newUser.role_id) {
-      error = "Please fill in all required fields";
+      error = 'Please fill in all required fields';
       return;
     }
 
@@ -89,14 +89,14 @@
       await loadData();
       createDialogOpen = false;
       newUser = {
-        username: "",
-        email: "",
-        password: "",
-        role_id: "",
+        username: '',
+        email: '',
+        password: '',
+        role_id: '',
         force_password_change: false,
       };
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to create user";
+      error = e instanceof Error ? e.message : 'Failed to create user';
     } finally {
       loading = false;
     }
@@ -115,7 +115,7 @@
       await loadData();
       editDialogOpen = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to update user";
+      error = e instanceof Error ? e.message : 'Failed to update user';
     } finally {
       loading = false;
     }
@@ -133,7 +133,7 @@
       await loadData();
       roleDialogOpen = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to update role";
+      error = e instanceof Error ? e.message : 'Failed to update role';
     } finally {
       loading = false;
     }
@@ -149,7 +149,7 @@
       await loadData();
       deleteDialogOpen = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to delete user";
+      error = e instanceof Error ? e.message : 'Failed to delete user';
     } finally {
       loading = false;
     }
@@ -158,7 +158,7 @@
   function openEditDialog(user: User) {
     editingUser = user;
     editForm = {
-      email: user.email || "",
+      email: user.email || '',
       force_password_change: user.force_password_change,
     };
     editDialogOpen = true;
@@ -192,9 +192,7 @@
 </div>
 
 {#if error}
-  <div
-    class="mb-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive"
-  >
+  <div class="mb-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
     {error}
   </div>
 {/if}
@@ -219,7 +217,7 @@
         {#each users as user (user.id)}
           <TableRow>
             <TableCell class="font-medium">{user.username}</TableCell>
-            <TableCell>{user.email || "-"}</TableCell>
+            <TableCell>{user.email || '-'}</TableCell>
             <TableCell>
               <div class="flex items-center gap-2">
                 <Shield class="h-4 w-4 text-muted-foreground" />
@@ -240,23 +238,13 @@
                 <span class="text-muted-foreground">No</span>
               {/if}
             </TableCell>
-            <TableCell
-              >{new Date(user.joined_at).toLocaleDateString()}</TableCell
-            >
+            <TableCell>{new Date(user.joined_at).toLocaleDateString()}</TableCell>
             <TableCell class="text-right">
               <div class="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onclick={() => openRoleDialog(user)}
-                >
+                <Button variant="ghost" size="sm" onclick={() => openRoleDialog(user)}>
                   <Shield class="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onclick={() => openEditDialog(user)}
-                >
+                <Button variant="ghost" size="sm" onclick={() => openEditDialog(user)}>
                   <Edit class="h-4 w-4" />
                 </Button>
                 <Button
@@ -320,9 +308,7 @@
       </div>
     </div>
     <DialogFooter>
-      <Button variant="outline" onclick={() => (createDialogOpen = false)}
-        >Cancel</Button
-      >
+      <Button variant="outline" onclick={() => (createDialogOpen = false)}>Cancel</Button>
       <Button onclick={handleCreateUser} disabled={loading}>Create User</Button>
     </DialogFooter>
   </DialogContent>
@@ -351,11 +337,8 @@
       </div>
     </div>
     <DialogFooter>
-      <Button variant="outline" onclick={() => (editDialogOpen = false)}
-        >Cancel</Button
-      >
-      <Button onclick={handleUpdateUser} disabled={loading}>Save Changes</Button
-      >
+      <Button variant="outline" onclick={() => (editDialogOpen = false)}>Cancel</Button>
+      <Button onclick={handleUpdateUser} disabled={loading}>Save Changes</Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>
@@ -383,9 +366,7 @@
       </div>
     </div>
     <DialogFooter>
-      <Button variant="outline" onclick={() => (roleDialogOpen = false)}
-        >Cancel</Button
-      >
+      <Button variant="outline" onclick={() => (roleDialogOpen = false)}>Cancel</Button>
       <Button onclick={handleUpdateRole} disabled={loading}>Update Role</Button>
     </DialogFooter>
   </DialogContent>
@@ -397,21 +378,12 @@
     <DialogHeader>
       <DialogTitle>Delete User</DialogTitle>
       <DialogDescription>
-        Are you sure you want to delete {deletingUser?.username}? This action
-        cannot be undone.
+        Are you sure you want to delete {deletingUser?.username}? This action cannot be undone.
       </DialogDescription>
     </DialogHeader>
     <DialogFooter>
-      <Button variant="outline" onclick={() => (deleteDialogOpen = false)}
-        >Cancel</Button
-      >
-      <Button
-        variant="destructive"
-        onclick={handleDeleteUser}
-        disabled={loading}
-      >
-        Delete
-      </Button>
+      <Button variant="outline" onclick={() => (deleteDialogOpen = false)}>Cancel</Button>
+      <Button variant="destructive" onclick={handleDeleteUser} disabled={loading}>Delete</Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>

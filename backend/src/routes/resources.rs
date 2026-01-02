@@ -423,7 +423,7 @@ async fn create_resource(
                 let container_name = format!(
                     "{}-{}",
                     payload.name.to_lowercase().replace(" ", "-"),
-                    Uuid::new_v4().to_string()[..8].to_string()
+                    &Uuid::new_v4().to_string()[..8]
                 );
 
                 match docker

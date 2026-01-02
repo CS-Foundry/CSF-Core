@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Textarea } from "$lib/components/ui/textarea";
-  import { Plus, X, Rocket, RefreshCw } from "@lucide/svelte";
+  import { createEventDispatcher } from 'svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { Plus, X, Rocket, RefreshCw } from '@lucide/svelte';
 
   export let open = false;
   export let resourceGroups: Array<{ id: string; name: string }> = [];
@@ -14,14 +14,13 @@
   const dispatch = createEventDispatcher();
 
   // Form state
-  let containerName = initialData?.name || "";
-  let dockerImage = initialData?.configuration?.image || "";
-  let selectedResourceGroupId = initialData?.resource_group_id || "";
-  let description = initialData?.description || "";
+  let containerName = initialData?.name || '';
+  let dockerImage = initialData?.configuration?.image || '';
+  let selectedResourceGroupId = initialData?.resource_group_id || '';
+  let description = initialData?.description || '';
 
   // Ports: [{container: 80, host: 8080}]
-  let ports: Array<{ container: number; host: number }> =
-    initialData?.configuration?.ports || [];
+  let ports: Array<{ container: number; host: number }> = initialData?.configuration?.ports || [];
 
   // Environment variables: {KEY: "value"}
   let envVars: Array<{ key: string; value: string }> = [];
@@ -32,13 +31,14 @@
 
   // Parse initial env vars
   if (initialData?.configuration?.environment) {
-    envVars = Object.entries(initialData.configuration.environment).map(
-      ([key, value]) => ({ key, value: value as string })
-    );
+    envVars = Object.entries(initialData.configuration.environment).map(([key, value]) => ({
+      key,
+      value: value as string,
+    }));
   }
 
   let deploying = false;
-  let error = "";
+  let error = '';
 
   function addPort() {
     ports = [...ports, { container: 80, host: 8080 }];
@@ -49,7 +49,7 @@
   }
 
   function addEnvVar() {
-    envVars = [...envVars, { key: "", value: "" }];
+    envVars = [...envVars, { key: '', value: '' }];
   }
 
   function removeEnvVar(index: number) {
@@ -57,7 +57,7 @@
   }
 
   function addVolume() {
-    volumes = [...volumes, { host: "", container: "" }];
+    volumes = [...volumes, { host: '', container: '' }];
   }
 
   function removeVolume(index: number) {
@@ -65,19 +65,19 @@
   }
 
   async function handleDeploy() {
-    error = "";
+    error = '';
 
     // Validation
     if (!containerName.trim()) {
-      error = "Container-Name ist erforderlich";
+      error = 'Container-Name ist erforderlich';
       return;
     }
     if (!dockerImage.trim()) {
-      error = "Docker-Image ist erforderlich";
+      error = 'Docker-Image ist erforderlich';
       return;
     }
     if (!selectedResourceGroupId) {
-      error = "Bitte wähle eine Resource Group";
+      error = 'Bitte wähle eine Resource Group';
       return;
     }
 
@@ -101,26 +101,26 @@
 
     try {
       deploying = true;
-      dispatch("deploy", deployConfig);
+      dispatch('deploy', deployConfig);
     } finally {
       deploying = false;
     }
   }
 
   function handleCancel() {
-    dispatch("cancel");
+    dispatch('cancel');
     resetForm();
   }
 
   function resetForm() {
-    containerName = "";
-    dockerImage = "";
-    selectedResourceGroupId = "";
-    description = "";
+    containerName = '';
+    dockerImage = '';
+    selectedResourceGroupId = '';
+    description = '';
     ports = [];
     envVars = [];
     volumes = [];
-    error = "";
+    error = '';
   }
 </script>
 
@@ -137,9 +137,7 @@
     </Dialog.Header>
 
     {#if error}
-      <div
-        class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4"
-      >
+      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
         {error}
       </div>
     {/if}
@@ -202,12 +200,7 @@
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <Label>Port Mappings</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            onclick={addPort}
-            disabled={deploying}
-          >
+          <Button variant="outline" size="sm" onclick={addPort} disabled={deploying}>
             <Plus class="h-4 w-4 mr-1" />
             Port hinzufügen
           </Button>
@@ -251,20 +244,13 @@
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <Label>Umgebungsvariablen</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            onclick={addEnvVar}
-            disabled={deploying}
-          >
+          <Button variant="outline" size="sm" onclick={addEnvVar} disabled={deploying}>
             <Plus class="h-4 w-4 mr-1" />
             Variable hinzufügen
           </Button>
         </div>
         {#if envVars.length === 0}
-          <p class="text-sm text-gray-500">
-            Keine Umgebungsvariablen konfiguriert
-          </p>
+          <p class="text-sm text-gray-500">Keine Umgebungsvariablen konfiguriert</p>
         {:else}
           <div class="space-y-2">
             {#each envVars as envVar, index}
@@ -300,12 +286,7 @@
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <Label>Volume Mounts</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            onclick={addVolume}
-            disabled={deploying}
-          >
+          <Button variant="outline" size="sm" onclick={addVolume} disabled={deploying}>
             <Plus class="h-4 w-4 mr-1" />
             Volume hinzufügen
           </Button>
@@ -345,9 +326,7 @@
     </div>
 
     <Dialog.Footer>
-      <Button variant="outline" onclick={handleCancel} disabled={deploying}>
-        Abbrechen
-      </Button>
+      <Button variant="outline" onclick={handleCancel} disabled={deploying}>Abbrechen</Button>
       <Button onclick={handleDeploy} disabled={deploying}>
         {#if deploying}
           <RefreshCw class="h-4 w-4 mr-2 animate-spin" />

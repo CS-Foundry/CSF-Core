@@ -231,7 +231,7 @@ pub async fn logout_user(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, StatusCode> {
     let auth_service = AuthService::new(state.db_conn.clone());
-    let exp_datetime = DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(|| Utc::now());
+    let exp_datetime = DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(Utc::now);
 
     // Extract token from request header would be better, but for simplicity
     // we'll use a placeholder. In a real implementation, you'd extract the actual token.

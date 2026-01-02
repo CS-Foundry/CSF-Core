@@ -1,26 +1,23 @@
 use sea_orm::DbConn;
 use std::net::SocketAddr;
-use tokio;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 mod auth;
 mod auth_service;
 mod db;
+mod docker_service;
 mod init;
-mod routes;
-mod utils;
 mod rbac_service;
+mod routes;
 mod self_monitor;
 mod system_collector;
-mod docker_service;
+mod utils;
 
-
-
+use routes::expenses::{CreateExpenseRequest, UpdateExpenseRequest};
 use routes::users::{
     AuthResponse, LoginRequest, PublicKeyResponse, RegisterRequest, UserProfileResponse,
 };
-use routes::expenses::{CreateExpenseRequest, UpdateExpenseRequest};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -36,10 +33,10 @@ use routes::expenses::{CreateExpenseRequest, UpdateExpenseRequest};
     ),
     components(
         schemas(
-            RegisterRequest, 
-            LoginRequest, 
-            AuthResponse, 
-            PublicKeyResponse, 
+            RegisterRequest,
+            LoginRequest,
+            AuthResponse,
+            PublicKeyResponse,
             UserProfileResponse,
             CreateExpenseRequest,
             UpdateExpenseRequest,
@@ -120,7 +117,10 @@ async fn main() {
             }
         }
         Err(e) => {
-            tracing::warn!("⚠️  Docker service not available: {}. Container management will be limited.", e);
+            tracing::warn!(
+                "⚠️  Docker service not available: {}. Container management will be limited.",
+                e
+            );
             None
         }
     };
