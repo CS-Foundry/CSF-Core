@@ -734,6 +734,7 @@ Environment="NODE_ENV=production"
 Environment="PORT=3000"
 Environment="FRONTEND_URL=http://localhost:3000"
 Environment="ORIGIN=http://localhost:8000"
+Environment="PUBLIC_API_BASE_URL=/api"
 
 # Security settings
 NoNewPrivileges=true
@@ -798,7 +799,9 @@ echo "🚀 Starting CSF-Core..."
 if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
     echo "▶️  Starting Frontend (Port ${PORT:-3000})..."
     cd "$FRONTEND_DIR"
-    PORT=${PORT:-3000} node build/index.js > "$LOG_DIR/frontend.log" 2>&1 &
+    # Set PUBLIC_API_BASE_URL for SvelteKit runtime (relative URL for browser)
+    export PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-/api}"
+    PORT=${PORT:-3000} HOST=0.0.0.0 node build/index.js > "$LOG_DIR/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     echo "   Frontend PID: $FRONTEND_PID"
     
@@ -858,6 +861,11 @@ FRONTEND_URL=${FRONTEND_URL}
 
 # Backend Port (extern erreichbar)
 BACKEND_PORT=8000
+
+# API Base URL für Frontend (relative URL empfohlen)
+# /api = relative URL (Standard, empfohlen)
+# http://backend.example.com/api = absolute URL für externes Backend
+PUBLIC_API_BASE_URL=/api
 
 # You can edit these values and restart the service:
 # sudo systemctl restart csf-core

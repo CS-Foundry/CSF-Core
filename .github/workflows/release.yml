@@ -154,7 +154,7 @@ jobs:
       - name: Create Frontend .env file
         working-directory: frontend
         run: |
-          echo "PUBLIC_API_BASE_URL=http://localhost:8000/api" > .env
+          echo "PUBLIC_API_BASE_URL=/api" > .env
 
       - name: Build Frontend
         working-directory: frontend

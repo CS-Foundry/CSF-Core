@@ -18,12 +18,9 @@ pub struct FrontendState {
 
 impl FrontendState {
     pub fn new() -> Self {
-        #[cfg(not(debug_assertions))]
-        let frontend_url = "http://localhost:3000".to_string();
-
-        #[cfg(debug_assertions)]
+        // Always read from environment variable, with fallback to localhost:3000
         let frontend_url =
-            std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://frontend:5173".to_string());
+            std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
         tracing::info!("Frontend proxy configured to: {}", frontend_url);
 
