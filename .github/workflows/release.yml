@@ -162,10 +162,18 @@ jobs:
           npm ci
           npm run build
 
+      - name: Install production dependencies only
+        working-directory: frontend
+        run: |
+          # Remove all dependencies and reinstall only production
+          rm -rf node_modules
+          npm ci --omit=dev
+
       - name: Create frontend package
         run: |
           cd frontend
-          tar -czf ../csf-frontend-${{ needs.release.outputs.new_release_version }}.tar.gz build package.json
+          # Include build/, package.json, and production node_modules
+          tar -czf ../csf-frontend-${{ needs.release.outputs.new_release_version }}.tar.gz build package.json node_modules
           cd ..
 
       - name: Upload frontend package to release
@@ -175,3 +183,36 @@ jobs:
           files: csf-frontend-${{ needs.release.outputs.new_release_version }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  download-stats:
+    name: Display Download Statistics
+    needs: [release, build-binaries, build-frontend]
+    if: needs.release.outputs.new_release_published == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Release Download Stats
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="v${{ needs.release.outputs.new_release_version }}"
+
+          # Fetch release info
+          RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/CS-Foundry/CSF-Core/releases/tags/$VERSION")
+
+          echo "## 📊 Release Download Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Asset | Downloads |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----------|" >> $GITHUB_STEP_SUMMARY
+
+          # Extract download counts for each asset
+          echo "$RELEASE_DATA" | jq -r '.assets[] | "| \(.name) | \(.download_count) |"' >> $GITHUB_STEP_SUMMARY
+
+          # Total downloads
+          TOTAL=$(echo "$RELEASE_DATA" | jq '[.assets[].download_count] | add')
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Downloads:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ *Note: Download counts update with a delay*" >> $GITHUB_STEP_SUMMARY

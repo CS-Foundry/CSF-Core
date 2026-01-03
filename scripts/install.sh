@@ -393,7 +393,7 @@ download_release() {
         if curl -L -f "$frontend_url" -o frontend.tar.gz 2>/dev/null; then
             mkdir -p "$INSTALL_DIR/frontend"
             tar -xzf frontend.tar.gz -C "$INSTALL_DIR/frontend/"
-            print_success "Frontend Package heruntergeladen"
+            print_success "Frontend Package heruntergeladen (enthält Build + Production Dependencies)"
         else
             print_warning "Frontend Package nicht gefunden, baue aus Quellcode..."
             cd - > /dev/null
@@ -443,7 +443,7 @@ download_release() {
         if curl -L -f "$frontend_url" -o frontend.tar.gz 2>/dev/null; then
             mkdir -p "$INSTALL_DIR/frontend"
             tar -xzf frontend.tar.gz -C "$INSTALL_DIR/frontend/"
-            print_success "Frontend Package heruntergeladen"
+            print_success "Frontend Package heruntergeladen (enthält Build + Production Dependencies)"
         fi
         
         cd - > /dev/null

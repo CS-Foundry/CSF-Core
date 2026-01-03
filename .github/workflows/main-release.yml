@@ -26,21 +26,44 @@ jobs:
     if: always()
     steps:
       - name: Generate Summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "## 🎯 Main Release Pipeline" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.release.outputs.new_release_published }}" == "true" ]; then
-            echo "✅ **Release Created:** v${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+            VERSION="v${{ needs.release.outputs.new_release_version }}"
+            echo "✅ **Release Created:** $VERSION" >> $GITHUB_STEP_SUMMARY
             echo "✅ **Binaries Built:** Available for download" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🚀 New Version Available!" >> $GITHUB_STEP_SUMMARY
+            
+            # Add download statistics
+            echo "### 📊 Download Statistics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "[📥 View all releases and download stats](https://github.com/CS-Foundry/CSF-Core/releases)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Fetch download stats for this release
+            RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/CS-Foundry/CSF-Core/releases/tags/$VERSION" || echo '{}')
+            
+            if [ "$RELEASE_DATA" != "{}" ]; then
+              echo "**Current Release Assets:**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Asset | Size | Downloads |" >> $GITHUB_STEP_SUMMARY
+              echo "|-------|------|-----------|" >> $GITHUB_STEP_SUMMARY
+              echo "$RELEASE_DATA" | jq -r '.assets[]? | "| \(.name) | \((.size / 1024 / 1024 * 100 | round / 100))MB | \(.download_count) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| (fetching...) | - | - |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "### 🚀 Installation" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
             echo "# Install latest version" >> $GITHUB_STEP_SUMMARY
             echo "curl -fsSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo bash" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "# Or download specific binary:" >> $GITHUB_STEP_SUMMARY
-            echo "# https://github.com/CS-Foundry/CSF-Core/releases/tag/v${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "# https://github.com/CS-Foundry/CSF-Core/releases/tag/$VERSION" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ **No Release Created**" >> $GITHUB_STEP_SUMMARY

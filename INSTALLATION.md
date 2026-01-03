@@ -4,6 +4,15 @@
 
 CSF-Core ist ein unified Backend + Frontend Service, der auf Linux als systemd Service läuft.
 
+### 📊 Download-Statistiken
+
+[![GitHub Downloads (all releases)](https://img.shields.io/github/downloads/CS-Foundry/CSF-Core/total?style=for-the-badge&logo=github&label=Total%20Downloads)](https://github.com/CS-Foundry/CSF-Core/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/CS-Foundry/CSF-Core?style=for-the-badge&logo=github)](https://github.com/CS-Foundry/CSF-Core/releases/latest)
+
+**📈 [Aktuelle Download-Statistiken anzeigen →](https://github.com/CS-Foundry/CSF-Core/releases)**
+
+Nach jedem GitHub Actions Build werden die Download-Zahlen für jedes Binary im Workflow-Summary angezeigt.
+
 ### Voraussetzungen
 
 - Linux (Ubuntu 20.04+, Debian 11+, RHEL 8+)
@@ -147,6 +156,32 @@ sudo journalctl -u csf-core -f
 
 # Auto-Start aktivieren
 sudo systemctl enable csf-core
+```
+
+## 🐛 Troubleshooting
+
+Bei Problemen oder Fehlern (z.B. 500 Internal Server Error):
+
+**📖 [Komplette Troubleshooting-Anleitung →](./TROUBLESHOOTING.md)**
+
+Häufige Befehle:
+
+```bash
+# Alle Logs live ansehen
+sudo journalctl -u csf-core -f
+
+# Backend-Fehler-Logs
+sudo tail -f /var/log/csf-core/csf-core-error.log
+
+# Frontend-Logs
+sudo tail -f /var/log/csf-core/frontend.log
+
+# Service neu starten
+sudo systemctl restart csf-core
+
+# Debug-Modus aktivieren
+sudo nano /opt/csf-core/config.env  # RUST_LOG=debug
+sudo systemctl restart csf-core
 ```
 
 ### Konfiguration anpassen
