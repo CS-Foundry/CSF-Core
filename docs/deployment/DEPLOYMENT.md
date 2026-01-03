@@ -85,7 +85,7 @@ CSF-Core ist ein **unified Backend + Frontend Service** für System-Monitoring u
 
 ## Installation Details
 
-➡️ Siehe [INSTALLATION.md](INSTALLATION.md) für:
+➡️ Siehe [INSTALLATION.md](./INSTALLATION.md) für:
 
 - Detaillierte Installations-Schritte
 - Konfiguration
@@ -180,7 +180,7 @@ ORIGIN=http://localhost:8000
 
 ## Support
 
-- 📖 [Vollständige Dokumentation](INSTALLATION.md)
+- 📖 [Vollständige Dokumentation](./INSTALLATION.md)
 - 🐛 [Issues](https://github.com/CS-Foundry/CSF-Core/issues)
 - 💬 [Discussions](https://github.com/CS-Foundry/CSF-Core/discussions)
 

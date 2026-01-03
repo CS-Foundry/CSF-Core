@@ -162,7 +162,7 @@ sudo systemctl enable csf-core
 
 Bei Problemen oder Fehlern (z.B. 500 Internal Server Error):
 
-**📖 [Komplette Troubleshooting-Anleitung →](./TROUBLESHOOTING.md)**
+**📖 [Komplette Troubleshooting-Anleitung →](../troubleshooting/TROUBLESHOOTING.md)**
 
 Häufige Befehle:
 

@@ -170,6 +170,6 @@ sudo bash scripts/install.sh
 
 ## Siehe auch
 
-- [INSTALLATION.md](INSTALLATION.md) - Vollständige Installationsanleitung
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Quick Deployment Guide
+- [INSTALLATION.md](./INSTALLATION.md) - Vollständige Installationsanleitung
+- [DEPLOYMENT.md](./DEPLOYMENT.md) - Quick Deployment Guide
 - [GitHub Releases](https://github.com/CS-Foundry/CSF-Core/releases) - Verfügbare Versionen

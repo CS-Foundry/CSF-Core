@@ -211,4 +211,4 @@ psql -h localhost -U csf_user -d csf_core
 3. ✅ Frontend läuft und zeigt Dashboard
 4. 🔄 Docker-Integration für Container-Management hinzufügen
 
-Siehe [DOCKER_INTEGRATION_PLAN.md](DOCKER_INTEGRATION_PLAN.md) für die nächsten Schritte!
+Siehe [DOCKER_INTEGRATION_PLAN.md](../deployment/DOCKER_INTEGRATION_PLAN.md) für die nächsten Schritte!
