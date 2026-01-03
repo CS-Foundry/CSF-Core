@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.0.7](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.6...v0.0.7) (2026-01-03)
+
+
+### Bug Fixes
+
+* backend frontend connection ([d12c054](https://github.com/CS-Foundry/CSF-Core/commit/d12c05416d5e8a44f05da5a6cc2addc9007992ca))
+
 ## [0.0.6](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.5...v0.0.6) (2026-01-03)
 
 
