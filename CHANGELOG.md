@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.0.6](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.5...v0.0.6) (2026-01-03)
+
+
+### Bug Fixes
+
+* include production node_modules in frontend package and add download stats ([13d7460](https://github.com/CS-Foundry/CSF-Core/commit/13d746039901b4de70f02b9d99651d6b374965c3))
+
 ## [0.0.5](https://github.com/CS-Foundry/CSF-Core/compare/v0.0.4...v0.0.5) (2026-01-02)
 
 
