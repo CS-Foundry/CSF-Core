@@ -52,15 +52,15 @@
       }
     ],
     [
-      "@semantic-release/exec",
-      {
-        "prepareCmd": "chmod +x .github/scripts/update-versions.sh && .github/scripts/update-versions.sh"
-      }
-    ],
-    [
       "@semantic-release/npm",
       {
         "npmPublish": false
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "chmod +x .github/scripts/update-versions.sh && .github/scripts/update-versions.sh ${nextRelease.version}"
       }
     ],
     [
