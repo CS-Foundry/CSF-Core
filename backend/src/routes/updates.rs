@@ -105,27 +105,40 @@ pub async fn install_update(
         }));
     }
 
-    // Run update script in background
-    let script_path = std::env::current_dir()
-        .map_err(|e| AppError::InternalError(format!("Failed to get current dir: {}", e)))?
-        .join("scripts")
-        .join("update.sh");
+    // Find the update script - try multiple locations
+    let possible_paths = vec![
+        std::path::PathBuf::from("/opt/csf-core/scripts/update.sh"),
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.join("../scripts/update.sh")),
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.join("scripts/update.sh")),
+    ];
 
-    if !script_path.exists() {
-        return Err(AppError::InternalError(
-            "Update script not found".to_string(),
-        ));
-    }
+    let script_path = possible_paths
+        .into_iter()
+        .filter_map(|p| p)
+        .find(|p| p.exists())
+        .ok_or_else(|| {
+            AppError::InternalError("Update script not found in any expected location".to_string())
+        })?;
+
+    tracing::info!("Found update script at: {:?}", script_path);
 
     // Clone version for use in response message
     let version_for_message = payload.version.clone();
 
     // Start update process in background
     tokio::spawn(async move {
-        let _ = Command::new("sh")
+        match Command::new("sh")
             .arg(&script_path)
             .arg(&payload.version)
-            .spawn();
+            .spawn()
+        {
+            Ok(_) => tracing::info!("Update process started for version {}", payload.version),
+            Err(e) => tracing::error!("Failed to start update process: {}", e),
+        }
     });
 
     Ok(Json(UpdateResponse {
