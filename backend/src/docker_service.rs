@@ -29,8 +29,42 @@ pub struct ContainerInfo {
 
 impl DockerService {
     pub fn new() -> Result<Self, DockerError> {
-        let client = Docker::connect_with_socket_defaults()?;
-        Ok(Self { client })
+        // Try multiple socket locations
+        let socket_paths = vec![
+            "/var/run/docker.sock",
+            "/run/docker.sock",
+            "unix:///var/run/docker.sock",
+            "unix:///run/docker.sock",
+        ];
+
+        // First try default socket connection
+        if let Ok(client) = Docker::connect_with_socket_defaults() {
+            tracing::info!("Connected to Docker via default socket");
+            return Ok(Self { client });
+        }
+
+        // Try each socket path explicitly
+        for socket_path in socket_paths {
+            if let Ok(client) =
+                Docker::connect_with_unix(socket_path, 120, bollard::API_DEFAULT_VERSION)
+            {
+                tracing::info!("Connected to Docker via socket: {}", socket_path);
+                return Ok(Self { client });
+            }
+        }
+
+        // Check if docker socket exists but we don't have permissions
+        if std::path::Path::new("/var/run/docker.sock").exists() {
+            tracing::error!(
+                "Docker socket exists at /var/run/docker.sock but connection failed. \
+                This is likely a permissions issue. Please add the service user to the 'docker' group: \
+                sudo usermod -aG docker csf-core"
+            );
+        } else {
+            tracing::error!("Docker socket not found. Is Docker installed and running?");
+        }
+
+        Err(DockerError::NotAvailable)
     }
 
     /// Check if Docker is available

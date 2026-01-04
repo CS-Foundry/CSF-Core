@@ -276,6 +276,28 @@ create_service_user() {
         useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
         print_success "Benutzer '$SERVICE_USER' erstellt"
     fi
+    
+    # Add user to docker group if Docker is installed
+    if command -v docker &> /dev/null; then
+        if getent group docker > /dev/null 2>&1; then
+            print_step "Füge $SERVICE_USER zur docker-Gruppe hinzu..."
+            usermod -aG docker "$SERVICE_USER" 2>/dev/null || true
+            print_success "$SERVICE_USER zur docker-Gruppe hinzugefügt"
+            
+            # Verify docker socket permissions
+            if [ -e /var/run/docker.sock ]; then
+                print_step "Prüfe Docker-Socket Berechtigungen..."
+                chgrp docker /var/run/docker.sock 2>/dev/null || true
+                chmod 660 /var/run/docker.sock 2>/dev/null || true
+                print_success "Docker-Socket Berechtigungen gesetzt"
+            fi
+        else
+            print_warning "Docker-Gruppe existiert nicht. Container-Management könnte eingeschränkt sein."
+        fi
+    else
+        print_warning "Docker nicht installiert. Container-Management wird nicht verfügbar sein."
+        print_warning "Falls Docker benötigt wird: curl -fsSL https://get.docker.com | sh"
+    fi
 }
 
 create_directories() {
