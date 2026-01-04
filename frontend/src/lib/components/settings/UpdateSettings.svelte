@@ -80,13 +80,13 @@
       <div class="flex items-center justify-between p-4 border rounded-lg">
         <div>
           <p class="text-sm font-medium">Aktuelle Version</p>
-          <p class="text-2xl font-bold text-primary">
+          <div class="text-2xl font-bold text-primary">
             {#if $updateStore.versionInfo}
               v{$updateStore.versionInfo.current_version}
             {:else}
               <Skeleton class="h-8 w-24" />
             {/if}
-          </p>
+          </div>
         </div>
         <Button onclick={checkForUpdates} disabled={isChecking} variant="outline" size="sm">
           <RefreshCw class={`mr-2 h-4 w-4 ${isChecking ? 'animate-spin' : ''}`} />

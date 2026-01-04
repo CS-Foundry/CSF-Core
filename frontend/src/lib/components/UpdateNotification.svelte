@@ -74,32 +74,21 @@
 </script>
 
 {#if $updateAvailable && $updateStore.versionInfo}
-  <div class="p-2">
-    <Card.Root class="border-primary/50 bg-primary/5">
-      <Card.Header class="pb-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <Download class="h-4 w-4 text-primary" />
-            <Card.Title class="text-sm">Update verfügbar</Card.Title>
-          </div>
-          <Badge variant="secondary" class="text-xs">
-            v{$updateStore.versionInfo.latest_version}
-          </Badge>
-        </div>
-      </Card.Header>
-      <Card.Content class="pb-3">
-        <p class="text-xs text-muted-foreground mb-3">
-          Eine neue Version ist verfügbar. Aktuelle Version: v{$updateStore.versionInfo
-            .current_version}
-        </p>
-        <div class="flex flex-col gap-2">
-          <Button size="sm" onclick={openChangelog} class="w-full">
-            <RefreshCw class="mr-2 h-3 w-3" />
-            Changelog anzeigen & Installieren
-          </Button>
-        </div>
-      </Card.Content>
-    </Card.Root>
+  <div
+    class="px-3 py-2 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center"
+  >
+    <button
+      onclick={openChangelog}
+      class="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-primary/10 hover:bg-primary/15 transition-colors border border-primary/20 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:justify-center"
+    >
+      <Download class="h-3.5 w-3.5 text-primary shrink-0" />
+      <span class="text-xs font-medium text-foreground group-data-[collapsible=icon]:hidden"
+        >Update verfügbar</span
+      >
+      <Badge variant="secondary" class="text-[10px] ml-auto group-data-[collapsible=icon]:hidden">
+        v{$updateStore.versionInfo.latest_version}
+      </Badge>
+    </button>
   </div>
 {/if}
 

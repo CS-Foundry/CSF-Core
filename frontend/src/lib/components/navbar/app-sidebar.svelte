@@ -121,10 +121,10 @@
     <TeamSwitcher />
   </Sidebar.Header>
   <Sidebar.Content>
-    <UpdateNotification />
     <NavMain items={data.navMain} />
     <NavFavorites favorites={data.favorites} />
   </Sidebar.Content>
+  <UpdateNotification />
   <Sidebar.Footer>
     <NavUser />
   </Sidebar.Footer>

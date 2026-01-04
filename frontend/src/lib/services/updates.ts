@@ -1,3 +1,5 @@
+import { ApiClient } from './api-client';
+
 export interface VersionInfo {
 	current_version: string;
 	latest_version: string;
@@ -12,23 +14,11 @@ export interface UpdateResponse {
 }
 
 export class UpdateService {
-	private apiUrl: string;
-
-	constructor() {
-		this.apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-	}
-
 	/**
 	 * Check for available updates
 	 */
 	async checkForUpdates(): Promise<VersionInfo> {
-		const response = await fetch(`${this.apiUrl}/api/updates/check`, {
-			method: 'GET',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		});
+		const response = await ApiClient.get('/updates/check');
 
 		if (!response.ok) {
 			throw new Error(`Failed to check for updates: ${response.statusText}`);
@@ -41,14 +31,7 @@ export class UpdateService {
 	 * Install a specific version
 	 */
 	async installUpdate(version: string): Promise<UpdateResponse> {
-		const response = await fetch(`${this.apiUrl}/api/updates/install`, {
-			method: 'POST',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ version })
-		});
+		const response = await ApiClient.post('/updates/install', { version });
 
 		if (!response.ok) {
 			throw new Error(`Failed to install update: ${response.statusText}`);
@@ -61,13 +44,7 @@ export class UpdateService {
 	 * Get changelog for a specific version
 	 */
 	async getChangelog(version: string): Promise<string> {
-		const response = await fetch(`${this.apiUrl}/api/updates/changelog/${version}`, {
-			method: 'GET',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		});
+		const response = await ApiClient.get(`/updates/changelog/${version}`);
 
 		if (!response.ok) {
 			throw new Error(`Failed to get changelog: ${response.statusText}`);
