@@ -39,6 +39,7 @@ sysinfo = "0.32"
 anyhow = "1.0"
 bollard = "0.17"
 futures-util = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
 
 [features]
 default = []

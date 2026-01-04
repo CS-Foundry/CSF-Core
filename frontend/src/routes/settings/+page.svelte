@@ -20,6 +20,7 @@
   } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import OrganizationSettings from '$lib/components/settings/OrganizationSettings.svelte';
+  import UpdateSettings from '$lib/components/settings/UpdateSettings.svelte';
 
   let authState = $derived($authStore);
   let email = $state('');
@@ -179,7 +180,7 @@
   </div>
 
   <Tabs.Root value="profile" class="space-y-6">
-    <Tabs.List class="grid w-full max-w-3xl grid-cols-4">
+    <Tabs.List class="grid w-full max-w-3xl grid-cols-5">
       <Tabs.Trigger value="profile" class="gap-2">
         <UserIcon class="h-4 w-4" />
         Profil
@@ -187,6 +188,23 @@
       <Tabs.Trigger value="security" class="gap-2">
         <ShieldCheckIcon class="h-4 w-4" />
         Sicherheit
+      </Tabs.Trigger>
+      <Tabs.Trigger value="updates" class="gap-2">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-4 w-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        Updates
       </Tabs.Trigger>
       <Tabs.Trigger value="organization" class="gap-2">
         <Building2 class="h-4 w-4" />
@@ -431,6 +449,10 @@
           </div>
         </Card.Content>
       </Card.Root>
+    </Tabs.Content>
+
+    <Tabs.Content value="updates" class="space-y-6">
+      <UpdateSettings />
     </Tabs.Content>
 
     <Tabs.Content value="organization" class="space-y-6">
