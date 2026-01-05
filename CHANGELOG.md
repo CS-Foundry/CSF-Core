@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.3.0-beta.3](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.2...v0.3.0-beta.3) (2026-01-05)
+
+
+### Bug Fixes
+
+* release pipeline for beat ([a908b37](https://github.com/CS-Foundry/CSF-Core/commit/a908b3711c537ef0b3ceeb90fe6acb915fdb7945))
+
 # [0.3.0-beta.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.1...v0.3.0-beta.2) (2026-01-05)
 
 
