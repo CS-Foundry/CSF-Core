@@ -83,6 +83,27 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Pull latest changes (with version updates)
+        run: |
+          git pull origin main
+
+      - name: Update version in Cargo.toml
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          echo "Building version: $VERSION"
+
+          # Update backend Cargo.toml (compatible with both Linux and macOS)
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" backend/Cargo.toml
+          else
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" backend/Cargo.toml
+          fi
+
+          # Verify the change
+          grep "^version = " backend/Cargo.toml
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -145,6 +166,24 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Pull latest changes (with version updates)
+        run: |
+          git pull origin main
+
+      - name: Update version in package.json
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          echo "Building frontend version: $VERSION"
+
+          # Update frontend package.json
+          cd frontend
+          npm version $VERSION --no-git-tag-version
+
+          # Verify the change
+          grep '"version":' package.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
