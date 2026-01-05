@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.3.0-beta.1](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.2...v0.3.0-beta.1) (2026-01-05)
+
+
+### Features
+
+* dashboard not working only test ([cfe6edb](https://github.com/CS-Foundry/CSF-Core/commit/cfe6edb108d5b48f144122e06160211fd9b06a61))
+
 ## [0.2.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.1...v0.2.2) (2026-01-05)
 
 
