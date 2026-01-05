@@ -17,6 +17,9 @@ pub struct VersionInfo {
     pub update_available: bool,
     pub changelog: Option<String>,
     pub release_url: String,
+    pub is_prerelease: bool,
+    pub latest_beta_version: Option<String>,
+    pub beta_release_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +52,7 @@ pub async fn check_updates(State(_state): State<AppState>) -> Result<Json<Versio
         .build()
         .map_err(|e| AppError::InternalError(format!("Failed to create HTTP client: {}", e)))?;
 
+    // Get latest stable release
     let response = client
         .get("https://api.github.com/repos/CS-Foundry/CSF-Core/releases/latest")
         .send()
@@ -70,12 +74,35 @@ pub async fn check_updates(State(_state): State<AppState>) -> Result<Json<Versio
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
     let update_available = version_compare(&current_version, &latest_version);
 
+    // Check for beta releases
+    let all_releases_response = client
+        .get("https://api.github.com/repos/CS-Foundry/CSF-Core/releases")
+        .send()
+        .await
+        .map_err(|e| AppError::InternalError(format!("Failed to fetch all releases: {}", e)))?;
+
+    let all_releases: Vec<GitHubRelease> = all_releases_response
+        .json()
+        .await
+        .map_err(|e| AppError::InternalError(format!("Failed to parse releases data: {}", e)))?;
+
+    // Find latest beta release
+    let latest_beta = all_releases.iter().find(|r| r.prerelease).map(|r| {
+        (
+            r.tag_name.trim_start_matches('v').to_string(),
+            r.html_url.clone(),
+        )
+    });
+
     Ok(Json(VersionInfo {
         current_version,
         latest_version: latest_version.clone(),
         update_available,
         changelog: Some(release.body),
         release_url: release.html_url,
+        is_prerelease: release.prerelease,
+        latest_beta_version: latest_beta.as_ref().map(|(v, _)| v.clone()),
+        beta_release_url: latest_beta.map(|(_, url)| url),
     }))
 }
 
@@ -106,23 +133,21 @@ pub async fn install_update(
     }
 
     // Find the update script - try multiple locations
-    let possible_paths = vec![
-        std::path::PathBuf::from("/opt/csf-core/scripts/update.sh"),
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("../scripts/update.sh")),
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("scripts/update.sh")),
-    ];
+    let mut possible_paths: Vec<std::path::PathBuf> =
+        vec![std::path::PathBuf::from("/opt/csf-core/scripts/update.sh")];
+
+    if let Ok(dir) = std::env::current_dir() {
+        possible_paths.push(dir.join("../scripts/update.sh"));
+        possible_paths.push(dir.join("scripts/update.sh"));
+    }
 
     let script_path = possible_paths
-        .into_iter()
-        .filter_map(|p| p)
-        .find(|p| p.exists())
+        .iter()
+        .find(|&p: &&std::path::PathBuf| p.exists())
         .ok_or_else(|| {
             AppError::InternalError("Update script not found in any expected location".to_string())
-        })?;
+        })?
+        .clone();
 
     tracing::info!("Found update script at: {:?}", script_path);
 
@@ -209,6 +234,7 @@ struct GitHubRelease {
     tag_name: String,
     body: String,
     html_url: String,
+    prerelease: bool,
 }
 
 // Compare versions (returns true if v2 is newer than v1)
