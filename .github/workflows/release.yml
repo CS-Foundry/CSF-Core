@@ -178,9 +178,9 @@ jobs:
           VERSION="${{ needs.release.outputs.new_release_version }}"
           echo "Building frontend version: $VERSION"
 
-          # Update frontend package.json
+          # Update frontend package.json using sed (more reliable than npm version)
           cd frontend
-          npm version $VERSION --no-git-tag-version
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
 
           # Verify the change
           grep '"version":' package.json
