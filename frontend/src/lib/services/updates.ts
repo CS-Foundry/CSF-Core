@@ -6,6 +6,9 @@ export interface VersionInfo {
 	update_available: boolean;
 	changelog: string | null;
 	release_url: string;
+	is_prerelease: boolean;
+	latest_beta_version: string | null;
+	beta_release_url: string | null;
 }
 
 export interface UpdateResponse {

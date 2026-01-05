@@ -5,13 +5,24 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Alert, AlertDescription } from '$lib/components/ui/alert';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Switch } from '$lib/components/ui/switch';
+  import { Label } from '$lib/components/ui/label';
   import { updateStore } from '$lib/stores/updates';
-  import { Download, RefreshCw, ExternalLink, CheckCircle2, Info } from '@lucide/svelte';
+  import {
+    Download,
+    RefreshCw,
+    ExternalLink,
+    CheckCircle2,
+    Info,
+    AlertTriangle,
+  } from '@lucide/svelte';
 
   let isChecking = $state(false);
   let isInstalling = $state(false);
   let message = $state('');
   let messageType: 'success' | 'error' | '' = $state('');
+  let enableBetaUpdates = $state(false);
+  let showBetaWarning = $state(false);
 
   onMount(() => {
     // Check for updates when component mounts
@@ -34,14 +45,20 @@
     }
   }
 
-  async function installUpdate() {
+  async function installUpdate(isBeta = false) {
     if (!$updateStore.versionInfo) return;
+
+    const version = isBeta
+      ? $updateStore.versionInfo.latest_beta_version
+      : $updateStore.versionInfo.latest_version;
+
+    if (!version) return;
 
     isInstalling = true;
     message = '';
     messageType = '';
     try {
-      const response = await updateStore.installUpdate($updateStore.versionInfo.latest_version);
+      const response = await updateStore.installUpdate(version);
 
       message = response.message;
       messageType = 'success';
@@ -51,6 +68,19 @@
     } finally {
       isInstalling = false;
     }
+  }
+
+  function toggleBetaUpdates() {
+    if (!enableBetaUpdates) {
+      showBetaWarning = true;
+    } else {
+      enableBetaUpdates = false;
+    }
+  }
+
+  function confirmBetaUpdates() {
+    enableBetaUpdates = true;
+    showBetaWarning = false;
   }
 
   function parseChangelog(text: string): string {
@@ -125,7 +155,7 @@
                     > ist jetzt verfügbar.
                   </p>
                 </div>
-                <Button onclick={installUpdate} disabled={isInstalling} size="sm">
+                <Button onclick={() => installUpdate(false)} disabled={isInstalling} size="sm">
                   {#if isInstalling}
                     <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
                     Installiere...
@@ -184,6 +214,82 @@
           </p>
         {/if}
       {/if}
+
+      <!-- Beta Updates Section -->
+      <div class="pt-4 border-t space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="space-y-0.5">
+            <Label for="beta-updates" class="text-sm font-semibold">Beta-Updates aktivieren</Label>
+            <p class="text-xs text-muted-foreground">
+              Erhalte Zugang zu experimentellen Beta-Versionen
+            </p>
+          </div>
+          <Switch
+            id="beta-updates"
+            checked={enableBetaUpdates}
+            onCheckedChange={toggleBetaUpdates}
+          />
+        </div>
+
+        {#if showBetaWarning}
+          <Alert variant="destructive">
+            <AlertTriangle class="h-4 w-4" />
+            <AlertDescription>
+              <div class="space-y-3">
+                <div>
+                  <p class="font-semibold mb-1">⚠️ Warnung: Beta-Versionen sind experimentell!</p>
+                  <ul class="text-xs space-y-1 list-disc list-inside">
+                    <li>Beta-Versionen können instabil sein und Fehler enthalten</li>
+                    <li>Funktionen können sich ohne Vorankündigung ändern</li>
+                    <li>Nicht für Produktionsumgebungen empfohlen</li>
+                    <li>Datenverlust kann nicht ausgeschlossen werden</li>
+                  </ul>
+                </div>
+                <div class="flex gap-2">
+                  <Button size="sm" variant="outline" onclick={() => (showBetaWarning = false)}>
+                    Abbrechen
+                  </Button>
+                  <Button size="sm" variant="destructive" onclick={confirmBetaUpdates}>
+                    Ich verstehe die Risiken
+                  </Button>
+                </div>
+              </div>
+            </AlertDescription>
+          </Alert>
+        {/if}
+
+        {#if enableBetaUpdates && $updateStore.versionInfo?.latest_beta_version}
+          <Alert>
+            <Info class="h-4 w-4" />
+            <AlertDescription>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="font-semibold mb-1">🧪 Beta-Version verfügbar!</p>
+                  <p class="text-sm">
+                    Version <Badge variant="secondary" class="bg-orange-100 dark:bg-orange-900">
+                      v{$updateStore.versionInfo.latest_beta_version}
+                    </Badge> ist zum Testen verfügbar.
+                  </p>
+                </div>
+                <Button
+                  onclick={() => installUpdate(true)}
+                  disabled={isInstalling}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {#if isInstalling}
+                    <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
+                    Installiere...
+                  {:else}
+                    <Download class="mr-2 h-4 w-4" />
+                    Beta installieren
+                  {/if}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        {/if}
+      </div>
 
       <!-- Update Information -->
       <div class="pt-4 border-t">
