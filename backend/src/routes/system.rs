@@ -1,7 +1,6 @@
 use axum::{extract::State, response::Json, routing::get, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::auth::middleware::AuthenticatedUser;
 use crate::system_collector::{LocalSystemCollector, LocalSystemMetrics};
 use crate::AppState;
 
@@ -31,10 +30,7 @@ pub fn routes() -> Router<AppState> {
 /// Get local system information
 ///
 /// Returns static system information like hostname, OS, CPU details
-async fn get_system_info(
-    _auth: AuthenticatedUser,
-    State(_state): State<AppState>,
-) -> Json<SystemInfoResponse> {
+async fn get_system_info(State(_state): State<AppState>) -> Json<SystemInfoResponse> {
     let collector = LocalSystemCollector::new();
     let metrics = collector.collect();
 
@@ -53,10 +49,7 @@ async fn get_system_info(
 /// Get current system metrics
 ///
 /// Returns real-time metrics like CPU usage, memory usage, disk usage, network stats
-async fn get_system_metrics(
-    _auth: AuthenticatedUser,
-    State(_state): State<AppState>,
-) -> Json<SystemMetricsResponse> {
+async fn get_system_metrics(State(_state): State<AppState>) -> Json<SystemMetricsResponse> {
     let collector = LocalSystemCollector::new();
     let metrics = collector.collect();
 
