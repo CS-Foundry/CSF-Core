@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.3.0](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.4...v0.3.0) (2026-01-06)
+
+
+### Features
+
+* live update screen ([879c62e](https://github.com/CS-Foundry/CSF-Core/commit/879c62efc32fbfbf97d4e2d97ac6ab3f0b7384de))
+
 ## [0.2.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.3...v0.2.4) (2026-01-06)
 
 
