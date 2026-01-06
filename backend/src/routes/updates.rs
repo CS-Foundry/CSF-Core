@@ -122,10 +122,21 @@ pub async fn install_update(
     State(_state): State<AppState>,
     Json(payload): Json<UpdateRequest>,
 ) -> Result<Json<UpdateResponse>, AppError> {
+    tracing::info!(
+        "Update installation requested for version: {}",
+        payload.version
+    );
+
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    tracing::info!("Current version: {}", current_version);
 
     // Safety check: don't downgrade
     if !version_compare(&current_version, &payload.version) {
+        tracing::warn!(
+            "Update rejected: Cannot install version {} (current: {})",
+            payload.version,
+            current_version
+        );
         return Ok(Json(UpdateResponse {
             success: false,
             message: "Cannot install an older or same version".to_string(),
@@ -133,21 +144,36 @@ pub async fn install_update(
     }
 
     // Find the update script - try multiple locations
-    let mut possible_paths: Vec<std::path::PathBuf> =
-        vec![std::path::PathBuf::from("/opt/csf-core/scripts/update.sh")];
+    let mut possible_paths: Vec<std::path::PathBuf> = vec![
+        // Production path (daemon service)
+        std::path::PathBuf::from("/opt/csf-core/scripts/update.sh"),
+    ];
 
+    // Development paths
     if let Ok(dir) = std::env::current_dir() {
+        // When running from /opt/csf-core/backend
         possible_paths.push(dir.join("../scripts/update.sh"));
+        // When running from project root
         possible_paths.push(dir.join("scripts/update.sh"));
+        // When running from backend directory
+        possible_paths.push(dir.join("../../scripts/update.sh"));
     }
 
-    let script_path = possible_paths
-        .iter()
-        .find(|&p: &&std::path::PathBuf| p.exists())
-        .ok_or_else(|| {
-            AppError::InternalError("Update script not found in any expected location".to_string())
-        })?
-        .clone();
+    tracing::debug!("Searching for update script in: {:?}", possible_paths);
+
+    let script_path = match possible_paths.iter().find(|&p| p.exists()) {
+        Some(path) => path.clone(),
+        None => {
+            let error_msg = format!(
+                "Update script not found in any expected location. Searched paths: {:?}. Note: Updates can only be performed in production installations, not during local development.",
+                possible_paths
+            );
+            tracing::error!("{}", error_msg);
+            return Err(AppError::InternalError(
+                "Update functionality is only available in production installations. The update script was not found on this system.".to_string()
+            ));
+        }
+    };
 
     tracing::info!("Found update script at: {:?}", script_path);
 
@@ -268,9 +294,15 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::InternalError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+        let (status, message) = match &self {
+            AppError::InternalError(msg) => {
+                tracing::error!("Internal error: {}", msg);
+                (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
+            }
+            AppError::NotFound(msg) => {
+                tracing::warn!("Not found: {}", msg);
+                (StatusCode::NOT_FOUND, msg.clone())
+            }
         };
 
         (status, Json(serde_json::json!({ "error": message }))).into_response()
