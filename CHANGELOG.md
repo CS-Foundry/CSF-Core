@@ -2,6 +2,14 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.3.0-beta.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.3...v0.3.0-beta.4) (2026-01-06)
+
+
+### Bug Fixes
+
+* update script added to installation ([385c30e](https://github.com/CS-Foundry/CSF-Core/commit/385c30ebafafae24f5b6f572ac16a211938cb2b2))
+* updater error ([8775558](https://github.com/CS-Foundry/CSF-Core/commit/877555809fb6160c59710444cebb2ccdab9088bc))
+
 # [0.3.0-beta.3](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.2...v0.3.0-beta.3) (2026-01-05)
 
 
