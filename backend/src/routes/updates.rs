@@ -144,28 +144,36 @@ pub async fn install_update(
     }
 
     // Find the update script - try multiple locations
-    let mut possible_paths: Vec<std::path::PathBuf> =
-        vec![std::path::PathBuf::from("/opt/csf-core/scripts/update.sh")];
+    let mut possible_paths: Vec<std::path::PathBuf> = vec![
+        // Production path (daemon service)
+        std::path::PathBuf::from("/opt/csf-core/scripts/update.sh"),
+    ];
 
+    // Development paths
     if let Ok(dir) = std::env::current_dir() {
+        // When running from /opt/csf-core/backend
         possible_paths.push(dir.join("../scripts/update.sh"));
+        // When running from project root
         possible_paths.push(dir.join("scripts/update.sh"));
+        // When running from backend directory
+        possible_paths.push(dir.join("../../scripts/update.sh"));
     }
 
     tracing::debug!("Searching for update script in: {:?}", possible_paths);
 
-    let script_path = possible_paths
-        .iter()
-        .find(|&p: &&std::path::PathBuf| p.exists())
-        .ok_or_else(|| {
+    let script_path = match possible_paths.iter().find(|&p| p.exists()) {
+        Some(path) => path.clone(),
+        None => {
             let error_msg = format!(
-                "Update script not found in any expected location. Searched paths: {:?}",
+                "Update script not found in any expected location. Searched paths: {:?}. Note: Updates can only be performed in production installations, not during local development.",
                 possible_paths
             );
             tracing::error!("{}", error_msg);
-            AppError::InternalError(error_msg)
-        })?
-        .clone();
+            return Err(AppError::InternalError(
+                "Update functionality is only available in production installations. The update script was not found on this system.".to_string()
+            ));
+        }
+    };
 
     tracing::info!("Found update script at: {:?}", script_path);
 

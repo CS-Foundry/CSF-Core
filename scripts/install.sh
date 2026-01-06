@@ -424,6 +424,18 @@ download_release() {
             return
         fi
         
+        # Download update script
+        local update_script_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/update.sh"
+        print_step "Download Update Script..."
+        
+        mkdir -p "$INSTALL_DIR/scripts"
+        if curl -L -f "$update_script_url" -o "$INSTALL_DIR/scripts/update.sh" 2>/dev/null; then
+            chmod +x "$INSTALL_DIR/scripts/update.sh"
+            print_success "Update Script heruntergeladen"
+        else
+            print_warning "Update Script konnte nicht heruntergeladen werden"
+        fi
+        
         cd - > /dev/null
         rm -rf "$temp_dir"
         
@@ -633,6 +645,18 @@ EOF
         rm -rf "$temp_dir"
         install_via_docker
         return
+    fi
+    
+    # Copy update script
+    cd "$temp_dir/csf-core"
+    print_step "Kopiere Update Script..."
+    mkdir -p "$INSTALL_DIR/scripts"
+    if [ -f "scripts/update.sh" ]; then
+        cp scripts/update.sh "$INSTALL_DIR/scripts/"
+        chmod +x "$INSTALL_DIR/scripts/update.sh"
+        print_success "Update Script kopiert"
+    else
+        print_warning "Update Script nicht gefunden"
     fi
     
     cd - > /dev/null
