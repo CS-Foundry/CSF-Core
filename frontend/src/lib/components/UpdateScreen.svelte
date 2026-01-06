@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { Progress } from '$lib/components/ui/progress';
-  import Logo from '$lib/assets/logo.svg';
+  import Logo from '/static/logos/CSF_Logo.png';
 
   let updateStatus = $state({
     status: 'idle',
