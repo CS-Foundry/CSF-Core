@@ -3,10 +3,12 @@
   import favicon from '$lib/assets/favicon.svg';
   import { onMount, onDestroy } from 'svelte';
   import AppSidebar from '$lib/components/navbar/app-sidebar.svelte';
+  import UpdateScreen from '$lib/components/UpdateScreen.svelte';
   import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
   import { Separator } from '$lib/components/ui/separator/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { theme, effectiveTheme, initThemeFromStorage } from '$lib/stores/theme';
+  import { updateInProgress } from '$lib/stores/update';
   import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth';
   import { ApiClient } from '$lib/services/api-client';
@@ -61,6 +63,11 @@
 <svelte:head>
   <link rel="icon" href={favicon} />
 </svelte:head>
+
+<!-- Update Screen Overlay -->
+{#if $updateInProgress}
+  <UpdateScreen />
+{/if}
 
 {#if showSidebar}
   <Sidebar.Provider>
