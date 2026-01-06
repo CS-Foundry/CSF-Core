@@ -55,8 +55,8 @@ jobs:
           # Check if a release was published
           if grep -q "Published release" semantic-release-output.log; then
             echo "new_release_published=true" >> $GITHUB_OUTPUT
-            # Extract version from the log
-            VERSION=$(grep "Published release" semantic-release-output.log | sed -n 's/.*Published release \([0-9.]*\).*/\1/p')
+            # Extract full version from the log (including beta, alpha, rc tags)
+            VERSION=$(grep "Published release" semantic-release-output.log | sed -n 's/.*Published release \([0-9.]*\(-[a-zA-Z0-9.]*\)\?\).*/\1/p')
             echo "new_release_version=$VERSION" >> $GITHUB_OUTPUT
             echo "✅ New release published: $VERSION"
           else
@@ -84,11 +84,13 @@ jobs:
       - name: Check out Git repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Pull latest changes (with version updates)
         run: |
-          git pull origin main
+          BRANCH="${{ github.ref_name }}"
+          echo "Building on branch: $BRANCH"
+          git pull origin $BRANCH
 
       - name: Update version in Cargo.toml
         run: |
@@ -155,6 +157,7 @@ jobs:
         with:
           tag_name: v${{ needs.release.outputs.new_release_version }}
           files: ${{ matrix.backend_asset }}
+          prerelease: ${{ contains(needs.release.outputs.new_release_version, '-beta') || contains(needs.release.outputs.new_release_version, '-alpha') || contains(needs.release.outputs.new_release_version, '-rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -167,11 +170,13 @@ jobs:
       - name: Check out Git repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Pull latest changes (with version updates)
         run: |
-          git pull origin main
+          BRANCH="${{ github.ref_name }}"
+          echo "Building on branch: $BRANCH"
+          git pull origin $BRANCH
 
       - name: Update version in package.json
         run: |
@@ -220,6 +225,7 @@ jobs:
         with:
           tag_name: v${{ needs.release.outputs.new_release_version }}
           files: csf-frontend-${{ needs.release.outputs.new_release_version }}.tar.gz
+          prerelease: ${{ contains(needs.release.outputs.new_release_version, '-beta') || contains(needs.release.outputs.new_release_version, '-alpha') || contains(needs.release.outputs.new_release_version, '-rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
