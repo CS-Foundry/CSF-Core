@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+# Don't exit on errors immediately - we want to handle them gracefully
+set +e
 
 # CSF-Core Update Script
 # This script downloads and installs updates for CSF-Core
@@ -12,15 +13,18 @@ BACKUP_DIR="/tmp/csf-core-backup-$(date +%s)"
 STATUS_FILE="/tmp/csf-core-update-status.json"
 
 log() {
-    local message="[$(date +'%Y-%m-%d %H:%M:%S')] $1"
-    echo "$message"
-    update_status "in_progress" "$1"
+    local message="$1"
+    local progress="${2:-0}"
+    local timestamp="[$(date +'%Y-%m-%d %H:%M:%S')]"
+    echo "$timestamp $message"
+    update_status "in_progress" "$message" "$progress"
 }
 
 error() {
-    local message="[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1"
-    echo "$message" >&2
-    update_status "error" "$1"
+    local message="$1"
+    local timestamp="[$(date +'%Y-%m-%d %H:%M:%S')]"
+    echo "$timestamp ERROR: $message" >&2
+    update_status "error" "$message" 0
     exit 1
 }
 
@@ -29,13 +33,16 @@ update_status() {
     local message="$2"
     local progress="${3:-0}"
     
+    # Ensure status file directory exists
+    mkdir -p "$(dirname "$STATUS_FILE")" 2>/dev/null
+    
     cat > "$STATUS_FILE" <<EOF
 {
   "status": "$status",
   "message": "$message",
   "progress": $progress,
   "version": "$VERSION",
-  "timestamp": "$(date -Iseconds)"
+  "timestamp": "$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
 }
 EOF
 }
@@ -57,29 +64,68 @@ else
 fi
 
 # Create backup directory
-log "📦 Creating backup directory at ${BACKUP_DIR}..." 15
-$SUDO mkdir -p "${BACKUP_DIR}"
+log "📦 Creating backup directory..." 12
+if ! $SUDO mkdir -p "${BACKUP_DIR}"; then
+    error "Failed to create backup directory at ${BACKUP_DIR}"
+fi
+log "✓ Backup directory created: ${BACKUP_DIR}" 15
 
 # Backup current installation
 if [ -d "${INSTALL_DIR}" ]; then
-    log "💾 Backing up current installation (this may take a moment)..." 20
-    $SUDO cp -r "${INSTALL_DIR}" "${BACKUP_DIR}/"
-    log "✓ Backup completed successfully" 25
+    log "💾 Starting backup of current installation..." 18
+    
+    # Check if we have enough space
+    INSTALL_SIZE=$(du -sm "${INSTALL_DIR}" 2>/dev/null | awk '{print $1}')
+    AVAILABLE_SPACE=$(df -m /tmp | tail -1 | awk '{print $4}')
+    
+    if [ -n "$INSTALL_SIZE" ] && [ -n "$AVAILABLE_SPACE" ]; then
+        if [ "$INSTALL_SIZE" -gt "$AVAILABLE_SPACE" ]; then
+            log "⚠️ Warning: May not have enough space for backup (need ${INSTALL_SIZE}MB, have ${AVAILABLE_SPACE}MB)" 20
+        else
+            log "ℹ️  Backing up ${INSTALL_SIZE}MB (${AVAILABLE_SPACE}MB available)" 20
+        fi
+    fi
+    
+    # Use rsync if available (better progress), otherwise cp
+    if command -v rsync >/dev/null 2>&1; then
+        log "Using rsync for backup..." 21
+        if ! $SUDO rsync -a "${INSTALL_DIR}/" "${BACKUP_DIR}/csf-core/" 2>&1; then
+            log "⚠️ Rsync backup had issues, trying with cp..." 22
+            if ! $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
+                error "Failed to create backup"
+            fi
+        fi
+    else
+        log "Using cp for backup..." 21
+        if ! $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
+            error "Failed to create backup"
+        fi
+    fi
+    
+    # Verify backup was created
+    if [ -d "${BACKUP_DIR}/csf-core" ] || [ -d "${BACKUP_DIR}/opt/csf-core" ]; then
+        log "✓ Backup completed successfully" 25
+    else
+        log "⚠️ Backup directory exists but structure looks unexpected" 25
+    fi
 else
-    log "⚠ No existing installation found to backup" 25
+    log "⚠️ No existing installation found at ${INSTALL_DIR}, skipping backup" 25
 fi
 
 # Stop the service if running
 if systemctl is-active --quiet csf-core.service 2>/dev/null; then
-    log "⏸️  Stopping CSF-Core service..." 30
-    $SUDO systemctl stop csf-core.service || log "⚠ Service stop failed or not installed"
-    log "✓ Service stopped" 35
+    log "⏸️  Stopping CSF-Core service..." 28
+    if $SUDO systemctl stop csf-core.service 2>&1; then
+        log "✓ Service stopped" 30
+    else
+        log "⚠️ Service stop had issues, continuing anyway..." 30
+    fi
 else
-    log "ℹ️  Service not running" 35
+    log "ℹ️  Service not running, skipping stop" 30
 fi
 
 # Detect architecture
-log "🔍 Detecting system architecture..." 40
+log "🔍 Detecting system architecture..." 35
 ARCH=$(uname -m)
 case $ARCH in
     x86_64)
@@ -92,71 +138,130 @@ case $ARCH in
         error "Unsupported architecture: $ARCH"
         ;;
 esac
-log "✓ Detected architecture: $ARCH_NAME" 42
+log "✓ Detected architecture: $ARCH_NAME" 38
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-log "✓ Detected OS: $OS" 45
+log "✓ Detected OS: $OS" 40
 
 # Download the new binaries
-log "📥 Downloading backend binary for version ${VERSION}..." 50
+log "📥 Downloading backend binary for version ${VERSION}..." 45
 BACKEND_URL="https://github.com/${REPO}/releases/download/v${VERSION}/csf-backend-${OS}-${ARCH_NAME}"
 TMP_DIR=$(mktemp -d)
 
-if ! curl -L -f -o "${TMP_DIR}/backend" "${BACKEND_URL}" 2>&1 | grep -v "^[0-9 ]*$" || true; then
+log "ℹ️  Download URL: ${BACKEND_URL}" 47
+
+if ! curl -L -f -o "${TMP_DIR}/backend" "${BACKEND_URL}" 2>&1; then
+    rm -rf "${TMP_DIR}"
     error "Failed to download backend from ${BACKEND_URL}"
 fi
-log "✓ Backend binary downloaded" 60
 
-# Download frontend package
-log "📥 Downloading frontend package..." 65
-FRONTEND_URL="https://github.com/${REPO}/releases/download/v${VERSION}/csf-frontend-${VERSION}.tar.gz"
-
-if ! curl -L -f -o "${TMP_DIR}/frontend.tar.gz" "${FRONTEND_URL}" 2>&1 | grep -v "^[0-9 ]*$" || true; then
-    log "⚠ Frontend package not found, will try to keep existing frontend"
+# Verify download
+if [ ! -f "${TMP_DIR}/backend" ]; then
+    rm -rf "${TMP_DIR}"
+    error "Backend binary was not downloaded"
 fi
 
-if [ -f "${TMP_DIR}/frontend.tar.gz" ]; then
-    log "✓ Frontend package downloaded" 70
+log "✓ Backend binary downloaded ($(du -h "${TMP_DIR}/backend" | cut -f1))" 55
+
+# Download frontend package
+log "📥 Downloading frontend package..." 60
+FRONTEND_URL="https://github.com/${REPO}/releases/download/v${VERSION}/csf-frontend-${VERSION}.tar.gz"
+
+if curl -L -f -o "${TMP_DIR}/frontend.tar.gz" "${FRONTEND_URL}" 2>&1; then
+    if [ -f "${TMP_DIR}/frontend.tar.gz" ]; then
+        log "✓ Frontend package downloaded ($(du -h "${TMP_DIR}/frontend.tar.gz" | cut -f1))" 65
+    fi
+else
+    log "⚠️ Frontend package not found, will keep existing frontend" 65
 fi
 
 # Install the binaries
-log "📦 Installing backend binary..." 75
-$SUDO mkdir -p "${INSTALL_DIR}/backend"
-$SUDO cp "${TMP_DIR}/backend" "${INSTALL_DIR}/backend/"
-$SUDO chmod +x "${INSTALL_DIR}/backend/backend"
-log "✓ Backend installed" 80
+log "📦 Installing backend binary..." 70
+if ! $SUDO mkdir -p "${INSTALL_DIR}/backend"; then
+    rm -rf "${TMP_DIR}"
+    error "Failed to create backend directory"
+fi
+
+if ! $SUDO cp "${TMP_DIR}/backend" "${INSTALL_DIR}/backend/backend"; then
+    rm -rf "${TMP_DIR}"
+    error "Failed to copy backend binary"
+fi
+
+if ! $SUDO chmod +x "${INSTALL_DIR}/backend/backend"; then
+    rm -rf "${TMP_DIR}"
+    error "Failed to make backend executable"
+fi
+
+log "✓ Backend installed" 75
 
 # Install frontend if downloaded
 if [ -f "${TMP_DIR}/frontend.tar.gz" ]; then
-    log "📦 Installing frontend..." 85
-    $SUDO mkdir -p "${INSTALL_DIR}/frontend"
-    $SUDO tar -xzf "${TMP_DIR}/frontend.tar.gz" -C "${INSTALL_DIR}/frontend/"
-    log "✓ Frontend installed" 90
+    log "📦 Installing frontend..." 80
+    if ! $SUDO mkdir -p "${INSTALL_DIR}/frontend"; then
+        rm -rf "${TMP_DIR}"
+        error "Failed to create frontend directory"
+    fi
+    
+    if ! $SUDO tar -xzf "${TMP_DIR}/frontend.tar.gz" -C "${INSTALL_DIR}/frontend/"; then
+        rm -rf "${TMP_DIR}"
+        error "Failed to extract frontend package"
+    fi
+    log "✓ Frontend installed" 85
+else
+    log "ℹ️  Keeping existing frontend" 85
 fi
 
 # Set ownership
-log "🔐 Setting correct permissions..." 92
-$SUDO chown -R csf-core:csf-core "${INSTALL_DIR}" 2>/dev/null || $SUDO chown -R root:root "${INSTALL_DIR}"
-log "✓ Permissions set" 95
+log "🔐 Setting correct permissions..." 88
+if $SUDO chown -R csf-core:csf-core "${INSTALL_DIR}" 2>/dev/null; then
+    log "✓ Ownership set to csf-core user" 90
+elif $SUDO chown -R root:root "${INSTALL_DIR}" 2>/dev/null; then
+    log "✓ Ownership set to root" 90
+else
+    log "⚠️ Could not set ownership, continuing..." 90
+fi
 
 # Restart service
-log "🔄 Restarting CSF-Core service..." 97
-if systemctl list-unit-files | grep -q csf-core.service; then
+log "🔄 Restarting CSF-Core service..." 92
+if systemctl list-unit-files 2>/dev/null | grep -q csf-core.service; then
+    log "Reloading systemd daemon..." 93
     $SUDO systemctl daemon-reload
-    $SUDO systemctl start csf-core.service
-    sleep 2
     
-    if systemctl is-active --quiet csf-core.service; then
-        log "✅ CSF-Core service is running" 100
-        update_status "completed" "Update completed successfully!" 100
+    log "Starting service..." 95
+    if $SUDO systemctl start csf-core.service 2>&1; then
+        log "Service start command completed" 96
     else
-        log "❌ Service failed to start" 100
-        update_status "error" "Service failed to start after update" 100
-        error "Service failed to start"
+        log "⚠️ Service start command had issues" 96
+    fi
+    
+    # Wait a moment for service to start
+    sleep 3
+    
+    # Check if service is running
+    if systemctl is-active --quiet csf-core.service 2>/dev/null; then
+        log "✅ CSF-Core service is running" 100
+        update_status "completed" "Update completed successfully! Reloading..." 100
+    else
+        # Get service status for debugging
+        SERVICE_STATUS=$(systemctl status csf-core.service 2>&1 | head -n 10 || echo "Could not get status")
+        log "❌ Service failed to start. Status: ${SERVICE_STATUS}" 100
+        update_status "error" "Service failed to start after update. Check logs with: journalctl -u csf-core.service -n 50" 100
+        
+        # Try to restore backup
+        log "Attempting to restore from backup..."
+        if [ -d "${BACKUP_DIR}/csf-core" ]; then
+            $SUDO systemctl stop csf-core.service 2>/dev/null || true
+            $SUDO rm -rf "${INSTALL_DIR}"
+            $SUDO mv "${BACKUP_DIR}/csf-core" "${INSTALL_DIR}"
+            $SUDO systemctl start csf-core.service 2>/dev/null || true
+            error "Update failed. System has been restored from backup."
+        else
+            error "Service failed to start and backup not found"
+        fi
     fi
 else
-    log "⚠ No systemd service found" 100
+    log "⚠️ No systemd service found, skipping service restart" 100
     update_status "completed" "Binaries updated, but no service configured" 100
 fi
 
@@ -170,7 +275,7 @@ log ""
 log "ℹ️  If you encounter any issues, you can restore from the backup:"
 log "   sudo systemctl stop csf-core.service"
 log "   sudo rm -rf ${INSTALL_DIR}"
-log "   sudo mv ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
+log "   sudo cp -r ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
 log "   sudo systemctl start csf-core.service"
 
 exit 0
