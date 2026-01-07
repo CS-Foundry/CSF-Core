@@ -9,8 +9,31 @@ set +e
 VERSION="${1}"
 REPO="CS-Foundry/CSF-Core"
 INSTALL_DIR="/opt/csf-core"
-BACKUP_DIR="/tmp/csf-core-backup-$(date +%s)"
 STATUS_FILE="/tmp/csf-core-update-status.json"
+
+# Function to find a writable backup directory
+find_backup_dir() {
+    local timestamp=$(date +%s)
+    local dirs=(
+        "/tmp/csf-core-backup-${timestamp}"
+        "/var/tmp/csf-core-backup-${timestamp}"
+        "${HOME}/.csf-core-backup-${timestamp}"
+        "/opt/csf-core-backup-${timestamp}"
+    )
+    
+    for dir in "${dirs[@]}"; do
+        if mkdir -p "$dir" 2>/dev/null || $SUDO mkdir -p "$dir" 2>/dev/null; then
+            echo "$dir"
+            return 0
+        fi
+    done
+    
+    # If nothing works, return empty and we'll skip backup
+    echo ""
+    return 1
+}
+
+BACKUP_DIR=$(find_backup_dir)
 
 log() {
     local message="$1"
@@ -63,16 +86,22 @@ else
     log "✓ Running with sudo" 10
 fi
 
-# Create backup directory
-log "📦 Creating backup directory..." 12
-if ! $SUDO mkdir -p "${BACKUP_DIR}"; then
-    error "Failed to create backup directory at ${BACKUP_DIR}"
+# Try to find/create a writable backup directory
+if [ -z "$BACKUP_DIR" ]; then
+    log "📦 Trying to create backup directory..." 12
+    BACKUP_DIR=$(find_backup_dir)
 fi
-log "✓ Backup directory created: ${BACKUP_DIR}" 15
 
-# Backup current installation
+if [ -z "$BACKUP_DIR" ]; then
+    error "Failed to create backup directory. Tried: /tmp, /var/tmp, ${HOME}, /opt. Update aborted for safety."
+fi
+
+log "✓ Backup directory created: ${BACKUP_DIR}" 13
+
+# Backup current installation - THIS IS REQUIRED
 if [ -d "${INSTALL_DIR}" ]; then
-    log "💾 Starting backup of current installation..." 18
+    log "💾 Starting backup of current installation..." 15
+    log "⚠️  Backup is REQUIRED - update will abort if backup fails" 16
     
     # Check if we have enough space
     INSTALL_SIZE=$(du -sm "${INSTALL_DIR}" 2>/dev/null | awk '{print $1}')
@@ -89,27 +118,33 @@ if [ -d "${INSTALL_DIR}" ]; then
     # Use rsync if available (better progress), otherwise cp
     if command -v rsync >/dev/null 2>&1; then
         log "Using rsync for backup..." 21
-        if ! $SUDO rsync -a "${INSTALL_DIR}/" "${BACKUP_DIR}/csf-core/" 2>&1; then
-            log "⚠️ Rsync backup had issues, trying with cp..." 22
-            if ! $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
-                error "Failed to create backup"
+        if $SUDO rsync -a "${INSTALL_DIR}/" "${BACKUP_DIR}/csf-core/" 2>&1; then
+            log "✓ Rsync backup completed" 23
+        else
+            log "❌ Rsync backup failed, trying with cp..." 22
+            if $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
+                log "✓ Backup completed with cp" 23
+            else
+                error "Failed to create backup. Update aborted for safety. Tried rsync and cp."
             fi
         fi
     else
         log "Using cp for backup..." 21
-        if ! $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
-            error "Failed to create backup"
+        if $SUDO cp -rp "${INSTALL_DIR}" "${BACKUP_DIR}/" 2>&1; then
+            log "✓ Backup completed" 23
+        else
+            error "Failed to create backup with cp. Update aborted for safety."
         fi
     fi
     
-    # Verify backup was created
+    # Verify backup was created - REQUIRED CHECK
     if [ -d "${BACKUP_DIR}/csf-core" ] || [ -d "${BACKUP_DIR}/opt/csf-core" ]; then
-        log "✓ Backup completed successfully" 25
+        log "✓ Backup verified at ${BACKUP_DIR}" 25
     else
-        log "⚠️ Backup directory exists but structure looks unexpected" 25
+        error "Backup verification failed - backup directory structure is wrong. Update aborted."
     fi
 else
-    log "⚠️ No existing installation found at ${INSTALL_DIR}, skipping backup" 25
+    log "ℹ️  No existing installation found at ${INSTALL_DIR} - skipping backup" 25
 fi
 
 # Stop the service if running
@@ -248,16 +283,16 @@ if systemctl list-unit-files 2>/dev/null | grep -q csf-core.service; then
         log "❌ Service failed to start. Status: ${SERVICE_STATUS}" 100
         update_status "error" "Service failed to start after update. Check logs with: journalctl -u csf-core.service -n 50" 100
         
-        # Try to restore backup
-        log "Attempting to restore from backup..."
+        # Try to restore backup - we ALWAYS have a backup at this point
+        log "🔄 Attempting to restore from backup..."
         if [ -d "${BACKUP_DIR}/csf-core" ]; then
             $SUDO systemctl stop csf-core.service 2>/dev/null || true
             $SUDO rm -rf "${INSTALL_DIR}"
             $SUDO mv "${BACKUP_DIR}/csf-core" "${INSTALL_DIR}"
             $SUDO systemctl start csf-core.service 2>/dev/null || true
-            error "Update failed. System has been restored from backup."
+            error "Update failed. System has been restored from backup at ${BACKUP_DIR}"
         else
-            error "Service failed to start and backup not found"
+            error "Service failed to start and backup structure unexpected at ${BACKUP_DIR}"
         fi
     fi
 else
