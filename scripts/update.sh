@@ -11,6 +11,13 @@ REPO="CS-Foundry/CSF-Core"
 INSTALL_DIR="/opt/csf-core"
 STATUS_FILE="/tmp/csf-core-update-status.json"
 
+# Determine if we need sudo early
+if [ "$EUID" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
 # Function to find a writable backup directory
 find_backup_dir() {
     local timestamp=$(date +%s)
@@ -28,12 +35,10 @@ find_backup_dir() {
         fi
     done
     
-    # If nothing works, return empty and we'll skip backup
+    # If nothing works, return empty
     echo ""
     return 1
 }
-
-BACKUP_DIR=$(find_backup_dir)
 
 log() {
     local message="$1"
@@ -76,21 +81,11 @@ if [ -z "$VERSION" ]; then
 fi
 
 log "🚀 Starting CSF-Core update to version ${VERSION}..." 5
-
-# Check if running as root or with sudo
-if [ "$EUID" -eq 0 ]; then
-    SUDO=""
-    log "✓ Running with root privileges" 10
-else
-    SUDO="sudo"
-    log "✓ Running with sudo" 10
-fi
+log "✓ Running with $([ "$EUID" -eq 0 ] && echo 'root privileges' || echo 'sudo')" 10
 
 # Try to find/create a writable backup directory
-if [ -z "$BACKUP_DIR" ]; then
-    log "📦 Trying to create backup directory..." 12
-    BACKUP_DIR=$(find_backup_dir)
-fi
+log "📦 Trying to create backup directory..." 12
+BACKUP_DIR=$(find_backup_dir)
 
 if [ -z "$BACKUP_DIR" ]; then
     error "Failed to create backup directory. Tried: /tmp, /var/tmp, ${HOME}, /opt. Update aborted for safety."
