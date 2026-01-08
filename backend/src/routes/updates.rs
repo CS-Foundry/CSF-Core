@@ -7,8 +7,18 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use tokio::fs;
 
 use crate::AppState;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateStatus {
+    pub status: String,
+    pub message: String,
+    pub progress: u8,
+    pub version: Option<String>,
+    pub timestamp: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -104,6 +114,43 @@ pub async fn check_updates(State(_state): State<AppState>) -> Result<Json<Versio
         latest_beta_version: latest_beta.as_ref().map(|(v, _)| v.clone()),
         beta_release_url: latest_beta.map(|(_, url)| url),
     }))
+}
+
+/// Get update status
+#[utoipa::path(
+    get,
+    path = "/api/updates/status",
+    responses(
+        (status = 200, description = "Update status retrieved successfully", body = UpdateStatus),
+        (status = 404, description = "No update in progress"),
+        (status = 500, description = "Failed to read status")
+    ),
+    tag = "Updates"
+)]
+pub async fn get_update_status(
+    State(_state): State<AppState>,
+) -> Result<Json<UpdateStatus>, AppError> {
+    let status_file = "/tmp/csf-core-update-status.json";
+
+    match tokio::fs::read_to_string(status_file).await {
+        Ok(content) => match serde_json::from_str::<UpdateStatus>(&content) {
+            Ok(status) => Ok(Json(status)),
+            Err(e) => Err(AppError::InternalError(format!(
+                "Failed to parse status file: {}",
+                e
+            ))),
+        },
+        Err(_) => {
+            // No status file means no update in progress
+            Ok(Json(UpdateStatus {
+                status: "idle".to_string(),
+                message: "No update in progress".to_string(),
+                progress: 0,
+                version: None,
+                timestamp: None,
+            }))
+        }
+    }
 }
 
 /// Trigger update installation
@@ -312,6 +359,7 @@ impl IntoResponse for AppError {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/updates/check", get(check_updates))
+        .route("/updates/status", get(get_update_status))
         .route("/updates/install", post(install_update))
         .route("/updates/changelog/:version", get(get_changelog))
 }

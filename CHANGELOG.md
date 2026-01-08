@@ -2,7 +2,42 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
-# [0.3.0-beta.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.3...v0.3.0-beta.4) (2026-01-06)
+## [0.3.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.3...v0.3.4) (2026-01-07)
+
+
+### Bug Fixes
+
+* error backup location ([b3d0246](https://github.com/CS-Foundry/CSF-Core/commit/b3d024694be9c5aad6fb6e55af460c3757eb9f89))
+
+## [0.3.3](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.2...v0.3.3) (2026-01-07)
+
+
+### Bug Fixes
+
+* backup dir error ([e36b67e](https://github.com/CS-Foundry/CSF-Core/commit/e36b67e0942df2cb2526becae260dabd77bd3148))
+
+## [0.3.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.1...v0.3.2) (2026-01-07)
+
+
+### Bug Fixes
+
+* updater script ([8f95aee](https://github.com/CS-Foundry/CSF-Core/commit/8f95aee1e388725512a38f6334e064c34163108f))
+
+## [0.3.1](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0...v0.3.1) (2026-01-06)
+
+
+### Bug Fixes
+
+* build error ([78364e8](https://github.com/CS-Foundry/CSF-Core/commit/78364e809165d8f3b598279d08180ec5b95480af))
+
+# [0.3.0](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.4...v0.3.0) (2026-01-06)
+
+
+### Features
+
+* live update screen ([879c62e](https://github.com/CS-Foundry/CSF-Core/commit/879c62efc32fbfbf97d4e2d97ac6ab3f0b7384de))
+
+## [0.2.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.3...v0.2.4) (2026-01-06)
 
 
 ### Bug Fixes
