@@ -172,11 +172,17 @@ log "✓ Detected architecture: $ARCH_NAME" 38
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-log "✓ Detected OS: $OS" 40
+OS_NAME="$OS"
+log "✓ Detected OS: $OS_NAME" 40
+
+# Check if this is a production environment (Linux only)
+if [ "$OS_NAME" != "linux" ]; then
+    error "Updates are only supported on Linux production systems. Current OS: $OS_NAME. This appears to be a development environment."
+fi
 
 # Download the new binaries
 log "📥 Downloading backend binary for version ${VERSION}..." 45
-BACKEND_URL="https://github.com/${REPO}/releases/download/v${VERSION}/csf-backend-${OS}-${ARCH_NAME}"
+BACKEND_URL="https://github.com/${REPO}/releases/download/v${VERSION}/csf-backend-${OS_NAME}-${ARCH_NAME}"
 TMP_DIR=$(mktemp -d)
 
 log "ℹ️  Download URL: ${BACKEND_URL}" 47
@@ -193,6 +199,9 @@ if [ ! -f "${TMP_DIR}/backend" ]; then
 fi
 
 log "✓ Backend binary downloaded ($(du -h "${TMP_DIR}/backend" | cut -f1))" 55
+
+# Make backend executable
+chmod +x "${TMP_DIR}/backend"
 
 # Download frontend package
 log "📥 Downloading frontend package..." 60
