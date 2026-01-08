@@ -277,6 +277,16 @@ create_service_user() {
         print_success "Benutzer '$SERVICE_USER' erstellt"
     fi
     
+    # Configure sudo access for update script (passwordless, specific command only)
+    print_step "Konfiguriere sudo-Zugriff für Updates..."
+    cat > /etc/sudoers.d/csf-core << EOF
+# Allow csf-core user to run update script without password
+$SERVICE_USER ALL=(ALL) NOPASSWD: /opt/csf-core/scripts/update.sh
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh
+EOF
+    chmod 0440 /etc/sudoers.d/csf-core
+    print_success "sudo-Zugriff für Updates konfiguriert"
+    
     # Add user to docker group if Docker is installed
     if command -v docker &> /dev/null; then
         if getent group docker > /dev/null 2>&1; then

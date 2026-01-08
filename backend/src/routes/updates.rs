@@ -255,7 +255,18 @@ pub async fn install_update(
     tokio::spawn(async move {
         tracing::info!("Spawning update process for version {}", version_clone);
 
-        match Command::new("sh")
+        // Check if we're running as root or need sudo
+        let use_sudo = unsafe { libc::geteuid() } != 0;
+
+        let mut command = if use_sudo {
+            let mut cmd = Command::new("sudo");
+            cmd.arg("bash");
+            cmd
+        } else {
+            Command::new("bash")
+        };
+
+        match command
             .arg(&script_path_clone)
             .arg(&version_clone)
             .stdout(std::process::Stdio::piped())
