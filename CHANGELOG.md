@@ -43,13 +43,28 @@ All notable changes to CSF-Core will be documented in this file.
 ### Bug Fixes
 
 * update script added to installation ([385c30e](https://github.com/CS-Foundry/CSF-Core/commit/385c30ebafafae24f5b6f572ac16a211938cb2b2))
+* updater error ([8775558](https://github.com/CS-Foundry/CSF-Core/commit/877555809fb6160c59710444cebb2ccdab9088bc))
 
-## [0.2.3](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.2...v0.2.3) (2026-01-06)
+# [0.3.0-beta.3](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.2...v0.3.0-beta.3) (2026-01-05)
 
 
 ### Bug Fixes
 
-* updater error ([8775558](https://github.com/CS-Foundry/CSF-Core/commit/877555809fb6160c59710444cebb2ccdab9088bc))
+* release pipeline for beat ([a908b37](https://github.com/CS-Foundry/CSF-Core/commit/a908b3711c537ef0b3ceeb90fe6acb915fdb7945))
+
+# [0.3.0-beta.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.0-beta.1...v0.3.0-beta.2) (2026-01-05)
+
+
+### Bug Fixes
+
+* pipeline binary push beta releases ([4ce046c](https://github.com/CS-Foundry/CSF-Core/commit/4ce046ce9d1d6480cf70413883dba7ccc3fecd48))
+
+# [0.3.0-beta.1](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.2...v0.3.0-beta.1) (2026-01-05)
+
+
+### Features
+
+* dashboard not working only test ([cfe6edb](https://github.com/CS-Foundry/CSF-Core/commit/cfe6edb108d5b48f144122e06160211fd9b06a61))
 
 ## [0.2.2](https://github.com/CS-Foundry/CSF-Core/compare/v0.2.1...v0.2.2) (2026-01-05)
 
