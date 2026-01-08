@@ -7,7 +7,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::process::Command;
-use tokio::fs;
 
 use crate::AppState;
 
@@ -256,7 +255,8 @@ pub async fn install_update(
         tracing::info!("Spawning update process for version {}", version_clone);
 
         // Check if we're running as root or need sudo
-        let use_sudo = unsafe { libc::geteuid() } != 0;
+        // On Unix systems, check effective user ID via USER env var
+        let use_sudo = std::env::var("USER").map(|u| u != "root").unwrap_or(true);
 
         let mut command = if use_sudo {
             let mut cmd = Command::new("sudo");
