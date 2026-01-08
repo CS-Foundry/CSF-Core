@@ -2,6 +2,19 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+# [0.4.0](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.4...v0.4.0) (2026-01-08)
+
+
+### Bug Fixes
+
+* pipeline binary push beta releases ([4ce046c](https://github.com/CS-Foundry/CSF-Core/commit/4ce046ce9d1d6480cf70413883dba7ccc3fecd48))
+* release pipeline for beat ([a908b37](https://github.com/CS-Foundry/CSF-Core/commit/a908b3711c537ef0b3ceeb90fe6acb915fdb7945))
+
+
+### Features
+
+* dashboard not working only test ([cfe6edb](https://github.com/CS-Foundry/CSF-Core/commit/cfe6edb108d5b48f144122e06160211fd9b06a61))
+
 ## [0.3.4](https://github.com/CS-Foundry/CSF-Core/compare/v0.3.3...v0.3.4) (2026-01-07)
 
 
