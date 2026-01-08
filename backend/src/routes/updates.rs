@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::AppState;
 
@@ -254,39 +254,129 @@ pub async fn install_update(
     tokio::spawn(async move {
         tracing::info!("Spawning update process for version {}", version_clone);
 
-        // Check if we're running as root or need sudo
-        // On Unix systems, check effective user ID via USER env var
-        let use_sudo = std::env::var("USER").map(|u| u != "root").unwrap_or(true);
+        // Log current user for debugging
+        let current_user = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+        tracing::info!("Running as user: {}", current_user);
 
-        let mut command = if use_sudo {
-            let mut cmd = Command::new("sudo");
-            // Use full path to bash for better compatibility with sudoers
-            cmd.arg("/bin/bash");
-            cmd
+        // Check if we're running as root
+        let is_root = std::fs::metadata("/etc/shadow")
+            .and_then(|_| std::fs::File::open("/etc/shadow"))
+            .is_ok();
+
+        tracing::info!("Running as root: {}", is_root);
+
+        // Build command - use sudo with direct script path
+        // This matches the sudoers configuration: /bin/bash /opt/csf-core/scripts/update.sh*
+        let mut command = if is_root {
+            // Running as root, execute script directly
+            Command::new(&script_path_clone)
         } else {
-            Command::new("/bin/bash")
+            // Need sudo - call script via sudo bash
+            let mut cmd = Command::new("sudo");
+            cmd.arg("/bin/bash");
+            cmd.arg(&script_path_clone);
+            cmd
         };
 
-        match command
-            .arg(&script_path_clone)
+        // Set up environment variables that the script might need
+        command.env(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
+        command.env(
+            "HOME",
+            std::env::var("HOME").unwrap_or_else(|_| "/root".to_string()),
+        );
+        command.env("LANG", "C.UTF-8");
+        command.env("LC_ALL", "C.UTF-8");
+
+        // Set working directory to script location
+        if let Some(script_dir) = script_path_clone.parent() {
+            command.current_dir(script_dir);
+            tracing::info!("Working directory: {:?}", script_dir);
+        }
+
+        command
             .arg(&version_clone)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
+            .stderr(std::process::Stdio::piped());
+
+        tracing::info!("Executing command: {:?}", command);
+
+        match command.spawn() {
             Ok(mut child) => {
                 tracing::info!(
                     "Update process started successfully (PID: {:?})",
                     child.id()
                 );
 
-                // Wait for process to complete in background
-                match child.wait() {
+                // Capture and log output in real-time
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+
+                // Spawn tasks to read stdout and stderr
+                let stdout_handle = tokio::spawn(async move {
+                    if let Some(stdout) = stdout {
+                        use tokio::io::{AsyncBufReadExt, BufReader};
+                        let reader = BufReader::new(stdout);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            tracing::info!("[UPDATE STDOUT] {}", line);
+                        }
+                    }
+                });
+
+                let stderr_handle = tokio::spawn(async move {
+                    if let Some(stderr) = stderr {
+                        use tokio::io::{AsyncBufReadExt, BufReader};
+                        let reader = BufReader::new(stderr);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            tracing::warn!("[UPDATE STDERR] {}", line);
+                        }
+                    }
+                });
+
+                // Wait for process to complete
+                match child.wait().await {
                     Ok(status) => {
+                        // Wait for output handlers to finish
+                        let _ = tokio::join!(stdout_handle, stderr_handle);
+
                         if status.success() {
-                            tracing::info!("Update process completed successfully");
+                            tracing::info!(
+                                "Update process completed successfully with exit code: {:?}",
+                                status.code()
+                            );
                         } else {
-                            tracing::error!("Update process failed with status: {}", status);
+                            tracing::error!(
+                                "Update process failed with status: {} (exit code: {:?})",
+                                status,
+                                status.code()
+                            );
+
+                            // Write detailed error to status file
+                            let ts = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs();
+
+                            let error_status = format!(
+                                r#"{{
+  "status": "error",
+  "message": "Update script failed with exit code {}",
+  "progress": 0,
+  "version": "{}",
+  "timestamp": "{}"
+}}"#,
+                                status.code().unwrap_or(-1),
+                                version_clone,
+                                ts
+                            );
+
+                            let _ =
+                                tokio::fs::write("/tmp/csf-core-update-status.json", error_status)
+                                    .await;
                         }
                     }
                     Err(e) => {

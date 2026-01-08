@@ -279,14 +279,26 @@ create_service_user() {
     
     # Configure sudo access for update script (passwordless, specific command only)
     print_step "Konfiguriere sudo-Zugriff für Updates..."
-    cat > /etc/sudoers.d/csf-core << EOF
+    cat > /etc/sudoers.d/csf-core << 'EOF'
 # Allow csf-core user to run update script without password
-$SERVICE_USER ALL=(ALL) NOPASSWD: /opt/csf-core/scripts/update.sh
-$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /opt/csf-core/scripts/update.sh
+csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
+
+# Allow csf-core to preserve environment and run non-interactively
+Defaults:csf-core !requiretty
+Defaults:csf-core env_keep += "PATH HOME LANG LC_ALL"
 EOF
     chmod 0440 /etc/sudoers.d/csf-core
-    print_success "sudo-Zugriff für Updates konfiguriert"
+    
+    # Validate sudoers file
+    if visudo -c -f /etc/sudoers.d/csf-core > /dev/null 2>&1; then
+        print_success "sudo-Zugriff für Updates konfiguriert"
+    else
+        print_error "Sudoers-Datei ist ungültig"
+        rm -f /etc/sudoers.d/csf-core
+        print_warning "sudo-Zugriff konnte nicht konfiguriert werden, Updates erfordern manuelle sudo-Rechte"
+    fi
     
     # Add user to docker group if Docker is installed
     if command -v docker &> /dev/null; then
