@@ -227,15 +227,83 @@ pub async fn install_update(
     // Clone version for use in response message
     let version_for_message = payload.version.clone();
 
-    // Start update process in background
+    // Create initial status file to indicate update has started
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let status_content = format!(
+        r#"{{
+  "status": "in_progress",
+  "message": "Initializing update process...",
+  "progress": 0,
+  "version": "{}",
+  "timestamp": "{}"
+}}"#,
+        payload.version, timestamp
+    );
+
+    if let Err(e) = tokio::fs::write("/tmp/csf-core-update-status.json", status_content).await {
+        tracing::warn!("Failed to create initial status file: {}", e);
+    }
+
+    // Start update process in background with proper output handling
+    let script_path_clone = script_path.clone();
+    let version_clone = payload.version.clone();
+
     tokio::spawn(async move {
+        tracing::info!("Spawning update process for version {}", version_clone);
+
         match Command::new("sh")
-            .arg(&script_path)
-            .arg(&payload.version)
+            .arg(&script_path_clone)
+            .arg(&version_clone)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
         {
-            Ok(_) => tracing::info!("Update process started for version {}", payload.version),
-            Err(e) => tracing::error!("Failed to start update process: {}", e),
+            Ok(mut child) => {
+                tracing::info!(
+                    "Update process started successfully (PID: {:?})",
+                    child.id()
+                );
+
+                // Wait for process to complete in background
+                match child.wait() {
+                    Ok(status) => {
+                        if status.success() {
+                            tracing::info!("Update process completed successfully");
+                        } else {
+                            tracing::error!("Update process failed with status: {}", status);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to wait for update process: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to start update process: {}", e);
+
+                // Write error to status file
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                let error_status = format!(
+                    r#"{{
+  "status": "error",
+  "message": "Failed to start update script: {}",
+  "progress": 0,
+  "version": "{}",
+  "timestamp": "{}"
+}}"#,
+                    e, version_clone, ts
+                );
+
+                let _ = tokio::fs::write("/tmp/csf-core-update-status.json", error_status).await;
+            }
         }
     });
 
