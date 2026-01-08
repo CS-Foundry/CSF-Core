@@ -282,7 +282,8 @@ create_service_user() {
     cat > /etc/sudoers.d/csf-core << EOF
 # Allow csf-core user to run update script without password
 $SERVICE_USER ALL=(ALL) NOPASSWD: /opt/csf-core/scripts/update.sh
-$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
 EOF
     chmod 0440 /etc/sudoers.d/csf-core
     print_success "sudo-Zugriff für Updates konfiguriert"

@@ -260,10 +260,11 @@ pub async fn install_update(
 
         let mut command = if use_sudo {
             let mut cmd = Command::new("sudo");
-            cmd.arg("bash");
+            // Use full path to bash for better compatibility with sudoers
+            cmd.arg("/bin/bash");
             cmd
         } else {
-            Command::new("bash")
+            Command::new("/bin/bash")
         };
 
         match command
