@@ -64,6 +64,10 @@ update_status() {
     # Ensure status file directory exists
     mkdir -p "$(dirname "$STATUS_FILE")" 2>/dev/null
     
+    # Remove old status file if it exists (to avoid permission issues)
+    rm -f "$STATUS_FILE" 2>/dev/null
+    
+    # Write new status
     cat > "$STATUS_FILE" <<EOF
 {
   "status": "$status",
@@ -73,6 +77,9 @@ update_status() {
   "timestamp": "$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
 }
 EOF
+    
+    # Make status file readable by everyone (so the backend can read it)
+    chmod 644 "$STATUS_FILE" 2>/dev/null || true
 }
 
 # Check if version is provided

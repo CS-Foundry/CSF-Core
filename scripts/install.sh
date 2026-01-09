@@ -280,9 +280,12 @@ create_service_user() {
     # Configure sudo access for update script (passwordless, specific command only)
     print_step "Konfiguriere sudo-Zugriff für Updates..."
     cat > /etc/sudoers.d/csf-core << 'EOF'
-# Allow csf-core user to run update script without password
+# Allow csf-core user to run update script without password (with nohup for detachment)
 csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
 csf-core ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup sudo /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /usr/bin/bash /opt/csf-core/scripts/update.sh*
 
 # Allow systemctl commands for service management
 csf-core ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
@@ -306,9 +309,11 @@ csf-core ALL=(ALL) NOPASSWD: /bin/mv * /opt/csf-core*
 csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/csf-core*
 csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /tmp/csf-core*
 csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /var/tmp/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/csf-core-update-status.json
 csf-core ALL=(ALL) NOPASSWD: /bin/mkdir -p *
 csf-core ALL=(ALL) NOPASSWD: /bin/tar -xzf * -C /opt/csf-core*
 csf-core ALL=(ALL) NOPASSWD: /bin/chmod +x /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/chmod 644 /tmp/csf-core-update-status.json
 csf-core ALL=(ALL) NOPASSWD: /usr/bin/rsync -a * *
 
 # Allow csf-core to preserve environment and run non-interactively
