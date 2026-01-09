@@ -265,13 +265,15 @@ pub async fn install_update(
 
         tracing::info!("Running as root: {}", is_root);
 
-        // Build command - use sudo with direct script path
-        // This matches the sudoers configuration: /bin/bash /opt/csf-core/scripts/update.sh*
+        // Build command - always use sudo with bash to match sudoers configuration
+        // sudoers entry: csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
         let mut command = if is_root {
             // Running as root, execute script directly
-            Command::new(&script_path_clone)
+            let mut cmd = Command::new("/bin/bash");
+            cmd.arg(&script_path_clone);
+            cmd
         } else {
-            // Need sudo - call script via sudo bash
+            // Running as csf-core user - use sudo bash (matches sudoers config)
             let mut cmd = Command::new("sudo");
             cmd.arg("/bin/bash");
             cmd.arg(&script_path_clone);
