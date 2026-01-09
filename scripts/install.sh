@@ -281,9 +281,35 @@ create_service_user() {
     print_step "Konfiguriere sudo-Zugriff für Updates..."
     cat > /etc/sudoers.d/csf-core << 'EOF'
 # Allow csf-core user to run update script without password
-csf-core ALL=(ALL) NOPASSWD: /opt/csf-core/scripts/update.sh
 csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
 csf-core ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
+
+# Allow systemctl commands for service management
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl start csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl stop csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl restart csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl status csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl is-active csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl start csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl status csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active csf-core.service
+
+# Additional file operations needed during update
+csf-core ALL=(ALL) NOPASSWD: /bin/chown -R csf-core\:csf-core /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/cp -rp /opt/csf-core* *
+csf-core ALL=(ALL) NOPASSWD: /bin/cp -rp * /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/mv * /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /tmp/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /var/tmp/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/mkdir -p *
+csf-core ALL=(ALL) NOPASSWD: /bin/tar -xzf * -C /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/chmod +x /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/rsync -a * *
 
 # Allow csf-core to preserve environment and run non-interactively
 Defaults:csf-core !requiretty

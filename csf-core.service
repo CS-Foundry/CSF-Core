@@ -23,13 +23,14 @@ Environment="FRONTEND_URL=http://localhost:3000"
 Environment="ORIGIN=http://localhost:8000"
 
 # Security settings
-NoNewPrivileges=true
+# NoNewPrivileges disabled to allow sudo for updates
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/csf-core
 ReadWritePaths=/var/lib/csf-core
 ReadWritePaths=/var/log/csf-core
+ReadWritePaths=/tmp
 SupplementaryGroups=docker
 
 # Startup: Use unified startup script
