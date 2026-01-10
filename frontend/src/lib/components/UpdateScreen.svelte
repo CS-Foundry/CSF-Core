@@ -14,13 +14,23 @@
 
   let logs: string[] = $state([]);
   let logsContainer: HTMLDivElement;
-  let pollInterval: number;
+  let pollInterval: ReturnType<typeof setInterval>;
+  let connectionLost = $state(false);
+  let reconnectAttempts = $state(0);
+  let maxReconnectAttempts = 30; // Try for 30 seconds
 
   async function fetchUpdateStatus() {
     try {
       const response = await fetch('/api/updates/status');
       if (response.ok) {
         const data = await response.json();
+
+        // Connection restored
+        if (connectionLost) {
+          connectionLost = false;
+          reconnectAttempts = 0;
+          logs = [...logs, `${new Date().toLocaleTimeString()}: ✅ Connection restored`];
+        }
 
         // Only add to logs if message changed
         if (data.message !== updateStatus.message) {
@@ -36,10 +46,13 @@
 
         updateStatus = data;
 
-        // If update is completed or error, stop polling
+        // If update is completed, reload after delay
         if (data.status === 'completed') {
+          logs = [
+            ...logs,
+            `${new Date().toLocaleTimeString()}: ✅ Update completed successfully! Reloading...`,
+          ];
           setTimeout(() => {
-            // Reload the page after 2 seconds
             window.location.reload();
           }, 2000);
         } else if (data.status === 'error') {
@@ -48,9 +61,34 @@
             clearInterval(pollInterval);
           }
         }
+      } else {
+        handleConnectionError();
       }
     } catch (error) {
-      console.error('Failed to fetch update status:', error);
+      handleConnectionError();
+    }
+  }
+
+  function handleConnectionError() {
+    if (!connectionLost) {
+      connectionLost = true;
+      logs = [
+        ...logs,
+        `${new Date().toLocaleTimeString()}: ⚠️ Backend restarting (this is normal during updates)...`,
+      ];
+    }
+
+    reconnectAttempts++;
+
+    // If backend doesn't come back after max attempts, the update might be complete
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      logs = [
+        ...logs,
+        `${new Date().toLocaleTimeString()}: 🔄 Backend should be ready, reloading application...`,
+      ];
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
     }
   }
 
@@ -107,13 +145,13 @@
 
     <!-- Title -->
     <h1 class="mb-2 text-center text-3xl font-bold">
-      {getStatusIcon()} System Update in Progress
+      {getStatusIcon()} System-Update läuft
     </h1>
 
     <!-- Version Info -->
     {#if updateStatus.version}
       <p class="mb-8 text-center text-muted-foreground">
-        Updating to version <span class="font-semibold">{updateStatus.version}</span>
+        Update auf Version <span class="font-semibold">{updateStatus.version}</span>
       </p>
     {/if}
 
@@ -130,9 +168,24 @@
       <Progress value={updateStatus.progress} class="h-3" />
     </div>
 
+    <!-- Connection Status Warning -->
+    {#if connectionLost}
+      <div class="mb-6 rounded-lg border border-yellow-500 bg-yellow-500/10 p-4">
+        <div class="flex items-center gap-2">
+          <div class="h-2 w-2 animate-pulse rounded-full bg-yellow-500"></div>
+          <p class="text-sm font-semibold text-yellow-600 dark:text-yellow-400">
+            Backend wird neu gestartet...
+          </p>
+        </div>
+        <p class="mt-2 text-xs text-muted-foreground">
+          Dies ist normal während eines Updates. Die Verbindung wird automatisch wiederhergestellt.
+        </p>
+      </div>
+    {/if}
+
     <!-- Status Message -->
     <div class="mb-6 rounded-lg border bg-card p-4">
-      <h3 class="mb-2 text-sm font-semibold">Current Status:</h3>
+      <h3 class="mb-2 text-sm font-semibold">Aktueller Status:</h3>
       <p class="text-sm text-muted-foreground {getStatusColor()}">
         {updateStatus.message}
       </p>
@@ -141,11 +194,11 @@
     <!-- Logs -->
     <div class="rounded-lg border bg-card">
       <div class="border-b p-3">
-        <h3 class="text-sm font-semibold">Update Log</h3>
+        <h3 class="text-sm font-semibold">Update-Log</h3>
       </div>
       <div bind:this={logsContainer} class="max-h-64 overflow-y-auto p-3 font-mono text-xs">
         {#if logs.length === 0}
-          <p class="text-muted-foreground">Waiting for update logs...</p>
+          <p class="text-muted-foreground">Warte auf Update-Logs...</p>
         {:else}
           {#each logs as log}
             <div class="mb-1 text-muted-foreground">
@@ -158,23 +211,23 @@
 
     <!-- Warning -->
     <div class="mt-6 text-center text-sm text-muted-foreground">
-      <p>⚠️ Please do not close this window or refresh the page.</p>
-      <p>The system will automatically reload when the update is complete.</p>
+      <p>⚠️ Bitte schließen Sie dieses Fenster nicht und laden Sie die Seite nicht neu.</p>
+      <p>Das System wird automatisch neu geladen, sobald das Update abgeschlossen ist.</p>
     </div>
 
     <!-- Error Recovery -->
     {#if updateStatus.status === 'error'}
       <div class="mt-6 rounded-lg border border-destructive bg-destructive/10 p-4">
-        <p class="mb-2 text-sm font-semibold text-destructive">Update Failed</p>
+        <p class="mb-2 text-sm font-semibold text-destructive">Update fehlgeschlagen</p>
         <p class="mb-4 text-sm text-muted-foreground">
-          An error occurred during the update process. The system may have been rolled back to the
-          previous version.
+          Während des Update-Prozesses ist ein Fehler aufgetreten. Das System wurde möglicherweise
+          auf die vorherige Version zurückgesetzt.
         </p>
         <button
           onclick={() => window.location.reload()}
           class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          Reload Application
+          Anwendung neu laden
         </button>
       </div>
     {/if}

@@ -22,6 +22,23 @@
       !$page.url.pathname.startsWith('/otp')
   );
 
+  // Check for ongoing update on app startup
+  async function checkForOngoingUpdate() {
+    try {
+      const response = await fetch('/api/updates/status');
+      if (response.ok) {
+        const status = await response.json();
+        // If update is in progress, show the update screen
+        if (status.status === 'in_progress') {
+          console.log('[+layout.svelte] Detected ongoing update:', status);
+          updateInProgress.set(true);
+        }
+      }
+    } catch (error) {
+      console.error('[+layout.svelte] Failed to check update status:', error);
+    }
+  }
+
   // On the client we initialize the store from localStorage and
   // subscribe to the effective theme to keep the <html> class in sync.
   onMount(() => {
@@ -39,6 +56,9 @@
       window.location.href = '/signin';
       return;
     }
+
+    // Check if an update is in progress on app startup
+    checkForOngoingUpdate();
 
     // Initialize theme
     initThemeFromStorage();
