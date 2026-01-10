@@ -129,7 +129,8 @@ pub async fn check_updates(State(_state): State<AppState>) -> Result<Json<Versio
 pub async fn get_update_status(
     State(_state): State<AppState>,
 ) -> Result<Json<UpdateStatus>, AppError> {
-    let status_file = "/tmp/csf-core-update-status.json";
+    // Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
+    let status_file = "/var/tmp/csf-core-update-status.json";
 
     match tokio::fs::read_to_string(status_file).await {
         Ok(content) => match serde_json::from_str::<UpdateStatus>(&content) {
@@ -243,7 +244,8 @@ pub async fn install_update(
         payload.version, timestamp
     );
 
-    if let Err(e) = tokio::fs::write("/tmp/csf-core-update-status.json", status_content).await {
+    // Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
+    if let Err(e) = tokio::fs::write("/var/tmp/csf-core-update-status.json", status_content).await {
         tracing::warn!("Failed to create initial status file: {}", e);
     }
 
@@ -318,9 +320,9 @@ pub async fn install_update(
                 );
 
                 // Process is detached - it will continue even if backend stops
-                // Users can monitor progress via /tmp/csf-core-update-status.json
+                // Users can monitor progress via /var/tmp/csf-core-update-status.json
                 tracing::info!(
-                    "Update running in background. Monitor: /tmp/csf-core-update-status.json"
+                    "Update running in background. Monitor: /var/tmp/csf-core-update-status.json"
                 );
             }
             Err(e) => {
@@ -343,7 +345,9 @@ pub async fn install_update(
                     e, version_clone, ts
                 );
 
-                let _ = tokio::fs::write("/tmp/csf-core-update-status.json", error_status).await;
+                // Use /var/tmp instead of /tmp
+                let _ =
+                    tokio::fs::write("/var/tmp/csf-core-update-status.json", error_status).await;
             }
         }
     });

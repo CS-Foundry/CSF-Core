@@ -9,7 +9,8 @@ set +e
 VERSION="${1}"
 REPO="CS-Foundry/CSF-Core"
 INSTALL_DIR="/opt/csf-core"
-STATUS_FILE="/tmp/csf-core-update-status.json"
+# Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
+STATUS_FILE="/var/tmp/csf-core-update-status.json"
 
 # Determine if we need sudo early
 if [ "$EUID" -eq 0 ]; then
@@ -330,5 +331,12 @@ log_final "   sudo systemctl stop csf-core.service"
 log_final "   sudo rm -rf ${INSTALL_DIR}"
 log_final "   sudo cp -r ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
 log_final "   sudo systemctl start csf-core.service"
+
+# Keep status file for 10 seconds so frontend can read the completed status
+log_final "⏳ Keeping status file for 10 seconds for frontend to read..."
+sleep 10
+
+# Clean up status file
+rm -f "${STATUS_FILE}" 2>/dev/null || true
 
 exit 0
