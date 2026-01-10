@@ -23,7 +23,6 @@ Environment="FRONTEND_URL=http://localhost:3000"
 Environment="ORIGIN=http://localhost:8000"
 
 # Security settings
-# NoNewPrivileges disabled to allow sudo for updates
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true

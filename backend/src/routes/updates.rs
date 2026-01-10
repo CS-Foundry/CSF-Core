@@ -265,16 +265,19 @@ pub async fn install_update(
 
         tracing::info!("Running as root: {}", is_root);
 
-        // Build command - always use sudo with bash to match sudoers configuration
+        // Build command - use nohup and setsid to detach from parent process
+        // This ensures the update continues even when the backend service is stopped
         // sudoers entry: csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
         let mut command = if is_root {
-            // Running as root, execute script directly
-            let mut cmd = Command::new("/bin/bash");
+            // Running as root, execute script directly with nohup
+            let mut cmd = Command::new("nohup");
+            cmd.arg("/bin/bash");
             cmd.arg(&script_path_clone);
             cmd
         } else {
-            // Running as csf-core user - use sudo bash (matches sudoers config)
-            let mut cmd = Command::new("sudo");
+            // Running as csf-core user - use sudo with nohup
+            let mut cmd = Command::new("nohup");
+            cmd.arg("sudo");
             cmd.arg("/bin/bash");
             cmd.arg(&script_path_clone);
             cmd
@@ -300,91 +303,25 @@ pub async fn install_update(
 
         command
             .arg(&version_clone)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            // Redirect stdout/stderr to /dev/null since we detach
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
 
         tracing::info!("Executing command: {:?}", command);
 
         match command.spawn() {
-            Ok(mut child) => {
+            Ok(child) => {
                 tracing::info!(
-                    "Update process started successfully (PID: {:?})",
+                    "Update process started successfully (PID: {:?}) and detached",
                     child.id()
                 );
 
-                // Capture and log output in real-time
-                let stdout = child.stdout.take();
-                let stderr = child.stderr.take();
-
-                // Spawn tasks to read stdout and stderr
-                let stdout_handle = tokio::spawn(async move {
-                    if let Some(stdout) = stdout {
-                        use tokio::io::{AsyncBufReadExt, BufReader};
-                        let reader = BufReader::new(stdout);
-                        let mut lines = reader.lines();
-                        while let Ok(Some(line)) = lines.next_line().await {
-                            tracing::info!("[UPDATE STDOUT] {}", line);
-                        }
-                    }
-                });
-
-                let stderr_handle = tokio::spawn(async move {
-                    if let Some(stderr) = stderr {
-                        use tokio::io::{AsyncBufReadExt, BufReader};
-                        let reader = BufReader::new(stderr);
-                        let mut lines = reader.lines();
-                        while let Ok(Some(line)) = lines.next_line().await {
-                            tracing::warn!("[UPDATE STDERR] {}", line);
-                        }
-                    }
-                });
-
-                // Wait for process to complete
-                match child.wait().await {
-                    Ok(status) => {
-                        // Wait for output handlers to finish
-                        let _ = tokio::join!(stdout_handle, stderr_handle);
-
-                        if status.success() {
-                            tracing::info!(
-                                "Update process completed successfully with exit code: {:?}",
-                                status.code()
-                            );
-                        } else {
-                            tracing::error!(
-                                "Update process failed with status: {} (exit code: {:?})",
-                                status,
-                                status.code()
-                            );
-
-                            // Write detailed error to status file
-                            let ts = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs();
-
-                            let error_status = format!(
-                                r#"{{
-  "status": "error",
-  "message": "Update script failed with exit code {}",
-  "progress": 0,
-  "version": "{}",
-  "timestamp": "{}"
-}}"#,
-                                status.code().unwrap_or(-1),
-                                version_clone,
-                                ts
-                            );
-
-                            let _ =
-                                tokio::fs::write("/tmp/csf-core-update-status.json", error_status)
-                                    .await;
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to wait for update process: {}", e);
-                    }
-                }
+                // Process is detached - it will continue even if backend stops
+                // Users can monitor progress via /tmp/csf-core-update-status.json
+                tracing::info!(
+                    "Update running in background. Monitor: /tmp/csf-core-update-status.json"
+                );
             }
             Err(e) => {
                 tracing::error!("Failed to start update process: {}", e);
