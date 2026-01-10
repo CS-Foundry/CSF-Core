@@ -48,6 +48,13 @@ log() {
     update_status "in_progress" "$message" "$progress"
 }
 
+# Log function that doesn't update status (for final messages after completion)
+log_final() {
+    local message="$1"
+    local timestamp="[$(date +'%Y-%m-%d %H:%M:%S')]"
+    echo "$timestamp $message"
+}
+
 error() {
     local message="$1"
     local timestamp="[$(date +'%Y-%m-%d %H:%M:%S')]"
@@ -311,17 +318,17 @@ else
     update_status "completed" "Binaries updated, but no service configured" 100
 fi
 
-# Cleanup
-log "🧹 Cleaning up temporary files..."
+# Cleanup - use log_final to avoid overwriting completed status
+log_final "🧹 Cleaning up temporary files..."
 rm -rf "${TMP_DIR}"
 
-log "✅ Update to version ${VERSION} completed successfully!"
-log "📦 Backup saved at: ${BACKUP_DIR}"
-log ""
-log "ℹ️  If you encounter any issues, you can restore from the backup:"
-log "   sudo systemctl stop csf-core.service"
-log "   sudo rm -rf ${INSTALL_DIR}"
-log "   sudo cp -r ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
-log "   sudo systemctl start csf-core.service"
+log_final "✅ Update to version ${VERSION} completed successfully!"
+log_final "📦 Backup saved at: ${BACKUP_DIR}"
+log_final ""
+log_final "ℹ️  If you encounter any issues, you can restore from the backup:"
+log_final "   sudo systemctl stop csf-core.service"
+log_final "   sudo rm -rf ${INSTALL_DIR}"
+log_final "   sudo cp -r ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
+log_final "   sudo systemctl start csf-core.service"
 
 exit 0
