@@ -2,6 +2,14 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.4.12](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.11...v0.4.12) (2026-01-10)
+
+
+### Bug Fixes
+
+* persistante update screen ([f43c476](https://github.com/CS-Foundry/CSF-Core/commit/f43c476d8926f475102f2de0eb48ca5c60c5f35f))
+* self kill error updater and manuell fix updater error ([f17d096](https://github.com/CS-Foundry/CSF-Core/commit/f17d09653022c39061ad6b9c7648161c2ee56cb4))
+
 ## [0.4.11](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.10...v0.4.11) (2026-01-09)
 
 
