@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.4.20](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.19...v0.4.20) (2026-01-11)
+
+
+### Bug Fixes
+
+* double vv in version ([48065e5](https://github.com/CS-Foundry/CSF-Core/commit/48065e564a46bfa497fa61be1145437ec06d5415))
+
 ## [0.4.19](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.18...v0.4.19) (2026-01-11)
 
 
