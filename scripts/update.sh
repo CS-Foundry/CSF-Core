@@ -95,6 +95,9 @@ if [ -z "$VERSION" ]; then
     error "No version specified. Usage: $0 <version>"
 fi
 
+# Strip leading 'v' from version if present (e.g., v0.4.19 -> 0.4.19)
+VERSION="${VERSION#v}"
+
 log "🚀 Starting CSF-Core update to version ${VERSION}..." 5
 log "✓ Running with $([ "$EUID" -eq 0 ] && echo 'root privileges' || echo 'sudo')" 10
 
