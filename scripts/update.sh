@@ -332,9 +332,10 @@ log_final "   sudo rm -rf ${INSTALL_DIR}"
 log_final "   sudo cp -r ${BACKUP_DIR}/csf-core ${INSTALL_DIR}"
 log_final "   sudo systemctl start csf-core.service"
 
-# Keep status file for 10 seconds so frontend can read the completed status
-log_final "⏳ Keeping status file for 10 seconds for frontend to read..."
-sleep 10
+# Keep status file for 15 seconds so frontend has enough time to detect completion
+# even if there are connection issues during backend restart
+log_final "⏳ Keeping status file for 15 seconds for frontend to read..."
+sleep 15
 
 # Clean up status file
 rm -f "${STATUS_FILE}" 2>/dev/null || true

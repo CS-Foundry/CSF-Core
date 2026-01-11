@@ -18,6 +18,7 @@
   let connectionLost = $state(false);
   let reconnectAttempts = $state(0);
   let maxReconnectAttempts = 30; // Try for 30 seconds
+  let previousStatus = $state('idle'); // Track previous status to detect transitions
 
   async function fetchUpdateStatus() {
     try {
@@ -44,6 +45,19 @@
           }, 10);
         }
 
+        // Detect status transition from in_progress to idle (status file was deleted = update done)
+        if (previousStatus === 'in_progress' && data.status === 'idle') {
+          logs = [
+            ...logs,
+            `${new Date().toLocaleTimeString()}: ✅ Update completed! Status file cleaned up. Reloading...`,
+          ];
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+          return; // Stop further processing
+        }
+
+        previousStatus = data.status;
         updateStatus = data;
 
         // If update is completed, reload after delay
@@ -93,6 +107,9 @@
   }
 
   onMount(() => {
+    // Set initial status to in_progress since we're showing the update screen
+    previousStatus = 'in_progress';
+
     // Initial fetch
     fetchUpdateStatus();
 
