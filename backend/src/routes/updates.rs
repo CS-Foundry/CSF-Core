@@ -267,9 +267,9 @@ pub async fn install_update(
 
         tracing::info!("Running as root: {}", is_root);
 
-        // Build command - use nohup and setsid to detach from parent process
+        // Build command - use sudo nohup to detach from parent process
         // This ensures the update continues even when the backend service is stopped
-        // sudoers entry: csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
+        // sudoers entry: csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /bin/bash /opt/csf-core/scripts/update.sh*
         let mut command = if is_root {
             // Running as root, execute script directly with nohup
             let mut cmd = Command::new("nohup");
@@ -277,9 +277,10 @@ pub async fn install_update(
             cmd.arg(&script_path_clone);
             cmd
         } else {
-            // Running as csf-core user - use sudo with nohup
-            let mut cmd = Command::new("nohup");
-            cmd.arg("sudo");
+            // Running as csf-core user - use sudo nohup (not nohup sudo!)
+            // This matches the sudoers entry exactly
+            let mut cmd = Command::new("sudo");
+            cmd.arg("/usr/bin/nohup");
             cmd.arg("/bin/bash");
             cmd.arg(&script_path_clone);
             cmd
