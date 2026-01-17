@@ -11,6 +11,18 @@ REPO="CS-Foundry/CSF-Core"
 INSTALL_DIR="/opt/csf-core"
 # Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
 STATUS_FILE="/var/tmp/csf-core-update-status.json"
+LOG_FILE="/var/tmp/csf-core-update.log"
+
+# Redirect all output to log file (and still show on console)
+exec > >(tee -a "${LOG_FILE}") 2>&1
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] ========================================"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] CSF-Core Update Script Started"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] Version: ${VERSION}"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] User: $(whoami)"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] UID: $EUID"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] PWD: $(pwd)"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] ========================================"
 
 # Determine if we need sudo early
 if [ "$EUID" -eq 0 ]; then

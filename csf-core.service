@@ -26,10 +26,12 @@ Environment="ORIGIN=http://localhost:8000"
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+NoNewPrivileges=false
 ReadWritePaths=/opt/csf-core
 ReadWritePaths=/var/lib/csf-core
 ReadWritePaths=/var/log/csf-core
 ReadWritePaths=/tmp
+ReadWritePaths=/var/tmp
 SupplementaryGroups=docker
 
 # Startup: Use unified startup script
