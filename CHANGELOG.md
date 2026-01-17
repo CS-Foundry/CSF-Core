@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.4.25](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.24...v0.4.25) (2026-01-17)
+
+
+### Bug Fixes
+
+* updater test file ([5008a78](https://github.com/CS-Foundry/CSF-Core/commit/5008a788071992090b9087a6dc3a3af960441067))
+
 ## [0.4.24](https://github.com/CS-Foundry/CSF-Core/compare/v0.4.23...v0.4.24) (2026-01-17)
 
 

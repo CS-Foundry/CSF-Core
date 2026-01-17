@@ -1,6 +1,6 @@
 {
   "name": "csf-core",
-  "version": "0.4.24",
+  "version": "0.4.25",
   "private": true,
   "description": "A secure financial management application with end-to-end encryption",
   "repository": {
