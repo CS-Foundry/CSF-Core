@@ -306,12 +306,18 @@ pub async fn install_update(
 
         command
             .arg(&version_clone)
-            // Redirect stdout/stderr to /dev/null since we detach
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
+            // Redirect stdout/stderr to log file for debugging
+            .stdin(std::process::Stdio::null());
+
+        // Keep stdout/stderr open so we can see errors in the log
+        // The script itself redirects to /var/tmp/csf-core-update.log
 
         tracing::info!("Executing command: {:?}", command);
+        tracing::info!(
+            "Command environment: PATH={}, HOME={}",
+            std::env::var("PATH").unwrap_or_default(),
+            std::env::var("HOME").unwrap_or_default()
+        );
 
         match command.spawn() {
             Ok(child) => {
