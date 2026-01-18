@@ -12,8 +12,11 @@ pub struct AgentConfig {
     /// URL of the central server
     pub server_url: String,
 
-    /// API key for authentication
+    /// API key for authentication (optional if only P2P is used)
     pub api_key: String,
+
+    /// Skip backend connection if only P2P mode is needed
+    pub p2p_only_mode: bool,
 
     /// How often to collect metrics (seconds)
     pub collection_interval: u64,
@@ -23,6 +26,73 @@ pub struct AgentConfig {
 
     /// Tags for this agent
     pub tags: Vec<String>,
+
+    /// P2P connection settings
+    pub p2p: P2PConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct P2PConfig {
+    /// Enable P2P connections between agents
+    pub enabled: bool,
+
+    /// Port to listen for P2P connections
+    pub listen_port: u16,
+
+    /// List of peer agents to connect to (host:port)
+    pub peers: Vec<String>,
+
+    /// mTLS certificate path
+    pub cert_path: String,
+
+    /// mTLS private key path
+    pub key_path: String,
+
+    /// CA certificate path for verifying peers
+    pub ca_cert_path: String,
+
+    /// Auto-generate self-signed certificates if not found
+    pub auto_generate_certs: bool,
+}
+
+impl Default for P2PConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            listen_port: 8443,
+            peers: vec![],
+            cert_path: Self::default_cert_path().to_string_lossy().to_string(),
+            key_path: Self::default_key_path().to_string_lossy().to_string(),
+            ca_cert_path: Self::default_ca_cert_path().to_string_lossy().to_string(),
+            auto_generate_certs: true,
+        }
+    }
+}
+
+impl P2PConfig {
+    fn default_cert_path() -> std::path::PathBuf {
+        if cfg!(target_os = "windows") {
+            std::path::PathBuf::from("C:\\ProgramData\\csf-agent\\certs\\agent.crt")
+        } else {
+            std::path::PathBuf::from("/etc/csf-agent/certs/agent.crt")
+        }
+    }
+
+    fn default_key_path() -> std::path::PathBuf {
+        if cfg!(target_os = "windows") {
+            std::path::PathBuf::from("C:\\ProgramData\\csf-agent\\certs\\agent.key")
+        } else {
+            std::path::PathBuf::from("/etc/csf-agent/certs/agent.key")
+        }
+    }
+
+    fn default_ca_cert_path() -> std::path::PathBuf {
+        if cfg!(target_os = "windows") {
+            std::path::PathBuf::from("C:\\ProgramData\\csf-agent\\certs\\ca.crt")
+        } else {
+            std::path::PathBuf::from("/etc/csf-agent/certs/ca.crt")
+        }
+    }
 }
 
 impl Default for AgentConfig {
@@ -35,9 +105,11 @@ impl Default for AgentConfig {
                 .unwrap_or_else(|| "unknown".to_string()),
             server_url: "http://localhost:8000".to_string(),
             api_key: String::new(),
+            p2p_only_mode: false,
             collection_interval: 30,
             heartbeat_interval: 60,
             tags: vec![],
+            p2p: P2PConfig::default(),
         }
     }
 }

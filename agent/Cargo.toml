@@ -34,9 +34,26 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 
 # Hostname
 hostname = "0.4"
+
+# TLS/mTLS
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.26"
+rustls-pemfile = "2.0"
+rcgen = { version = "0.13", features = ["x509-parser"] }
+webpki = "0.22"
+
+# Async HTTP server
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+
+# Networking
+tokio-util = { version = "0.7", features = ["codec"] }
+bytes = "1"
 
 [features]
 default = []
