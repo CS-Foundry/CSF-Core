@@ -23,3 +23,15 @@ finance.db
 /agent/test-agent*/
 /agent/test-p2p/
 /agent/certs-agent*/
+
+# NixOS build artifacts
+nixos-node/result
+nixos-node/result-*
+nixos/result
+nixos/result-*
+*.iso
+*.qcow2
+
+# Nix temporary files
+.nix-defexpr
+.nix-profile
