@@ -10,14 +10,11 @@
 
   # Networking
   networking = {
-    hostName = "csf-master-node";
+    hostName = "csf-docker-test";
     firewall = {
       enable = true;
       allowedTCPPorts = [
-        8000  # CSF-Core Backend API
-        3000  # CSF-Core Frontend
-        8443  # P2P Agent communication
-        8080  # Test Docker container
+        8080  # Test nginx container
       ];
     };
   };
@@ -27,103 +24,23 @@
 
   # System packages
   environment.systemPackages = with pkgs; [
-    # Build tools
-    rustc
-    cargo
-    gcc
-    pkg-config
-    openssl
-
-    # Node.js for frontend
-    nodejs_20
-
-    # Utilities
-    curl
-    wget
-    git
-    vim
-    htop
-    tmux
-
     # Docker tools
     docker-compose
     docker
 
-    # Additional tools
-    jq
-    tree
+    # Utilities
+    curl
+    wget
+    vim
+    htop
   ];
-
-  # Users
-  users.users.csf-core = {
-    isSystemUser = true;
-    group = "csf-core";
-    extraGroups = [ "docker" ];
-    home = "/opt/csf-core";
-    createHome = true;
-  };
-
-  users.groups.csf-core = {};
 
   # Auto-login as root on boot (for ISO convenience)
   services.getty.autologinUser = "root";
 
-  # CSF-Core systemd service
-  systemd.services.csf-core = {
-    description = "CSF Core Backend and Frontend Service";
-    documentation = [ "https://github.com/CS-Foundry/CSF-Core" ];
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-
-    serviceConfig = {
-      Type = "simple";
-      User = "csf-core";
-      Group = "csf-core";
-      WorkingDirectory = "/opt/csf-core";
-
-      # Environment variables
-      Environment = [
-        "DATABASE_URL=sqlite:/opt/csf-core/finance.db"
-        "JWT_SECRET=change-this-in-production"
-        "RUST_LOG=info"
-        "NODE_ENV=production"
-        "PORT=3000"
-        "FRONTEND_URL=http://localhost:3000"
-        "ORIGIN=http://localhost:8000"
-      ];
-
-      # Security settings
-      NoNewPrivileges = true;
-      PrivateTmp = true;
-      ProtectSystem = "strict";
-      ProtectHome = true;
-      ReadWritePaths = [
-        "/opt/csf-core"
-        "/var/lib/csf-core"
-        "/var/log/csf-core"
-      ];
-      SupplementaryGroups = [ "docker" ];
-
-      # Startup
-      ExecStart = "/opt/csf-core/start.sh";
-
-      # Process management
-      Restart = "on-failure";
-      RestartSec = 10;
-      KillMode = "mixed";
-      KillSignal = "SIGTERM";
-      TimeoutStartSec = 60;
-      TimeoutStopSec = 30;
-
-      # Resource limits
-      LimitNOFILE = 65536;
-      LimitNPROC = 4096;
-    };
-  };
-
-  # Test Docker container service
-  systemd.services.test-docker-container = {
-    description = "Test Docker Container (Nginx Hello World)";
+  # Docker Compose service for nginx test
+  systemd.services.docker-compose-test = {
+    description = "Docker Compose Test Service (nginx)";
     after = [ "docker.service" ];
     requires = [ "docker.service" ];
     wantedBy = [ "multi-user.target" ];
@@ -131,39 +48,85 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${pkgs.docker}/bin/docker run -d --name test-nginx -p 8080:80 nginx:alpine";
-      ExecStop = "${pkgs.docker}/bin/docker stop test-nginx && ${pkgs.docker}/bin/docker rm test-nginx";
+      WorkingDirectory = "/etc/docker-test";
+      ExecStart = "${pkgs.docker-compose}/bin/docker-compose up -d";
+      ExecStop = "${pkgs.docker-compose}/bin/docker-compose down";
     };
   };
 
-  # Activation script to setup CSF-Core and Docker on first boot
-  system.activationScripts.setup = {
+  # Activation script to setup Docker Compose
+  system.activationScripts.docker-setup = {
     text = ''
-      # Create necessary directories
-      mkdir -p /opt/csf-core
-      mkdir -p /var/lib/csf-core
-      mkdir -p /var/log/csf-core
+      # Create docker-compose directory
+      mkdir -p /etc/docker-test
 
-      # Set ownership
-      chown -R csf-core:csf-core /opt/csf-core
-      chown -R csf-core:csf-core /var/lib/csf-core
-      chown -R csf-core:csf-core /var/log/csf-core
+      # Create docker-compose.yml
+      cat > /etc/docker-test/docker-compose.yml <<EOF
+version: '3.8'
+services:
+  nginx-test:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./html:/usr/share/nginx/html:ro
 
-      # Create config.env if not exists
-      if [ ! -f /opt/csf-core/config.env ]; then
-        cat > /opt/csf-core/config.env <<EOF
-DATABASE_URL=sqlite:/opt/csf-core/finance.db
-JWT_SECRET=change-this-in-production
-RUST_LOG=info
-NODE_ENV=production
-PORT=3000
-FRONTEND_URL=http://localhost:3000
-ORIGIN=http://localhost:8000
+volumes:
+  nginx-logs:
 EOF
-        chown csf-core:csf-core /opt/csf-core/config.env
-      fi
 
-      # Create a simple test script
+      # Create nginx config
+      cat > /etc/docker-test/nginx.conf <<EOF
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen 80;
+        server_name localhost;
+
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }
+}
+EOF
+
+      # Create HTML content
+      mkdir -p /etc/docker-test/html
+      cat > /etc/docker-test/html/index.html <<EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSF-Core Docker Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { color: #333; }
+        .status { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSF-Core Docker Test</h1>
+        <p class="status">Docker & Docker Compose funktionieren!</p>
+        <p>Diese Seite wird von nginx in einem Docker Container serviert.</p>
+        <p><a href="/health">Health Check</a></p>
+    </div>
+</body>
+</html>
+EOF
+
+      # Create test script
       cat > /root/test-docker.sh <<EOF
 #!/bin/bash
 echo "=== Docker Test Script ==="
@@ -179,17 +142,15 @@ echo ""
 echo "Running containers:"
 docker ps -a
 echo ""
-echo "Test container logs:"
-docker logs test-nginx 2>/dev/null || echo "No test container logs available"
-echo ""
-echo "=== CSF-Core Status ==="
-systemctl status csf-core --no-pager -l || echo "CSF-Core service not running"
+echo "Docker Compose status:"
+cd /etc/docker-test && docker-compose ps
 echo ""
 echo "=== Network Test ==="
-echo "Testing localhost ports:"
-curl -s http://localhost:8080 | head -5 || echo "Port 8080 not responding"
+echo "Testing nginx container:"
+curl -s http://localhost:8080 | grep -o '<title>.*</title>' || echo "Port 8080 not responding"
 echo ""
-curl -s http://localhost:3000 | head -5 || echo "Port 3000 not responding"
+echo "Health check:"
+curl -s http://localhost:8080/health || echo "Health check failed"
 echo ""
 echo "=== Test Complete ==="
 EOF
@@ -198,26 +159,68 @@ EOF
     deps = [];
   };
 
-  # Boot message
+  # Boot message with logo
   environment.etc."issue".text = ''
+
+                                                                                
+                                                                                
+                                                                                
+                        ..,,,,,,,,,,,,,,,,,,,,,,,;,,,,,,,,,,,,,,'..   .         
+                      ..ckXXNNNNNNNNNNNNNNNNNNNNNNNNNNXXXXXXXXKx;.              
+                    ..cONWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWOc..               
+                  ..ckNWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMW0l..    .  ..        
+                ..ckNWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMW0l..   .               
+              ..ckXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMW0l..                     
+          .  .;kXWMMMMMMMMWKOkkkkkkkkkkkkkkkkkkkkkkkkxc..   .                   
+             .oNWMMMMMMMMNx,..........................                          
+             .oNMMMMMMMMMK:.                                                    
+             .oNMMMMMMMMMK;         .........................                   
+             .oNMMMMMMMMMK;       .'lddddddddddddddddddddddc'.  .               
+             .oNMMMMMMMMMK;     .'o0NWWWWWWWWWWWWWWWWWWWWKd,.                   
+             .oNMMMMMMMMMK;   .'l0NWMMMMMMMMMMMMMMMMMMWXx,.                     
+             .oNMMMMMMMMMK; .'l0NWMMMMMMMMMMMMMMMMMMWXx;.                       
+             .oNWMMMMMMMMK:'l0NWMMMMMMMMMMMMMMMMMMWXx;.                         
+             .cKWMMMMMMMMXOOXWMMMMWWWWWWWWWWWWWWWXx;.                           
+              .,dKWMMMMMMXo;lKMMMNOl:;;;;;;;;;;;;,.                             
+                .,dKWMMMM0; 'kWMMMNOl'.                                         
+                  .,dKWMM0; 'kWMMMMMN0o,...                                     
+                    .,dKW0; 'kWMMMMMMMWKkc.                                     
+                      .,ox, 'kWMMMMMMMMNXo.                                     
+                        ... 'kWMMMMMMMMNXd.                                     
+                            'kWMMMMMMMMNXd.                                     
+                            'kWMMMMMMMMNXd.                                     
+                            'kWMMMMMMMMNXo.                                     
+                            'kWMMMMMMMMNXo.                                     
+                            'kWMMMMMMMMNXo.                                     
+                            'kWMMMMMMMNkl;.                                     
+                            'kWMMMMMNk:...                                      
+                            'kWMMMNk:.                                          
+                            'kWWXx;.                                            
+                        .   'kKx;.                                              
+                            .;,.                                                
+                            ..                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║              CSF-Core Master Node ISO                     ║
+    ║              CSF-Core Docker Test ISO                     ║
     ║                                                           ║
-    ║  This system is configured to run CSF-Core automatically  ║
-    ║  with Docker and a test container.                        ║
+    ║  Einfache Docker & Docker Compose Testumgebung            ║
     ║                                                           ║
     ║  Services:                                                ║
-    ║    - CSF-Core Backend:  http://localhost:8000             ║
-    ║    - CSF-Core Frontend: http://localhost:3000             ║
-    ║    - Test Container:    http://localhost:8080             ║
     ║    - Docker:            systemctl status docker           ║
+    ║    - Nginx Test:        http://localhost:8080             ║
     ║                                                           ║
     ║  Test commands:                                           ║
     ║    ./test-docker.sh    - Run comprehensive test           ║
     ║    docker ps -a        - List containers                  ║
-    ║    docker logs test-nginx - View test container logs      ║
+    ║    docker-compose ps   - Compose status                   ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
 

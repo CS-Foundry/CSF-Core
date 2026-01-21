@@ -1,60 +1,34 @@
-# CSF-Core Master Node NixOS ISO
+# CSF-Core Docker Test ISO
 
-Diese Konfiguration erstellt ein bootfähiges NixOS ISO-Image mit vorinstalliertem und automatisch startendem CSF-Core Master Node.
+Diese Konfiguration erstellt ein bootfähiges NixOS ISO-Image mit Docker und Docker Compose für einfache Container-Tests.
 
 ## 🚀 ISO bauen
 
 ### Mit Flakes (empfohlen)
 
 ```bash
-cd nixos/
+cd nixos-node/
 nix build .#nixosConfigurations.iso.config.system.build.isoImage
 ```
 
 Das ISO-Image wird unter `./result/iso/` erstellt.
 
-### Ohne Flakes (klassisch)
-
-```bash
-nix-build '<nixpkgs/nixos>' -A config.system.build.isoImage -I nixos-config=./iso-configuration.nix
-```
-
 ## 📦 Was ist enthalten?
 
 - **Docker & Docker Compose** - Container-Management und Orchestrierung
-- **Test Container** - Nginx-Beispiel-Container auf Port 8080
-- **Rust & Cargo** - Zum Bauen des Backends
-- **Node.js 20** - Für das Frontend
-- **CSF-Core Service** - Automatisch gestartet beim Booten
+- **Nginx Test Container** - Über docker-compose automatisch gestartet auf Port 8080
+- **Test-Script** - Automatische Tests für Docker-Funktionalität
 
 ## 🔧 Konfiguration
 
 ### Ports
 
-- `8000` - CSF-Core Backend API
-- `3000` - CSF-Core Frontend
-- `8443` - P2P Agent Kommunikation
-- `5432` - PostgreSQL
+- `8080` - Nginx Test Container
 
-### Verzeichnisse
+### Automatisch gestartete Services
 
-- `/opt/csf-core` - Hauptverzeichnis
-- `/var/lib/csf-core` - Datenspeicher
-- `/var/log/csf-core` - Logs
-
-### Umgebungsvariablen
-
-Die Konfiguration kann in `/opt/csf-core/config.env` angepasst werden:
-
-```bash
-DATABASE_URL=postgres://csf_core@localhost/csf_core
-JWT_SECRET=change-this-in-production
-RUST_LOG=info
-NODE_ENV=production
-PORT=3000
-FRONTEND_URL=http://localhost:3000
-ORIGIN=http://localhost:8000
-```
+- Docker Daemon
+- Docker Compose mit nginx Container
 
 ## 🎯 Verwendung
 
@@ -66,118 +40,78 @@ sudo dd if=result/iso/*.iso of=/dev/sdX bs=4M status=progress
 
 ### 2. System booten
 
-Boote von dem USB-Stick. Das System startet automatisch als Root und CSF-Core wird gestartet.
+Boote von dem USB-Stick. Das System startet automatisch als Root und Docker Compose startet den nginx Container.
 
-### 3. Service-Status prüfen
-
-```bash
-systemctl status csf-core
-systemctl status postgresql
-```
-
-### 4. Logs anschauen
+### 3. Container testen
 
 ```bash
-journalctl -u csf-core -f
+# Webseite öffnen
+curl http://localhost:8080
+
+# Container-Status prüfen
+docker ps -a
+
+# Docker Compose Status
+docker-compose ps
 ```
 
-## 🔐 Sicherheit
+### 4. Vollständiger Test
 
-**WICHTIG:** Diese Konfiguration ist für Development/Testing gedacht!
-
-Für Production:
-- Ändere `JWT_SECRET` in eine sichere Random-String
-- Konfiguriere PostgreSQL mit sicheren Passwörtern
-- Aktiviere HTTPS mit eigenen Zertifikaten
-- Deaktiviere Auto-Login
-- Setze strikte Firewall-Regeln
-
-## 🛠️ Anpassungen
-
-### Eigene CSF-Core Binaries verwenden
-
-1. Baue deine CSF-Core Binaries:
 ```bash
-# Backend
-cd backend/
-cargo build --release
-
-# Frontend
-cd frontend/
-npm run build
+# Führe das bereitgestellte Test-Script aus
+./test-docker.sh
 ```
 
-2. Kopiere sie ins ISO während des Builds, indem du in `iso-configuration.nix` ergänzt:
+## 🐳 Docker Tests
 
-```nix
-system.activationScripts.csf-core-setup = {
-  text = ''
-    # ... existing setup ...
-    
-    # Copy binaries
-    cp ${./path/to/backend/binary} /opt/csf-core/csf-core
-    cp -r ${./path/to/frontend/build} /opt/csf-core/frontend
-    
-    chmod +x /opt/csf-core/csf-core
-  '';
-};
+### Container verwalten
+
+```bash
+# Container stoppen
+docker-compose down
+
+# Container neu starten
+docker-compose up -d
+
+# Logs ansehen
+docker-compose logs
 ```
 
-### Hostname ändern
+### Eigene Container testen
 
-In `iso-configuration.nix`:
-```nix
-networking.hostName = "mein-master-node";
-```
+```bash
+# Eigenes docker-compose.yml erstellen
+cat > test-compose.yml <<EOF
+version: '3.8'
+services:
+  my-app:
+    image: hello-world
+EOF
 
-### Zusätzliche Packages
-
-In `environment.systemPackages`:
-```nix
-environment.systemPackages = with pkgs; [
-  # ... existing packages ...
-  neovim
-  ripgrep
-  fd
-];
+# Starten
+docker-compose -f test-compose.yml up -d
 ```
 
 ## 📝 Troubleshooting
 
-### Service startet nicht
+### Container startet nicht
 
 ```bash
-# Logs prüfen
-journalctl -u csf-core -xe
+# Docker Status prüfen
+sudo systemctl status docker
 
-# Manuell starten
-sudo systemctl start csf-core
-
-# Status prüfen
-sudo systemctl status csf-core
+# Docker Compose Logs
+cd /etc/docker-test && docker-compose logs
 ```
 
-### PostgreSQL Verbindungsprobleme
+### Port 8080 nicht erreichbar
 
 ```bash
-# PostgreSQL Status
-sudo systemctl status postgresql
-
-# PostgreSQL neu starten
-sudo systemctl restart postgresql
-
-# Verbindung testen
-psql -U csf_core -d csf_core -h localhost
-```
-
-### Firewall blockiert Ports
-
-```bash
-# Firewall Status
+# Firewall prüfen
 sudo nft list ruleset
 
-# Port öffnen (temporär)
-sudo iptables -A INPUT -p tcp --dport 8000 -j ACCEPT
+# Container direkt testen
+docker exec -it nginx-test curl localhost
 ```
 
 ## 🔄 Updates
@@ -185,17 +119,13 @@ sudo iptables -A INPUT -p tcp --dport 8000 -j ACCEPT
 Um das ISO mit Updates zu bauen:
 
 1. Aktualisiere Flake-Inputs:
+
 ```bash
 nix flake update
 ```
 
 2. Baue das ISO neu:
+
 ```bash
 nix build .#nixosConfigurations.iso.config.system.build.isoImage
 ```
-
-## 📚 Weitere Dokumentationen
-
-- [NixOS Manual](https://nixos.org/manual/nixos/stable/)
-- [NixOS ISO Building](https://nixos.wiki/wiki/Creating_a_NixOS_live_CD)
-- [CSF-Core Dokumentation](../docs/README.md)
