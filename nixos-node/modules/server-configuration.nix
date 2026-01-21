@@ -126,22 +126,22 @@
     tcpdump
   ];
 
-  # Docker Compose service for nginx test (disabled by default)
-  # systemd.services.docker-compose-test = {
-  #   description = "Docker Compose Test Service (nginx)";
-  #   after = [ "docker.service" "network-online.target" ];
-  #   requires = [ "docker.service" "network-online.target" ];
-  #   wantedBy = [ "multi-user.target" ];
-  #
-  #   serviceConfig = {
-  #     Type = "oneshot";
-  #     RemainAfterExit = true;
-  #     WorkingDirectory = "/etc/docker-test";
-  #     ExecStart = "${pkgs.docker-compose}/bin/docker-compose up -d";
-  #     ExecStop = "${pkgs.docker-compose}/bin/docker-compose down";
-  #     Restart = "on-failure";
-  #   };
-  # };
+  # Docker Compose service for nginx test
+  systemd.services.docker-compose-test = {
+    description = "Docker Compose Test Service (nginx)";
+    after = [ "docker.service" "network-online.target" ];
+    requires = [ "docker.service" "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      WorkingDirectory = "/etc/docker-test";
+      ExecStart = "${pkgs.docker-compose}/bin/docker-compose up -d";
+      ExecStop = "${pkgs.docker-compose}/bin/docker-compose down";
+      Restart = "on-failure";
+    };
+  };
 
   # Activation script to setup Docker Compose
   system.activationScripts.docker-setup = {
