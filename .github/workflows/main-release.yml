@@ -10,6 +10,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  packages: write
 
 jobs:
   # Step 1: Run Release Workflow
@@ -18,11 +19,111 @@ jobs:
     uses: ./.github/workflows/release.yml
     secrets: inherit
 
-  # Step 2: Summary
+  # Step 2: Build and Push Backend Docker Image
+  build-backend-docker:
+    name: Build Backend Docker Image
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: needs.release.outputs.new_release_published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Convert repository name to lowercase
+        id: repo
+        run: |
+          echo "image_name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building backend version: $VERSION"
+
+      - name: Build and push Backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.image_name }}-backend:latest
+            ghcr.io/${{ steps.repo.outputs.image_name }}-backend:${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          platforms: linux/amd64
+
+  # Step 3: Build and Push Frontend Docker Image
+  build-frontend-docker:
+    name: Build Frontend Docker Image
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: needs.release.outputs.new_release_published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Convert repository name to lowercase
+        id: repo
+        run: |
+          echo "image_name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building frontend version: $VERSION"
+
+      - name: Build and push Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.image_name }}-frontend:latest
+            ghcr.io/${{ steps.repo.outputs.image_name }}-frontend:${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          platforms: linux/amd64
+
+  # Step 4: Summary
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [release]
+    needs: [release, build-backend-docker, build-frontend-docker]
     if: always()
     steps:
       - name: Generate Summary
@@ -34,8 +135,27 @@ jobs:
 
           if [ "${{ needs.release.outputs.new_release_published }}" == "true" ]; then
             VERSION="v${{ needs.release.outputs.new_release_version }}"
+            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            
             echo "✅ **Release Created:** $VERSION" >> $GITHUB_STEP_SUMMARY
             echo "✅ **Binaries Built:** Available for download" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Docker Images:** Published to GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Docker Images Info
+            echo "### 🐳 Docker Images" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Backend Image:**" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${REPO_LOWER}-backend:${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${REPO_LOWER}-backend:latest" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Frontend Image:**" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${REPO_LOWER}-frontend:${{ needs.release.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${REPO_LOWER}-frontend:latest" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
             # Add download statistics
@@ -58,12 +178,29 @@ jobs:
             fi
             
             echo "### 🚀 Installation" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Native Installation:**" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
             echo "# Install latest version" >> $GITHUB_STEP_SUMMARY
             echo "curl -fsSL https://raw.githubusercontent.com/CS-Foundry/CSF-Core/main/scripts/install.sh | sudo bash" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "# Or download specific binary:" >> $GITHUB_STEP_SUMMARY
             echo "# https://github.com/CS-Foundry/CSF-Core/releases/tag/$VERSION" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Docker Installation:**" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "# Run backend" >> $GITHUB_STEP_SUMMARY
+            echo "docker run -d -p 8000:8000 \\" >> $GITHUB_STEP_SUMMARY
+            echo "  -v csf_data:/data \\" >> $GITHUB_STEP_SUMMARY
+            echo "  -e JWT_SECRET=\$(openssl rand -hex 32) \\" >> $GITHUB_STEP_SUMMARY
+            echo "  --name csf-backend \\" >> $GITHUB_STEP_SUMMARY
+            echo "  ghcr.io/${REPO_LOWER}-backend:latest" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Run frontend" >> $GITHUB_STEP_SUMMARY
+            echo "docker run -d -p 80:80 \\" >> $GITHUB_STEP_SUMMARY
+            echo "  --name csf-frontend \\" >> $GITHUB_STEP_SUMMARY
+            echo "  ghcr.io/${REPO_LOWER}-frontend:latest" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ **No Release Created**" >> $GITHUB_STEP_SUMMARY
