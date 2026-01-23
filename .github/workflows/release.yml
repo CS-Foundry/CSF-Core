@@ -64,14 +64,3 @@ jobs:
             echo "ℹ️ No release published"
           fi
 
-  build-docker:
-    name: Build Docker Images
-    needs: release
-    if: needs.release.outputs.new_release_published == 'true'
-    uses: ./.github/workflows/docker-build-push.yml
-    secrets: inherit
-    with:
-      version: ${{ needs.release.outputs.new_release_version }}
-    permissions:
-      contents: read
-      packages: write
