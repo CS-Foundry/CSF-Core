@@ -75,7 +75,10 @@
             "path": "CHANGELOG.md",
             "label": "Changelog"
           }
-        ]
+        ],
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false
       }
     ],
     [
