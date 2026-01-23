@@ -1,0 +1,14 @@
+node_modules
+.svelte-kit
+build
+.output
+.vercel
+.netlify
+.wrangler
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
