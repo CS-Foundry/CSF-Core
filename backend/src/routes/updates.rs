@@ -6,9 +6,18 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::AppState;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateStatus {
+    pub status: String,
+    pub message: String,
+    pub progress: u8,
+    pub version: Option<String>,
+    pub timestamp: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -106,6 +115,44 @@ pub async fn check_updates(State(_state): State<AppState>) -> Result<Json<Versio
     }))
 }
 
+/// Get update status
+#[utoipa::path(
+    get,
+    path = "/api/updates/status",
+    responses(
+        (status = 200, description = "Update status retrieved successfully", body = UpdateStatus),
+        (status = 404, description = "No update in progress"),
+        (status = 500, description = "Failed to read status")
+    ),
+    tag = "Updates"
+)]
+pub async fn get_update_status(
+    State(_state): State<AppState>,
+) -> Result<Json<UpdateStatus>, AppError> {
+    // Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
+    let status_file = "/var/tmp/csf-core-update-status.json";
+
+    match tokio::fs::read_to_string(status_file).await {
+        Ok(content) => match serde_json::from_str::<UpdateStatus>(&content) {
+            Ok(status) => Ok(Json(status)),
+            Err(e) => Err(AppError::InternalError(format!(
+                "Failed to parse status file: {}",
+                e
+            ))),
+        },
+        Err(_) => {
+            // No status file means no update in progress
+            Ok(Json(UpdateStatus {
+                status: "idle".to_string(),
+                message: "No update in progress".to_string(),
+                progress: 0,
+                version: None,
+                timestamp: None,
+            }))
+        }
+    }
+}
+
 /// Trigger update installation
 #[utoipa::path(
     post,
@@ -122,10 +169,21 @@ pub async fn install_update(
     State(_state): State<AppState>,
     Json(payload): Json<UpdateRequest>,
 ) -> Result<Json<UpdateResponse>, AppError> {
+    tracing::info!(
+        "Update installation requested for version: {}",
+        payload.version
+    );
+
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    tracing::info!("Current version: {}", current_version);
 
     // Safety check: don't downgrade
     if !version_compare(&current_version, &payload.version) {
+        tracing::warn!(
+            "Update rejected: Cannot install version {} (current: {})",
+            payload.version,
+            current_version
+        );
         return Ok(Json(UpdateResponse {
             success: false,
             message: "Cannot install an older or same version".to_string(),
@@ -133,36 +191,171 @@ pub async fn install_update(
     }
 
     // Find the update script - try multiple locations
-    let mut possible_paths: Vec<std::path::PathBuf> =
-        vec![std::path::PathBuf::from("/opt/csf-core/scripts/update.sh")];
+    let mut possible_paths: Vec<std::path::PathBuf> = vec![
+        // Production path (daemon service)
+        std::path::PathBuf::from("/opt/csf-core/scripts/update.sh"),
+    ];
 
+    // Development paths
     if let Ok(dir) = std::env::current_dir() {
+        // When running from /opt/csf-core/backend
         possible_paths.push(dir.join("../scripts/update.sh"));
+        // When running from project root
         possible_paths.push(dir.join("scripts/update.sh"));
+        // When running from backend directory
+        possible_paths.push(dir.join("../../scripts/update.sh"));
     }
 
-    let script_path = possible_paths
-        .iter()
-        .find(|&p: &&std::path::PathBuf| p.exists())
-        .ok_or_else(|| {
-            AppError::InternalError("Update script not found in any expected location".to_string())
-        })?
-        .clone();
+    tracing::debug!("Searching for update script in: {:?}", possible_paths);
+
+    let script_path = match possible_paths.iter().find(|&p| p.exists()) {
+        Some(path) => path.clone(),
+        None => {
+            let error_msg = format!(
+                "Update script not found in any expected location. Searched paths: {:?}. Note: Updates can only be performed in production installations, not during local development.",
+                possible_paths
+            );
+            tracing::error!("{}", error_msg);
+            return Err(AppError::InternalError(
+                "Update functionality is only available in production installations. The update script was not found on this system.".to_string()
+            ));
+        }
+    };
 
     tracing::info!("Found update script at: {:?}", script_path);
 
     // Clone version for use in response message
     let version_for_message = payload.version.clone();
 
-    // Start update process in background
+    // Create initial status file to indicate update has started
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let status_content = format!(
+        r#"{{
+  "status": "in_progress",
+  "message": "Initializing update process...",
+  "progress": 0,
+  "version": "{}",
+  "timestamp": "{}"
+}}"#,
+        payload.version, timestamp
+    );
+
+    // Use /var/tmp instead of /tmp to avoid systemd PrivateTmp isolation
+    if let Err(e) = tokio::fs::write("/var/tmp/csf-core-update-status.json", status_content).await {
+        tracing::warn!("Failed to create initial status file: {}", e);
+    }
+
+    // Start update process in background with proper output handling
+    let script_path_clone = script_path.clone();
+    let version_clone = payload.version.clone();
+
     tokio::spawn(async move {
-        match Command::new("sh")
-            .arg(&script_path)
-            .arg(&payload.version)
-            .spawn()
-        {
-            Ok(_) => tracing::info!("Update process started for version {}", payload.version),
-            Err(e) => tracing::error!("Failed to start update process: {}", e),
+        tracing::info!("Spawning update process for version {}", version_clone);
+
+        // Log current user for debugging
+        let current_user = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+        tracing::info!("Running as user: {}", current_user);
+
+        // Check if we're running as root
+        let is_root = std::fs::metadata("/etc/shadow")
+            .and_then(|_| std::fs::File::open("/etc/shadow"))
+            .is_ok();
+
+        tracing::info!("Running as root: {}", is_root);
+
+        // Build command - use sudo nohup to detach from parent process
+        // This ensures the update continues even when the backend service is stopped
+        // sudoers entry: csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /bin/bash /opt/csf-core/scripts/update.sh*
+        let mut command = if is_root {
+            // Running as root, execute script directly with nohup
+            let mut cmd = Command::new("nohup");
+            cmd.arg("/bin/bash");
+            cmd.arg(&script_path_clone);
+            cmd
+        } else {
+            // Running as csf-core user - use sudo nohup (not nohup sudo!)
+            // This matches the sudoers entry exactly
+            let mut cmd = Command::new("sudo");
+            cmd.arg("/usr/bin/nohup");
+            cmd.arg("/bin/bash");
+            cmd.arg(&script_path_clone);
+            cmd
+        };
+
+        // Set up environment variables that the script might need
+        command.env(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
+        command.env(
+            "HOME",
+            std::env::var("HOME").unwrap_or_else(|_| "/root".to_string()),
+        );
+        command.env("LANG", "C.UTF-8");
+        command.env("LC_ALL", "C.UTF-8");
+
+        // Set working directory to script location
+        if let Some(script_dir) = script_path_clone.parent() {
+            command.current_dir(script_dir);
+            tracing::info!("Working directory: {:?}", script_dir);
+        }
+
+        command
+            .arg(&version_clone)
+            // Redirect stdout/stderr to log file for debugging
+            .stdin(std::process::Stdio::null());
+
+        // Keep stdout/stderr open so we can see errors in the log
+        // The script itself redirects to /var/tmp/csf-core-update.log
+
+        tracing::info!("Executing command: {:?}", command);
+        tracing::info!(
+            "Command environment: PATH={}, HOME={}",
+            std::env::var("PATH").unwrap_or_default(),
+            std::env::var("HOME").unwrap_or_default()
+        );
+
+        match command.spawn() {
+            Ok(child) => {
+                tracing::info!(
+                    "Update process started successfully (PID: {:?}) and detached",
+                    child.id()
+                );
+
+                // Process is detached - it will continue even if backend stops
+                // Users can monitor progress via /var/tmp/csf-core-update-status.json
+                tracing::info!(
+                    "Update running in background. Monitor: /var/tmp/csf-core-update-status.json"
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to start update process: {}", e);
+
+                // Write error to status file
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                let error_status = format!(
+                    r#"{{
+  "status": "error",
+  "message": "Failed to start update script: {}",
+  "progress": 0,
+  "version": "{}",
+  "timestamp": "{}"
+}}"#,
+                    e, version_clone, ts
+                );
+
+                // Use /var/tmp instead of /tmp
+                let _ =
+                    tokio::fs::write("/var/tmp/csf-core-update-status.json", error_status).await;
+            }
         }
     });
 
@@ -268,9 +461,15 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::InternalError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+        let (status, message) = match &self {
+            AppError::InternalError(msg) => {
+                tracing::error!("Internal error: {}", msg);
+                (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
+            }
+            AppError::NotFound(msg) => {
+                tracing::warn!("Not found: {}", msg);
+                (StatusCode::NOT_FOUND, msg.clone())
+            }
         };
 
         (status, Json(serde_json::json!({ "error": message }))).into_response()
@@ -280,6 +479,7 @@ impl IntoResponse for AppError {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/updates/check", get(check_updates))
+        .route("/updates/status", get(get_update_status))
         .route("/updates/install", post(install_update))
         .route("/updates/changelog/:version", get(get_changelog))
 }

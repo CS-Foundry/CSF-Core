@@ -277,6 +277,60 @@ create_service_user() {
         print_success "Benutzer '$SERVICE_USER' erstellt"
     fi
     
+    # Configure sudo access for update script (passwordless, specific command only)
+    print_step "Konfiguriere sudo-Zugriff für Updates..."
+    cat > /etc/sudoers.d/csf-core << 'EOF'
+# Allow csf-core user to run update script without password (with nohup for detachment)
+csf-core ALL=(ALL) NOPASSWD: /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup sudo /bin/bash /opt/csf-core/scripts/update.sh*
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/nohup /usr/bin/bash /opt/csf-core/scripts/update.sh*
+
+# Allow systemctl commands for service management
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl start csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl stop csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl restart csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl status csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /bin/systemctl is-active csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl start csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl status csf-core.service
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active csf-core.service
+
+# Additional file operations needed during update
+csf-core ALL=(ALL) NOPASSWD: /bin/chown -R csf-core\:csf-core /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/cp -rp /opt/csf-core* *
+csf-core ALL=(ALL) NOPASSWD: /bin/cp -rp * /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/mv * /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /tmp/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -rf /var/tmp/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/csf-core-update-status.json
+csf-core ALL=(ALL) NOPASSWD: /bin/mkdir -p *
+csf-core ALL=(ALL) NOPASSWD: /bin/tar -xzf * -C /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/chmod +x /opt/csf-core*
+csf-core ALL=(ALL) NOPASSWD: /bin/chmod 644 /tmp/csf-core-update-status.json
+csf-core ALL=(ALL) NOPASSWD: /usr/bin/rsync -a * *
+
+# Allow csf-core to preserve environment and run non-interactively
+Defaults:csf-core !requiretty
+Defaults:csf-core env_keep += "PATH HOME LANG LC_ALL"
+EOF
+    chmod 0440 /etc/sudoers.d/csf-core
+    
+    # Validate sudoers file
+    if visudo -c -f /etc/sudoers.d/csf-core > /dev/null 2>&1; then
+        print_success "sudo-Zugriff für Updates konfiguriert"
+    else
+        print_error "Sudoers-Datei ist ungültig"
+        rm -f /etc/sudoers.d/csf-core
+        print_warning "sudo-Zugriff konnte nicht konfiguriert werden, Updates erfordern manuelle sudo-Rechte"
+    fi
+    
     # Add user to docker group if Docker is installed
     if command -v docker &> /dev/null; then
         if getent group docker > /dev/null 2>&1; then
@@ -422,6 +476,18 @@ download_release() {
             rm -rf "$temp_dir"
             build_from_source
             return
+        fi
+        
+        # Download update script
+        local update_script_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/update.sh"
+        print_step "Download Update Script..."
+        
+        mkdir -p "$INSTALL_DIR/scripts"
+        if curl -L -f "$update_script_url" -o "$INSTALL_DIR/scripts/update.sh" 2>/dev/null; then
+            chmod +x "$INSTALL_DIR/scripts/update.sh"
+            print_success "Update Script heruntergeladen"
+        else
+            print_warning "Update Script konnte nicht heruntergeladen werden"
         fi
         
         cd - > /dev/null
@@ -633,6 +699,18 @@ EOF
         rm -rf "$temp_dir"
         install_via_docker
         return
+    fi
+    
+    # Copy update script
+    cd "$temp_dir/csf-core"
+    print_step "Kopiere Update Script..."
+    mkdir -p "$INSTALL_DIR/scripts"
+    if [ -f "scripts/update.sh" ]; then
+        cp scripts/update.sh "$INSTALL_DIR/scripts/"
+        chmod +x "$INSTALL_DIR/scripts/update.sh"
+        print_success "Update Script kopiert"
+    else
+        print_warning "Update Script nicht gefunden"
     fi
     
     cd - > /dev/null
