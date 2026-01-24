@@ -126,100 +126,87 @@
     tcpdump
   ];
 
-  # Docker Compose service for nginx test
-  systemd.services.docker-compose-test = {
-    description = "Docker Compose Test Service (nginx)";
+  # Docker Compose service for CSF-Core Backend
+  systemd.services.docker-compose-csf-backend = {
+    description = "Docker Compose CSF-Core Backend Service";
     after = [ "docker.service" "network-online.target" ];
-    requires = [ "docker.service" "network-online.target" ];
+    requires = [ "docker.service" ];
+    wants = [ "network-online.target" ];
     wantedBy = [ "multi-user.target" ];
 
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      WorkingDirectory = "/etc/docker-test";
-      ExecStart = "${pkgs.docker-compose}/bin/docker-compose up -d";
+      WorkingDirectory = "/etc/csf-core";
+      
+      # Start containers
+      ExecStart = "${pkgs.docker-compose}/bin/docker-compose up -d --remove-orphans";
+      
+      # Stop containers gracefully
       ExecStop = "${pkgs.docker-compose}/bin/docker-compose down";
-      Restart = "on-failure";
+      
+      # Timeout settings
+      TimeoutStartSec = "300";
+      TimeoutStopSec = "120";
     };
   };
 
-  # Activation script to setup Docker Compose
+  # Activation script to setup Docker Compose for CSF-Core Backend
   system.activationScripts.docker-setup = {
     text = ''
-      # Create docker-compose directory
-      mkdir -p /etc/docker-test
+      # Create csf-core directory
+      mkdir -p /etc/csf-core
 
-      # Create docker-compose.yml
-      cat > /etc/docker-test/docker-compose.yml <<'EOF'
-version: '3.8'
+      # Create docker-compose.yml for CSF-Core Backend
+      cat > /etc/csf-core/docker-compose.yml <<'EOF'
 services:
-  nginx-test:
-    image: nginx:alpine
+  postgres:
+    image: postgres:16-alpine
+    container_name: csf-postgres
     ports:
-      - "8080:80"
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=csf_user
+      - POSTGRES_PASSWORD=csf_password
+      - POSTGRES_DB=csf_core
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./html:/usr/share/nginx/html:ro
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csf_user -d csf_core"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ghcr.io/cs-foundry/csf-core-backend:latest
+    container_name: csf-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://csf_user:csf_password@postgres:5432/csf_core
+      - JWT_SECRET=changeme_generate_secure_secret
+      - RUST_LOG=info
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
-  nginx-logs:
-EOF
-
-      # Create nginx config
-      cat > /etc/docker-test/nginx.conf <<'EOF'
-events {
-    worker_connections 1024;
-}
-
-http {
-    server {
-        listen 80;
-        server_name localhost;
-
-        location / {
-            root /usr/share/nginx/html;
-            index index.html;
-        }
-
-        location /health {
-            access_log off;
-            return 200 "healthy\n";
-            add_header Content-Type text/plain;
-        }
-    }
-}
-EOF
-
-      # Create HTML content
-      mkdir -p /etc/docker-test/html
-      cat > /etc/docker-test/html/index.html <<'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>CSF-Core Server</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-        .container { max-width: 600px; margin: 0 auto; }
-        h1 { color: #333; }
-        .status { color: green; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>CSF-Core Server läuft!</h1>
-        <p class="status">Docker & Docker Compose funktionieren!</p>
-        <p>Diese Seite wird von nginx in einem Docker Container serviert.</p>
-        <p><a href="/health">Health Check</a></p>
-    </div>
-</body>
-</html>
+  postgres_data:
+    driver: local
 EOF
 
       # Create test script
-      cat > /root/test-docker.sh <<'EOF'
+      cat > /root/test-csf-backend.sh <<'EOF'
 #!/bin/bash
-echo "=== CSF-Core Docker Test ==="
+echo "=== CSF-Core Backend Test ==="
 echo "Hostname: $(hostname)"
 echo "Date: $(date)"
 echo ""
@@ -236,18 +223,18 @@ echo "Running containers:"
 docker ps
 echo ""
 echo "Docker Compose status:"
-cd /etc/docker-test && docker-compose ps
+cd /etc/csf-core && docker-compose ps
 echo ""
 echo "=== Network Test ==="
-echo "Testing nginx container:"
-curl -s http://localhost:8080 | grep -o '<title>.*</title>' || echo "Port 8080 not responding"
+echo "Testing backend API:"
+curl -s http://localhost:8000/health || echo "Backend not responding"
 echo ""
-echo "Health check:"
-curl -s http://localhost:8080/health || echo "Health check failed"
+echo "Testing database connection:"
+docker exec csf-postgres pg_isready -U csf_user -d csf_core || echo "Database not ready"
 echo ""
 echo "=== Test Complete ==="
 EOF
-      chmod +x /root/test-docker.sh
+      chmod +x /root/test-csf-backend.sh
     '';
     deps = [];
   };
