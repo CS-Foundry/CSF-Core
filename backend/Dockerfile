@@ -3,7 +3,7 @@
 ###################
 # Backend Build Stage
 ###################
-FROM rust:latest AS backend-builder
+FROM rust:1.85-bookworm AS backend-builder
 
 WORKDIR /usr/src/app
 

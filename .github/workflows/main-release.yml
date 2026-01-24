@@ -67,7 +67,7 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.image_name }}-backend:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
   # Step 3: Build and Push Frontend Docker Image
   build-frontend-docker:
@@ -117,7 +117,7 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.image_name }}-frontend:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
   # Step 4: Summary
   summary:

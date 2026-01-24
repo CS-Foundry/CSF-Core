@@ -55,7 +55,7 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.image_name }}-backend:manual-latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
       - name: Summary
         run: |
@@ -102,7 +102,7 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.image_name }}-frontend:manual-latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
       - name: Summary
         run: |
