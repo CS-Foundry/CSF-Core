@@ -1,11 +1,23 @@
 # Multi-stage build for FinanceVault Backend (with embedded frontend proxy)
 
 ###################
+# Chef Stage - Prepare Recipe
+###################
+FROM rust:latest AS chef
+RUN cargo install cargo-chef
+WORKDIR /usr/src/app
+
+###################
+# Planner Stage - Analyze Dependencies
+###################
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+###################
 # Backend Build Stage
 ###################
-FROM rust:latest AS backend-builder
-
-WORKDIR /usr/src/app
+FROM chef AS backend-builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -14,30 +26,12 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace Cargo files
-COPY Cargo.toml ./
-COPY migration/Cargo.toml ./migration/
-COPY entity/Cargo.toml ./entity/
+# Build dependencies first (cached layer)
+COPY --from=planner /usr/src/app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# Create dummy source files for dependency caching
-RUN mkdir -p src && \
-    echo "fn main() {}" > src/main.rs && \
-    mkdir -p migration/src && \
-    echo "pub use sea_orm_migration::prelude::*; pub struct Migrator; impl MigratorTrait for Migrator { fn migrations() -> Vec<Box<dyn MigrationTrait>> { vec![] } }" > migration/src/lib.rs && \
-    mkdir -p entity/src && \
-    echo "pub mod entities; pub mod prelude; pub use entities::*;" > entity/src/lib.rs && \
-    mkdir -p entity/src/entities && \
-    echo "pub mod prelude { pub use super::*; }" > entity/src/entities/mod.rs
-
-# Build dependencies (this will be cached)
-RUN cargo build --release || true
-
-# Copy all source code
-COPY migration/src ./migration/src
-COPY entity/src ./entity/src
-COPY src ./src
-
-# Build the actual application
+# Copy source code and build application
+COPY . .
 RUN cargo build --release
 
 ###################
