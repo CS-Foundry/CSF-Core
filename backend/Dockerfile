@@ -36,6 +36,12 @@ COPY Cargo.toml ./
 COPY migration/Cargo.toml ./migration/
 COPY entity/Cargo.toml ./entity/
 
+# Create dummy source files for dependency caching
+RUN mkdir -p src migration/src entity/src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "pub fn dummy() {}" > migration/src/lib.rs && \
+    echo "pub fn dummy() {}" > entity/src/lib.rs
+
 # Build dependencies first (cached layer)
 COPY --from=planner /usr/src/app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json

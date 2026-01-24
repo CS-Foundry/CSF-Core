@@ -1,16 +1,17 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image (DEPRECATED - use main-release.yml or docker-build-manual.yml)
+
+# This workflow is deprecated and disabled
+# Use main-release.yml for automatic releases on main branch
+# Use docker-build-manual.yml for manual builds
 
 on:
-  push:
-    tags:
-      - "v*"
-  workflow_call:
+  # Disabled - no triggers
+  workflow_dispatch:
     inputs:
-      version:
-        description: "Version to tag the Docker images (e.g. 1.2.3)"
+      _disabled:
+        description: "This workflow is deprecated. Use docker-build-manual.yml instead."
         required: false
         type: string
-  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
