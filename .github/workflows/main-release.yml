@@ -74,8 +74,12 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           outputs: type=registry,name=ghcr.io/${{ steps.repo.outputs.image_name }}-backend,push-by-digest=true
-          cache-from: type=gha,scope=backend-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=backend-${{ matrix.arch }}
+          cache-from: |
+            type=gha,scope=backend-${{ matrix.arch }}
+            type=registry,ref=ghcr.io/${{ steps.repo.outputs.image_name }}-backend:buildcache-${{ matrix.arch }}
+          cache-to: |
+            type=gha,mode=max,scope=backend-${{ matrix.arch }}
+            type=registry,ref=ghcr.io/${{ steps.repo.outputs.image_name }}-backend:buildcache-${{ matrix.arch }},mode=max
           platforms: ${{ matrix.platform }}
           provenance: false
 
