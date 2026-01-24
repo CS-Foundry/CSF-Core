@@ -19,15 +19,25 @@ jobs:
     uses: ./.github/workflows/release.yml
     secrets: inherit
 
-  # Step 2: Build and Push Backend Docker Image
+  # Step 2: Build Backend Docker Images (Parallel by Architecture)
   build-backend-docker:
-    name: Build Backend Docker Image
+    name: Build Backend ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
     runs-on: ubuntu-latest
     needs: [release]
     if: needs.release.outputs.new_release_published == 'true'
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_name: ${{ steps.repo.outputs.image_name }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,20 +64,81 @@ jobs:
         run: |
           VERSION="${{ needs.release.outputs.new_release_version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building backend version: $VERSION"
+          echo "Building backend version: $VERSION for ${{ matrix.arch }}"
 
-      - name: Build and push Backend Docker image
+      - name: Build and push Backend Docker image by digest
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.image_name }}-backend:latest
-            ghcr.io/${{ steps.repo.outputs.image_name }}-backend:${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-          platforms: linux/amd64,linux/arm64
+          outputs: type=registry,name=ghcr.io/${{ steps.repo.outputs.image_name }}-backend,push-by-digest=true
+          cache-from: type=gha,scope=backend-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=backend-${{ matrix.arch }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-backend-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Step 3: Create Backend Multi-Arch Manifest
+  merge-backend-manifest:
+    name: Create Backend Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: [build-backend-docker, release]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-backend-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Convert repository name to lowercase
+        id: repo
+        run: |
+          echo "image_name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          IMAGE_NAME="ghcr.io/${{ steps.repo.outputs.image_name }}-backend"
+
+          docker buildx imagetools create \
+            -t ${IMAGE_NAME}:latest \
+            -t ${IMAGE_NAME}:${VERSION} \
+            $(printf '${IMAGE_NAME}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          IMAGE_NAME="ghcr.io/${{ steps.repo.outputs.image_name }}-backend"
+          docker buildx imagetools inspect ${IMAGE_NAME}:latest
 
   # Step 3: Build and Push Frontend Docker Image
   build-frontend-docker:
