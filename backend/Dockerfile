@@ -11,7 +11,12 @@ WORKDIR /usr/src/app
 # Planner Stage - Analyze Dependencies
 ###################
 FROM chef AS planner
-COPY . .
+COPY Cargo.toml ./
+COPY migration/Cargo.toml ./migration/
+COPY entity/Cargo.toml ./entity/
+COPY src ./src
+COPY migration/src ./migration/src
+COPY entity/src ./entity/src
 RUN cargo chef prepare --recipe-path recipe.json
 
 ###################
@@ -26,12 +31,19 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy Cargo.toml files for workspace structure
+COPY Cargo.toml ./
+COPY migration/Cargo.toml ./migration/
+COPY entity/Cargo.toml ./entity/
+
 # Build dependencies first (cached layer)
 COPY --from=planner /usr/src/app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build application
-COPY . .
+COPY src ./src
+COPY migration/src ./migration/src
+COPY entity/src ./entity/src
 RUN cargo build --release
 
 ###################
