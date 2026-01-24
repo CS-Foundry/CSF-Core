@@ -3,7 +3,7 @@
 ###################
 # Backend Build Stage
 ###################
-FROM rust:1.85-bookworm AS backend-builder
+FROM rust:latest AS backend-builder
 
 WORKDIR /usr/src/app
 
@@ -43,7 +43,7 @@ RUN cargo build --release
 ###################
 # Final Runtime Stage
 ###################
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 WORKDIR /app
 
