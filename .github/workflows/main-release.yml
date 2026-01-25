@@ -27,9 +27,11 @@ jobs:
         include:
           - platform: linux/amd64
             arch: amd64
+            runner: ubuntu-latest
           - platform: linux/arm64
             arch: arm64
-    runs-on: ubuntu-latest
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     needs: [release]
     if: needs.release.outputs.new_release_published == 'true'
     permissions:
@@ -137,7 +139,7 @@ jobs:
           docker buildx imagetools create \
             -t ${IMAGE_NAME}:latest \
             -t ${IMAGE_NAME}:${VERSION} \
-            $(printf '${IMAGE_NAME}@sha256:%s ' *)
+            $(printf "${IMAGE_NAME}@sha256:%s " *)
 
       - name: Inspect image
         run: |
