@@ -28,9 +28,11 @@ jobs:
         include:
           - platform: linux/amd64
             arch: amd64
+            runner: ubuntu-latest
           - platform: linux/arm64
             arch: arm64
-    runs-on: ubuntu-latest
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     if: inputs.build_target == 'both' || inputs.build_target == 'backend'
     steps:
       - name: Checkout repository
@@ -118,7 +120,7 @@ jobs:
           docker buildx imagetools create \
             -t ${IMAGE_NAME}:${{ inputs.version }} \
             -t ${IMAGE_NAME}:manual-latest \
-            $(printf '${IMAGE_NAME}@sha256:%s ' *)
+            $(printf "${IMAGE_NAME}@sha256:%s " *)
 
       - name: Inspect image
         run: |
