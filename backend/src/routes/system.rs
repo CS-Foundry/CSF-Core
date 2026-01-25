@@ -24,8 +24,19 @@ pub struct SystemMetricsResponse {
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/system/health", get(health_check))
         .route("/system/info", get(get_system_info))
         .route("/system/metrics", get(get_system_metrics))
+}
+
+/// Health check endpoint
+///
+/// Simple endpoint to check if the service is running
+async fn health_check() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "healthy",
+        "service": "csf-core-backend"
+    }))
 }
 
 /// Get local system information

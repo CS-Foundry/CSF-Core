@@ -50,6 +50,8 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY src ./src
 COPY migration/src ./migration/src
 COPY entity/src ./entity/src
+# Fix: Update timestamps to force rebuild, otherwise cargo might skip building if host files are older than dummy files
+RUN touch src/main.rs migration/src/lib.rs entity/src/lib.rs
 RUN cargo build --release
 
 ###################
@@ -64,6 +66,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     sqlite3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create data directory for SQLite
@@ -72,17 +75,16 @@ RUN mkdir -p /data
 # Copy backend binary from builder
 COPY --from=backend-builder /usr/src/app/target/release/backend /app/backend
 
-# Expose backend port (frontend proxy is handled by backend)
+# Expose backend port
 EXPOSE 8000
 
 # Set environment variables
 ENV DATABASE_URL=sqlite:/data/finance.db
 ENV RUST_LOG=info
-ENV FRONTEND_URL=http://localhost:3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD ["/app/backend", "--health-check"] || exit 1
+    CMD curl -f http://localhost:8000/api/system/health || exit 1
 
-# Start backend (it will proxy to frontend)
+# Start backend
 CMD ["./backend"]
