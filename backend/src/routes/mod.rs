@@ -11,7 +11,6 @@ use tracing::{info_span, Span};
 
 pub mod agents;
 pub mod expenses;
-pub mod frontend;
 pub mod marketplace;
 pub mod organizations;
 pub mod resource_groups;
@@ -67,7 +66,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(users::users_routes());
 
     Router::new()
-        // API routes have priority
+        // API routes
         .logged_nest("/api", api_router)
         .layer(
             TraceLayer::new_for_http()
@@ -92,6 +91,4 @@ pub fn create_router() -> Router<AppState> {
                 ),
         )
         .layer(cors)
-        // Frontend proxy as fallback - catches all routes not handled above
-        .fallback_service(frontend::frontend_router())
 }

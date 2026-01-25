@@ -275,7 +275,7 @@ jobs:
             echo "  ghcr.io/${REPO_LOWER}-backend:latest" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "# Run frontend" >> $GITHUB_STEP_SUMMARY
-            echo "docker run -d -p 80:80 \\" >> $GITHUB_STEP_SUMMARY
+            echo "docker run -d -p 3000:3000 \\" >> $GITHUB_STEP_SUMMARY
             echo "  --name csf-frontend \\" >> $GITHUB_STEP_SUMMARY
             echo "  ghcr.io/${REPO_LOWER}-frontend:latest" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
