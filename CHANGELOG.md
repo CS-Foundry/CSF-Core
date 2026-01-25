@@ -2,6 +2,13 @@
 
 All notable changes to CSF-Core will be documented in this file.
 
+## [0.1.11](https://github.com/CS-Foundry/CSF-Core/compare/v0.1.10...v0.1.11) (2026-01-25)
+
+
+### Bug Fixes
+
+* arm runner and manifest error ([a1ad641](https://github.com/CS-Foundry/CSF-Core/commit/a1ad641c705482d52e592b1ff729dfcdbab958f5))
+
 ## [0.1.10](https://github.com/CS-Foundry/CSF-Core/compare/v0.1.9...v0.1.10) (2026-01-24)
 
 
