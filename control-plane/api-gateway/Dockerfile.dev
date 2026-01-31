@@ -1,0 +1,30 @@
+# Development Dockerfile for API Gateway
+FROM rust:latest
+
+WORKDIR /app
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpq-dev \
+    && cargo install cargo-watch --version 7.8.0 --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+
+# Copy backend and dependencies
+COPY backend/ ./backend/
+COPY control-plane/api-gateway/ ./control-plane/api-gateway/
+COPY entity/ ./entity/
+COPY migration/ ./migration/
+COPY shared/ ./shared/
+
+# Pre-build dependencies
+RUN cargo build --workspace
+
+# Expose port
+EXPOSE 8000
+
+CMD ["cargo", "watch", "-x", "run --bin api-gateway"]

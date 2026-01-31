@@ -1,0 +1,24 @@
+[package]
+name = "volume-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "volume-manager"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+shared = { path = "../../shared" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+dotenvy = { workspace = true }
+anyhow = { workspace = true }

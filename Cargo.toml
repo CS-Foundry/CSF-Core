@@ -1,12 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/agent",
-    "crates/cli",
-    "crates/control-plane",
-    "crates/entity",
-    "crates/migration",
-    "crates/shared",
+    "agent",
+    "cli",
+    "control-plane/api-gateway",
+    "control-plane/scheduler",
+    "control-plane/failover-controller",
+    "control-plane/sdn-controller",
+    "control-plane/volume-manager",
+    "control-plane/registry",
+    "entity",
+    "migration",
+    "shared",
 ]
 
 [workspace.package]

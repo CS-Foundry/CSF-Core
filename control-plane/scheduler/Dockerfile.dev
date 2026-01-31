@@ -1,0 +1,23 @@
+# Development Dockerfile for Scheduler
+FROM rust:latest
+
+WORKDIR /app
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && cargo install cargo-watch --version 7.8.0 --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+
+# Copy service and dependencies
+COPY control-plane/scheduler/ ./control-plane/scheduler/
+COPY shared/ ./shared/
+
+# Pre-build dependencies
+RUN cargo build --workspace
+
+CMD ["cargo", "watch", "-x", "run --bin scheduler"]

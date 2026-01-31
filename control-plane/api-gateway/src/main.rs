@@ -5,6 +5,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 mod auth;
 mod auth_service;
+mod db;
 mod docker_service;
 mod init;
 mod rbac_service;
@@ -81,11 +82,13 @@ async fn main() {
     // Load .env file if it exists
     dotenvy::dotenv().ok();
 
-    // Initialize shared logger
-    shared::init_logger();
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     // Initialize database connection and run migrations
-    let db_conn = match shared::establish_connection().await {
+    let db_conn = match db::establish_connection().await {
         Ok(conn) => {
             tracing::info!("Database connection established successfully");
             conn

@@ -1,4 +1,4 @@
-# Development Dockerfile for Agent
+# Development Dockerfile for Registry
 FROM rust:latest
 
 WORKDIR /app
@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y \
 # Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
 
-# Copy all crate directories
-COPY crates/ ./crates/
+# Copy service and dependencies
+COPY control-plane/registry/ ./control-plane/registry/
+COPY shared/ ./shared/
 
-# Pre-build dependencies (this layer will be cached)
+# Pre-build dependencies
 RUN cargo build --workspace
 
-# Default command (can be overridden in docker-compose)
-CMD ["cargo", "watch", "-x", "run --bin agent"]
+CMD ["cargo", "watch", "-x", "run --bin registry"]
