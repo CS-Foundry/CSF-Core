@@ -2,6 +2,7 @@
 name = "entity"
 version = "0.1.0"
 edition = "2021"
+license = "SEE LICENSE IN LICENSE"
 
 [dependencies]
 sea-orm = { version = "1.1.0", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros" ] }

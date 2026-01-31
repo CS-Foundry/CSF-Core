@@ -1,0 +1,22 @@
+# Development Dockerfile for CLI
+FROM rust:latest
+
+WORKDIR /app
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+
+# Copy all crate directories
+COPY crates/ ./crates/
+
+# Pre-build dependencies (this layer will be cached)
+RUN cargo build --workspace
+
+# Default command (can be overridden in docker-compose)
+CMD ["cargo", "run", "--bin", "csf"]

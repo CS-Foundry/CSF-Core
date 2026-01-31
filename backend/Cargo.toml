@@ -2,6 +2,7 @@
 name = "backend"
 version = "0.2.2"
 edition = "2021"
+license = "SEE LICENSE IN LICENSE"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

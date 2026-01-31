@@ -1,33 +1,14 @@
-version: '3.8'
-
 services:
-  frontend-dev:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      - JWT_SECRET=${JWT_SECRET}
-      - PUBLIC_API_BASE_URL=http://localhost:8000/api
-    command: sh -c "npm install && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
-    depends_on:
-      - backend-dev
-
+  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
+    container_name: csf-postgres-dev
+    environment:
+      POSTGRES_USER: csf_user
+      POSTGRES_PASSWORD: csf_password
+      POSTGRES_DB: csf_core
     ports:
       - "5432:5432"
-    environment:
-      - POSTGRES_USER=csf_user
-      - POSTGRES_PASSWORD=csf_password
-      - POSTGRES_DB=csf_core
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -35,30 +16,113 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - csf-network
 
-  backend-dev:
-    env_file:
-      - .env
+  # Control Plane (Backend API)
+  control-plane:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: crates/control-plane/Dockerfile.dev
+    container_name: csf-control-plane-dev
+    environment:
+      DATABASE_URL: postgres://csf_user:csf_password@postgres:5432/csf_core
+      RUST_LOG: debug
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_in_production}
+      RSA_KEY_SIZE: "2048"
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/usr/src/app
-      - cargo_registry:/usr/local/cargo/registry
-      - cargo_target:/usr/src/app/target
-    environment:
-      - DATABASE_URL=postgres://csf_user:csf_password@postgres:5432/csf_core
-      - CARGO_HOME=/usr/local/cargo
-      - JWT_SECRET=${JWT_SECRET}
-      - RUST_LOG=debug
-    command: cargo watch -x run
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./crates:/app/crates
+      - ./Cargo.toml:/app/Cargo.toml
+      - cargo_cache:/usr/local/cargo/registry
+      - cargo_target_control_plane:/app/target
+    networks:
+      - csf-network
+    command: cargo watch -x "run --bin control-plane"
+    restart: unless-stopped
+
+  # Agent
+  agent:
+    build:
+      context: .
+      dockerfile: crates/agent/Dockerfile.dev
+    container_name: csf-agent-dev
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8000
+      RUST_LOG: debug
+    depends_on:
+      - control-plane
+    volumes:
+      - ./crates:/app/crates
+      - ./Cargo.toml:/app/Cargo.toml
+      - cargo_cache:/usr/local/cargo/registry
+      - cargo_target_agent:/app/target
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - csf-network
+    command: cargo watch -x "run --bin agent"
+    restart: unless-stopped
+
+  # CLI (runs once for testing)
+  cli:
+    build:
+      context: .
+      dockerfile: crates/cli/Dockerfile.dev
+    container_name: csf-cli-dev
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8000
+      RUST_LOG: info
+    depends_on:
+      - control-plane
+    volumes:
+      - ./crates:/app/crates
+      - ./Cargo.toml:/app/Cargo.toml
+      - cargo_cache:/usr/local/cargo/registry
+      - cargo_target_cli:/app/target
+    networks:
+      - csf-network
+    command: cargo run --bin csf
+    profiles:
+      - tools
+
+  # Frontend Development Server
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: csf-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret}
+      PUBLIC_API_BASE_URL: http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && JWT_SECRET=${JWT_SECRET} npm run dev -- --host 0.0.0.0 --port 3000"
+    depends_on:
+      - control-plane
+    networks:
+      - csf-network
 
 volumes:
-  cargo_registry:
-  cargo_target:
   postgres_data:
+    driver: local
+  cargo_cache:
+    driver: local
+  cargo_target_control_plane:
+    driver: local
+  cargo_target_agent:
+    driver: local
+  cargo_target_cli:
+    driver: local
+
+networks:
+  csf-network:
+    driver: bridge
+
