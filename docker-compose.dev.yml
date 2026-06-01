@@ -57,6 +57,7 @@ services:
       VOLUME_MANAGER_URL: http://volume-manager:8003
       FAILOVER_CONTROLLER_URL: http://failover-controller:8004
       SDN_CONTROLLER_URL: http://sdn-controller:8005
+      FRONTEND_URL: http://localhost:5173
     ports:
       - "8000:8000"
     depends_on:
@@ -180,6 +181,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.dev
+    container_name: csfx-app-dev
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./app/src:/app/src
+      - ./app/static:/app/static
+    depends_on:
+      - api-gateway
+    networks:
+      - csfx-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
