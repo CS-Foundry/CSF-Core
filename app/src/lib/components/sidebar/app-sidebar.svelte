@@ -16,11 +16,6 @@
     import IconBucket from "./icon-bucket.svelte";
 
     const data = {
-        user: {
-            name: "shadcn",
-            email: "m@example.com",
-            avatar: "/avatars/shadcn.jpg",
-        },
         navBottom: [
             {
                 title: "Monitoring",
@@ -36,13 +31,13 @@
         navMain: [
             {
                 title: "Dashboard",
-                url: "#",
+                url: "/",
                 icon: LayoutDashboard,
                 isActive: true,
             },
             {
                 title: "Nodes",
-                url: "#",
+                url: "/nodes",
                 icon: Server,
             },
             {
@@ -121,7 +116,7 @@
         <NavMain items={data.navBottom} label="" class="mt-auto" />
     </Sidebar.Content>
     <Sidebar.Footer>
-        <NavUser user={data.user} />
+        <NavUser />
     </Sidebar.Footer>
     <Sidebar.Rail />
 </Sidebar.Root>
