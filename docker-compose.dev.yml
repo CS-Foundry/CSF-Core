@@ -44,6 +44,27 @@ services:
     networks:
       - csfx-network
 
+  migrate:
+    <<: *rust-service
+    container_name: csfx-migrate-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./control-plane/csfx-migrate:/app/control-plane/csfx-migrate
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_migrate:/app/target
+    command: cargo run -p csfx-migrate
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(cat /tmp/migrate-done 2>/dev/null) = 'ok' ] || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   api-gateway:
     <<: *rust-service
     container_name: csfx-api-gateway-dev
@@ -63,6 +84,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./control-plane/api-gateway:/app/control-plane/api-gateway
       - cargo_target_api_gateway:/app/target
@@ -84,6 +107,8 @@ services:
         condition: service_healthy
       etcd:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./control-plane/registry:/app/control-plane/registry
       - cargo_target_registry:/app/target
@@ -109,6 +134,8 @@ services:
         condition: service_healthy
       etcd:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./control-plane/scheduler:/app/control-plane/scheduler
       - cargo_target_scheduler:/app/target
@@ -129,6 +156,8 @@ services:
         condition: service_healthy
       etcd:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./control-plane/volume-manager:/app/control-plane/volume-manager
       - cargo_target_volume_manager:/app/target
@@ -172,6 +201,8 @@ services:
         condition: service_healthy
       etcd:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./control-plane/sdn-controller:/app/control-plane/sdn-controller
       - cargo_target_sdn_controller:/app/target
@@ -204,6 +235,7 @@ volumes:
   postgres_data:
   cargo_cache:
   cargo_git:
+  cargo_target_migrate:
   cargo_target_api_gateway:
   cargo_target_registry:
   cargo_target_scheduler:

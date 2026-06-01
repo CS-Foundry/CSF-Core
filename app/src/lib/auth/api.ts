@@ -23,22 +23,56 @@ async function fetchPublicKeyPem(): Promise<string> {
     return data.public_key as string;
 }
 
-function pemToArrayBuffer(pem: string): ArrayBuffer {
+function pkcs1PemToSpki(pem: string): ArrayBuffer {
     const b64 = pem
         .replace('-----BEGIN RSA PUBLIC KEY-----', '')
         .replace('-----END RSA PUBLIC KEY-----', '')
         .replace(/\s/g, '');
-    const binary = atob(b64);
-    const buf = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
-    return buf.buffer;
+    const pkcs1 = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+    // SPKI header for RSA with SHA-256: OID 1.2.840.113549.1.1.1
+    const spkiHeader = new Uint8Array([
+        0x30, 0x0d,
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+        0x05, 0x00,
+    ]);
+
+    // BIT STRING wrapper: tag 0x03, length = pkcs1.length + 1, leading 0x00
+    const bitStringBody = new Uint8Array(pkcs1.length + 1);
+    bitStringBody[0] = 0x00;
+    bitStringBody.set(pkcs1, 1);
+
+    const bitStringLen = bitStringBody.length;
+    const bitStringLenBytes = encodeAsn1Length(bitStringLen);
+    const bitString = new Uint8Array(1 + bitStringLenBytes.length + bitStringLen);
+    bitString[0] = 0x03;
+    bitString.set(bitStringLenBytes, 1);
+    bitString.set(bitStringBody, 1 + bitStringLenBytes.length);
+
+    const spkiBody = new Uint8Array(spkiHeader.length + bitString.length);
+    spkiBody.set(spkiHeader);
+    spkiBody.set(bitString, spkiHeader.length);
+
+    const spkiBodyLen = encodeAsn1Length(spkiBody.length);
+    const spki = new Uint8Array(1 + spkiBodyLen.length + spkiBody.length);
+    spki[0] = 0x30;
+    spki.set(spkiBodyLen, 1);
+    spki.set(spkiBody, 1 + spkiBodyLen.length);
+
+    return spki.buffer;
+}
+
+function encodeAsn1Length(len: number): Uint8Array {
+    if (len < 0x80) return new Uint8Array([len]);
+    if (len < 0x100) return new Uint8Array([0x81, len]);
+    return new Uint8Array([0x82, (len >> 8) & 0xff, len & 0xff]);
 }
 
 async function importRsaKey(pem: string): Promise<CryptoKey> {
-    const keyData = pemToArrayBuffer(pem);
+    const spki = pkcs1PemToSpki(pem);
     return crypto.subtle.importKey(
         'spki',
-        keyData,
+        spki,
         { name: 'RSA-OAEP', hash: 'SHA-256' },
         false,
         ['encrypt'],
