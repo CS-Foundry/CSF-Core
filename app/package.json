@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"@iconify/svelte": "^5.2.1",
+		"@jis3r/icons": "^2.7.0",
 		"geist": "^1.7.0"
 	}
 }

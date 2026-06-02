@@ -90,6 +90,12 @@ services:
       - ./control-plane/api-gateway:/app/control-plane/api-gateway
       - cargo_target_api_gateway:/app/target
     command: cargo watch -x "run -p api-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   registry:
     <<: *rust-service
@@ -98,6 +104,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
       ETCD_ENDPOINTS: http://etcd:2379
       REGISTRY_PORT: "8001"
+      LISTEN_ADDR: "0.0.0.0"
       RUST_LOG: ${RUST_LOG:-debug}
       SCHEDULER_SERVICE_URL: http://scheduler:8002
     ports:
@@ -126,6 +133,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
       ETCD_ENDPOINTS: http://etcd:2379
       SCHEDULER_PORT: "8002"
+      LISTEN_ADDR: "0.0.0.0"
       RUST_LOG: ${RUST_LOG:-debug}
     ports:
       - "8002:8002"
@@ -148,6 +156,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
       ETCD_ENDPOINTS: http://etcd:2379
       VOLUME_MANAGER_PORT: "8003"
+      LISTEN_ADDR: "0.0.0.0"
       RUST_LOG: ${RUST_LOG:-debug}
     ports:
       - "8003:8003"
@@ -169,6 +178,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
       FAILOVER_CONTROLLER_PORT: "8004"
+      LISTEN_ADDR: "0.0.0.0"
       SCHEDULER_SERVICE_URL: http://scheduler:8002
       VOLUME_MANAGER_URL: http://volume-manager:8003
       RUST_LOG: ${RUST_LOG:-debug}
@@ -193,6 +203,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
       ETCD_URL: http://etcd:2379
       SDN_CONTROLLER_PORT: "8005"
+      LISTEN_ADDR: "0.0.0.0"
       RUST_LOG: ${RUST_LOG:-debug}
     ports:
       - "8005:8005"
@@ -212,6 +223,66 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  agent-1:
+    <<: *rust-service
+    container_name: csfx-agent-dev-1
+    hostname: dev-node-1
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_1:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
+
+  agent-2:
+    <<: *rust-service
+    container_name: csfx-agent-dev-2
+    hostname: dev-node-2
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_2:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
+
+  agent-3:
+    <<: *rust-service
+    container_name: csfx-agent-dev-3
+    hostname: dev-node-3
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_3:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
 
   app:
     build:
@@ -242,6 +313,10 @@ volumes:
   cargo_target_volume_manager:
   cargo_target_failover_controller:
   cargo_target_sdn_controller:
+  cargo_target_agent:
+  agent_state_1:
+  agent_state_2:
+  agent_state_3:
 
 networks:
   csfx-network:

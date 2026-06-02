@@ -19,6 +19,10 @@ function createAuthStore() {
         if (stored) state.token = stored;
     }
 
+    function setUser(profile: UserProfile) {
+        state.user = profile;
+    }
+
     function setSession(response: AuthResponse, profile?: UserProfile) {
         state.token = response.token;
         if (profile) {
@@ -46,6 +50,7 @@ function createAuthStore() {
         get user() { return state.user; },
         init,
         setSession,
+        setUser,
         clearSession,
     };
 }

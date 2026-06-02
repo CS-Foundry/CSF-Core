@@ -3,47 +3,45 @@
     import ChartPieIcon from "@lucide/svelte/icons/chart-pie";
     import MapIcon from "@lucide/svelte/icons/map";
     import BookOpenIcon from "@lucide/svelte/icons/book-open";
-    import {
-        LayoutDashboard,
-        Server,
-        Layers,
-        ShipWheel,
-        Container,
-        LaptopMinimal,
-        Activity,
-        Logs,
-    } from "@lucide/svelte";
     import IconBucket from "./icon-bucket.svelte";
+    import IconActivity from "./icon-activity.svelte";
+    import IconLogs from "./icon-logs.svelte";
+    import IconDashboard from "./icon-dashboard.svelte";
+    import IconServer from "./icon-server.svelte";
+    import IconLayers from "./icon-layers.svelte";
+    import IconShipWheel from "./icon-ship-wheel.svelte";
+    import IconContainer from "./icon-container.svelte";
+    import IconLaptop from "./icon-laptop.svelte";
 
     const data = {
         navBottom: [
             {
                 title: "Monitoring",
                 url: "#",
-                icon: Activity,
+                icon: IconActivity,
             },
             {
                 title: "Logs",
                 url: "#",
-                icon: Logs,
+                icon: IconLogs,
             },
         ],
         navMain: [
             {
                 title: "Dashboard",
                 url: "/",
-                icon: LayoutDashboard,
+                icon: IconDashboard,
                 isActive: true,
             },
             {
                 title: "Nodes",
                 url: "/nodes",
-                icon: Server,
+                icon: IconServer,
             },
             {
                 title: "Resource groups",
                 url: "#",
-                icon: Layers,
+                icon: IconLayers,
             },
         ],
         projects: [
@@ -55,17 +53,17 @@
             {
                 name: "Kubernetes",
                 url: "#",
-                icon: ShipWheel,
+                icon: IconShipWheel,
             },
             {
                 name: "Docker",
                 url: "#",
-                icon: Container,
+                icon: IconContainer,
             },
             {
                 name: "Virtual Machines",
                 url: "#",
-                icon: LaptopMinimal,
+                icon: IconLaptop,
             },
         ],
     };

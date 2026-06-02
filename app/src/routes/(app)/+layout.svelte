@@ -15,7 +15,8 @@
             return;
         }
         try {
-            await validateSession(auth.token);
+            const profile = await validateSession(auth.token);
+            auth.setUser(profile);
         } catch {
             auth.clearSession();
             goto("/login");
