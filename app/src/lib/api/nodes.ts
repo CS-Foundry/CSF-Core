@@ -25,6 +25,29 @@ export interface NodeMetrics {
     disk_used_bytes: number | null;
 }
 
+export interface NodeMetricsLatest {
+    id: string;
+    agent_id: string;
+    timestamp: string;
+    cpu_model: string | null;
+    cpu_cores: number | null;
+    cpu_threads: number | null;
+    cpu_usage_percent: number | null;
+    memory_total_bytes: number | null;
+    memory_used_bytes: number | null;
+    memory_usage_percent: number | null;
+    disk_total_bytes: number | null;
+    disk_used_bytes: number | null;
+    disk_usage_percent: number | null;
+    network_rx_bytes: number | null;
+    network_tx_bytes: number | null;
+    os_name: string | null;
+    os_version: string | null;
+    kernel_version: string | null;
+    hostname: string | null;
+    uptime_seconds: number | null;
+}
+
 export interface ClusterStats {
     node_count: number;
     online_count: number;
@@ -50,5 +73,21 @@ export async function getClusterStats(token: string): Promise<ClusterStats> {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`system/stats fetch failed: ${res.status}`);
+    return res.json();
+}
+
+export async function getNode(token: string, id: string): Promise<Node> {
+    const res = await fetch(`${API_BASE}/agents/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`agent fetch failed: ${res.status}`);
+    return res.json();
+}
+
+export async function getNodeMetricsLatest(token: string, id: string): Promise<NodeMetricsLatest> {
+    const res = await fetch(`${API_BASE}/agents/${id}/metrics/latest`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`metrics fetch failed: ${res.status}`);
     return res.json();
 }

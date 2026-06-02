@@ -3,11 +3,14 @@
     import { auth } from "$lib/auth/store.svelte";
     import { listNodes, getClusterStats, type Node, type ClusterStats } from "$lib/api/nodes";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+    import NodeDetailSheet from "$lib/components/nodes/NodeDetailSheet.svelte";
 
     let nodes = $state<Node[]>([]);
     let stats = $state<ClusterStats | null>(null);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let selectedNode = $state<Node | null>(null);
+    let sheetOpen = $state(false);
 
     onMount(async () => {
         if (!auth.token) return;
@@ -22,6 +25,16 @@
             loading = false;
         }
     });
+
+    function openNode(node: Node) {
+        selectedNode = node;
+        sheetOpen = true;
+    }
+
+    function closeSheet() {
+        sheetOpen = false;
+        selectedNode = null;
+    }
 
     function bytesToGb(bytes: number | null): string {
         if (bytes == null) return "-";
@@ -95,7 +108,10 @@
                     </tr>
                 {:else}
                     {#each nodes as node (node.id)}
-                        <tr class="border-t hover:bg-muted/30 transition-colors">
+                        <tr
+                            class="border-t hover:bg-muted/30 transition-colors cursor-pointer"
+                            onclick={() => openNode(node)}
+                        >
                             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{node.id.slice(0, 8)}</td>
                             <td class="px-4 py-3 font-medium">{node.hostname}</td>
                             <td class="px-4 py-3 text-muted-foreground">{node.ip_address ?? "-"}</td>
@@ -115,3 +131,5 @@
         </table>
     </div>
 </div>
+
+<NodeDetailSheet node={selectedNode} open={sheetOpen} onClose={closeSheet} />
