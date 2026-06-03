@@ -1,6 +1,6 @@
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
+use axum::{extract::{Query, State}, http::StatusCode, response::Json, routing::get, Router};
 use entity::entities::{agent_metrics, agents};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder, Statement};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::middleware::AuthenticatedUser;
@@ -60,12 +60,24 @@ fn is_container_id(hostname: &str) -> bool {
         && trimmed.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HealthHistoryPoint {
+    pub bucket: String,
+    pub online_count: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryRangeQuery {
+    pub range: Option<String>,
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/system/health", get(health_check))
         .route("/system/info", get(get_system_info))
         .route("/system/metrics", get(get_system_metrics))
         .route("/system/stats", get(get_cluster_stats))
+        .route("/system/stats/history", get(get_health_history))
 }
 
 async fn health_check() -> Json<serde_json::Value> {
@@ -201,4 +213,57 @@ async fn get_cluster_stats(
         used_disk_bytes: used_disk,
         nodes,
     }))
+}
+
+async fn get_health_history(
+    _auth: AuthenticatedUser,
+    Query(params): Query<HistoryRangeQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<HealthHistoryPoint>>, StatusCode> {
+    let range = params.range.as_deref().unwrap_or("1h");
+
+    let (interval_str, bucket_str, limit_n) = match range {
+        "7d" => ("7 days", "1 hour", 168usize),
+        "30d" => ("30 days", "6 hours", 120usize),
+        _ => ("1 hour", "5 minutes", 12usize),
+    };
+
+    let sql = format!(
+        r#"
+        SELECT
+            date_trunc('{bucket}', timestamp) AS bucket,
+            COUNT(DISTINCT agent_id) AS online_count
+        FROM agent_metrics
+        WHERE timestamp >= NOW() - INTERVAL '{interval}'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT {limit}
+        "#,
+        bucket = bucket_str,
+        interval = interval_str,
+        limit = limit_n,
+    );
+
+    let rows = state
+        .db_conn
+        .query_all(Statement::from_string(DatabaseBackend::Postgres, sql))
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to query health history");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let points = rows
+        .into_iter()
+        .map(|row| {
+            let bucket: chrono::NaiveDateTime = row.try_get("", "bucket").unwrap_or_default();
+            let online_count: i64 = row.try_get("", "online_count").unwrap_or(0);
+            HealthHistoryPoint {
+                bucket: bucket.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                online_count,
+            }
+        })
+        .collect();
+
+    Ok(Json(points))
 }

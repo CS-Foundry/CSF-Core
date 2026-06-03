@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
     import { auth } from "$lib/auth/store.svelte";
-    import { listNodes, getClusterStats, type Node, type ClusterStats } from "$lib/api/nodes";
+    import { listNodes, getClusterStats, getHealthHistory, type Node, type ClusterStats, type HealthHistoryPoint } from "$lib/api/nodes";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
     import NodeDetailSheet from "$lib/components/nodes/NodeDetailSheet.svelte";
@@ -13,13 +13,36 @@
     let selectedNode = $state<Node | null>(null);
     let sheetOpen = $state(false);
 
+    type HealthRange = '1h' | '7d' | '30d';
+
     let onlineHistory = $state<number[]>([]);
     let cpuHistory = $state<number[]>([]);
     let memHistory = $state<number[]>([]);
+    let healthRange = $state<HealthRange>('1h');
+    let healthHistoryData = $state<Record<HealthRange, number[]>>({ '1h': [], '7d': [], '30d': [] });
 
     let pollInterval: ReturnType<typeof setInterval> | null = null;
     let refreshing = $state(false);
     let addNodePulsing = $state(false);
+
+    function sparklineValues(): number[] {
+        const hist = healthHistoryData[healthRange];
+        return hist.length >= 2 ? hist : onlineHistory;
+    }
+
+    async function fetchHealthHistory(range: HealthRange) {
+        if (!auth.token) return;
+        try {
+            const points = await getHealthHistory(auth.token, range);
+            healthHistoryData[range] = points.map((p: HealthHistoryPoint) => p.online_count);
+        } catch {
+            // non-fatal
+        }
+    }
+
+    $effect(() => {
+        fetchHealthHistory(healthRange);
+    });
 
     async function fetchStats() {
         if (!auth.token) return;
@@ -29,6 +52,7 @@
 
             const onlinePct = s.node_count > 0 ? (s.online_count / s.node_count) * 100 : 0;
             onlineHistory = [...onlineHistory.slice(-23), onlinePct];
+            healthHistoryData['1h'] = [...healthHistoryData['1h'].slice(-11), s.online_count];
 
             const cpuPct = s.avg_cpu_usage_percent ?? 0;
             cpuHistory = [...cpuHistory.slice(-23), cpuPct];
@@ -193,16 +217,26 @@
             </div>
 
             <div class="border rounded-lg p-4 flex flex-col gap-2">
-                <p class="text-xs text-muted-foreground">Healthy</p>
+                <div class="flex items-center justify-between">
+                    <p class="text-xs text-muted-foreground">Healthy</p>
+                    <div class="flex items-center gap-0.5">
+                        {#each (['1h', '7d', '30d'] as HealthRange[]) as r}
+                            <button
+                                class="px-1.5 py-0.5 text-[10px] rounded transition-colors {healthRange === r ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={() => healthRange = r}
+                            >{r}</button>
+                        {/each}
+                    </div>
+                </div>
                 <div class="flex items-end justify-between gap-2">
                     <div class="flex items-center gap-2">
                         <span class="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0"></span>
                         <p class="text-2xl font-semibold">{stats.online_count}</p>
                     </div>
-                    {#if onlineHistory.length >= 2}
+                    {#if sparklineValues().length >= 2}
                         <svg width="72" height="32" class="text-green-500 shrink-0">
                             <path
-                                d={sparklinePath(onlineHistory, 72, 28)}
+                                d={sparklinePath(sparklineValues(), 72, 28)}
                                 fill="none"
                                 stroke="currentColor"
                                 stroke-width="1.5"

@@ -65,19 +65,42 @@
     }
 
     function memPct(): number | null {
-        if (!metrics?.memory_total_bytes || !metrics?.memory_used_bytes) return null;
-        return (metrics.memory_used_bytes / metrics.memory_total_bytes) * 100;
+        if (metrics?.memory_usage_percent != null) return metrics.memory_usage_percent;
+        if (metrics?.memory_total_bytes != null && metrics?.memory_used_bytes != null && metrics.memory_total_bytes > 0) {
+            return (metrics.memory_used_bytes / metrics.memory_total_bytes) * 100;
+        }
+        return null;
     }
 
     function diskPct(): number | null {
-        if (!metrics?.disk_total_bytes || !metrics?.disk_used_bytes) return null;
-        return (metrics.disk_used_bytes / metrics.disk_total_bytes) * 100;
+        if (metrics?.disk_usage_percent != null) return metrics.disk_usage_percent;
+        if (metrics?.disk_total_bytes != null && metrics?.disk_used_bytes != null && metrics.disk_total_bytes > 0) {
+            return (metrics.disk_used_bytes / metrics.disk_total_bytes) * 100;
+        }
+        return null;
     }
 
-    function netPct(): number {
-        const rx = metrics?.network_rx_bytes ?? 0;
-        const tx = metrics?.network_tx_bytes ?? 0;
-        return Math.min(((rx + tx) / 1_073_741_824) * 100, 100);
+    function netRxGb(): number {
+        return (metrics?.network_rx_bytes ?? 0) / 1_073_741_824;
+    }
+
+    function netTxGb(): number {
+        return (metrics?.network_tx_bytes ?? 0) / 1_073_741_824;
+    }
+
+    function netRxPct(): number {
+        return Math.min((netRxGb() / 100) * 100, 100);
+    }
+
+    function netTxPct(): number {
+        return Math.min((netTxGb() / 100) * 100, 100);
+    }
+
+    function formatBytes(bytes: number | null): string {
+        if (bytes == null) return '-';
+        if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + ' GB';
+        if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + ' MB';
+        return (bytes / 1024).toFixed(1) + ' KB';
     }
 
     function statusDotClass(status: string): string {
@@ -89,10 +112,10 @@
         }
     }
 
-    function gaugeStrokeDasharray(value: number, radius: number): string {
+    function gaugeArc(value: number, radius: number): { dasharray: string; circumference: number } {
         const circumference = 2 * Math.PI * radius;
         const filled = (value / 100) * circumference;
-        return `${filled.toFixed(1)} ${circumference.toFixed(1)}`;
+        return { dasharray: `${filled.toFixed(1)} ${circumference.toFixed(1)}`, circumference };
     }
 
     function gaugeColor(value: number): string {
@@ -123,26 +146,28 @@
 </script>
 
 {#snippet gaugeCard(value: number, label: string, detail: string)}
-    <div class="border rounded-lg p-3 flex items-center gap-3">
-        <div class="relative shrink-0">
-            <svg width="52" height="52" viewBox="0 0 52 52" style="color: {gaugeColor(value)}">
-                <circle cx="26" cy="26" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-opacity="0.12"/>
-                <circle
-                    cx="26" cy="26" r="20" fill="none"
-                    stroke="currentColor" stroke-width="4"
-                    stroke-dasharray={gaugeStrokeDasharray(value, 20)}
-                    stroke-dashoffset={2 * Math.PI * 20 * 0.25}
-                    stroke-linecap="round"
-                    transform="rotate(-90 26 26)"
-                />
-            </svg>
-            <span class="absolute inset-0 flex items-center justify-center text-xs font-semibold">{value.toFixed(0)}%</span>
+    {#if true}
+        {@const arc = gaugeArc(value, 20)}
+        <div class="border rounded-lg p-3 flex items-center gap-3">
+            <div class="relative shrink-0">
+                <svg width="52" height="52" viewBox="0 0 52 52" style="color: {gaugeColor(value)}">
+                    <circle cx="26" cy="26" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-opacity="0.12"/>
+                    <circle
+                        cx="26" cy="26" r="20" fill="none"
+                        stroke="currentColor" stroke-width="4"
+                        stroke-dasharray={arc.dasharray}
+                        stroke-linecap="round"
+                        transform="rotate(-180 26 26)"
+                    />
+                </svg>
+                <span class="absolute inset-0 flex items-center justify-center text-xs font-semibold">{value.toFixed(0)}%</span>
+            </div>
+            <div class="min-w-0">
+                <p class="text-xs font-medium">{label}</p>
+                <p class="text-xs text-muted-foreground truncate leading-tight mt-0.5">{detail}</p>
+            </div>
         </div>
-        <div class="min-w-0">
-            <p class="text-xs font-medium">{label}</p>
-            <p class="text-xs text-muted-foreground truncate leading-tight mt-0.5">{detail}</p>
-        </div>
-    </div>
+    {/if}
 {/snippet}
 
 <Sheet.Root
@@ -251,10 +276,43 @@
                                         {@render gaugeCard(diskVal, 'Disk', diskDetail)}
                                     {/if}
                                     {#if true}
-                                        {@const nv = netPct()}
-                                        {@const rx = metrics?.network_rx_bytes}
-                                        {@const netDetail = rx != null ? ((rx / 1_048_576).toFixed(1) + ' MB/s RX') : '-'}
-                                        {@render gaugeCard(nv, 'Network', netDetail)}
+                                        {@const rxPct = netRxPct()}
+                                        {@const txPct = netTxPct()}
+                                        {@const outerR = 20}
+                                        {@const innerR = 13}
+                                        {@const outerC = 2 * Math.PI * outerR}
+                                        {@const innerC = 2 * Math.PI * innerR}
+                                        <div class="border rounded-lg p-3 flex items-center gap-3">
+                                            <div class="relative shrink-0">
+                                                <svg width="52" height="52" viewBox="0 0 52 52">
+                                                    <circle cx="26" cy="26" r={outerR} fill="none" stroke="#3b82f6" stroke-width="4" stroke-opacity="0.12"/>
+                                                    <circle
+                                                        cx="26" cy="26" r={outerR} fill="none"
+                                                        stroke="#3b82f6" stroke-width="4"
+                                                        stroke-dasharray="{((rxPct / 100) * outerC).toFixed(1)} {outerC.toFixed(1)}"
+                                                        stroke-linecap="round"
+                                                        transform="rotate(-180 26 26)"
+                                                    />
+                                                    <circle cx="26" cy="26" r={innerR} fill="none" stroke="#a855f7" stroke-width="4" stroke-opacity="0.12"/>
+                                                    <circle
+                                                        cx="26" cy="26" r={innerR} fill="none"
+                                                        stroke="#a855f7" stroke-width="4"
+                                                        stroke-dasharray="{((txPct / 100) * innerC).toFixed(1)} {innerC.toFixed(1)}"
+                                                        stroke-linecap="round"
+                                                        transform="rotate(-180 26 26)"
+                                                    />
+                                                </svg>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <p class="text-xs font-medium">Network</p>
+                                                <p class="text-xs leading-tight mt-0.5" style="color: #3b82f6">
+                                                    <span class="font-medium">RX</span> {formatBytes(metrics?.network_rx_bytes ?? null)}
+                                                </p>
+                                                <p class="text-xs leading-tight" style="color: #a855f7">
+                                                    <span class="font-medium">TX</span> {formatBytes(metrics?.network_tx_bytes ?? null)}
+                                                </p>
+                                            </div>
+                                        </div>
                                     {/if}
                                 </div>
                             {/if}

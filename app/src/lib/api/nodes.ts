@@ -91,3 +91,16 @@ export async function getNodeMetricsLatest(token: string, id: string): Promise<N
     if (!res.ok) throw new Error(`metrics fetch failed: ${res.status}`);
     return res.json();
 }
+
+export interface HealthHistoryPoint {
+    bucket: string;
+    online_count: number;
+}
+
+export async function getHealthHistory(token: string, range: '1h' | '7d' | '30d'): Promise<HealthHistoryPoint[]> {
+    const res = await fetch(`${API_BASE}/system/stats/history?range=${range}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`health history fetch failed: ${res.status}`);
+    return res.json();
+}
