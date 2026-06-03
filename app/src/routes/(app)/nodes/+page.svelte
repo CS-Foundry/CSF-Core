@@ -69,7 +69,7 @@
         } finally {
             loading = false;
         }
-        pollInterval = setInterval(fetchStats, 30_000);
+        pollInterval = setInterval(fetchStats, 10_000);
     });
 
     onDestroy(() => {

@@ -79,6 +79,7 @@ services:
       FAILOVER_CONTROLLER_URL: http://failover-controller:8004
       SDN_CONTROLLER_URL: http://sdn-controller:8005
       FRONTEND_URL: http://localhost:5173
+      CSFX_INCLUDE_CONTAINERS: "true"
     ports:
       - "8000:8000"
     depends_on:
@@ -107,6 +108,7 @@ services:
       LISTEN_ADDR: "0.0.0.0"
       RUST_LOG: ${RUST_LOG:-debug}
       SCHEDULER_SERVICE_URL: http://scheduler:8002
+      API_GATEWAY_URL: http://api-gateway:8000
     ports:
       - "8001:8001"
     depends_on:

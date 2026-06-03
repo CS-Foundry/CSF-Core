@@ -52,6 +52,9 @@ pub struct ClusterStats {
 }
 
 fn is_container_id(hostname: &str) -> bool {
+    if std::env::var("CSFX_INCLUDE_CONTAINERS").as_deref() == Ok("true") {
+        return false;
+    }
     let trimmed = hostname.trim();
     trimmed.len() == 12
         && trimmed.chars().all(|c| c.is_ascii_hexdigit())
@@ -128,7 +131,7 @@ async fn get_cluster_stats(
     let mut online_count: usize = 0;
 
     for agent in &physical_agents {
-        if agent.status == "online" {
+        if agent.status.eq_ignore_ascii_case("online") {
             online_count += 1;
         }
 
