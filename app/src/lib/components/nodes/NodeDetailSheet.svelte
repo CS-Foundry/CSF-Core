@@ -15,12 +15,12 @@
     let metrics = $state<NodeMetricsLatest | null>(null);
     let metricsError = $state<string | null>(null);
     let metricsLoading = $state(false);
-    let activeTab = $state<'overview' | 'actions'>('overview');
+    let activeTab = $state<'summary' | 'hardware' | 'workloads' | 'network' | 'tasks'>('summary');
     let sshCopied = $state(false);
 
     $effect(() => {
         if (node && open) {
-            activeTab = 'overview';
+            activeTab = 'summary';
             metrics = null;
             metricsError = null;
             loadMetrics(node.id);
@@ -44,33 +44,66 @@
         return (bytes / 1_073_741_824).toFixed(1) + ' GB';
     }
 
-    function bytesToMb(bytes: number | null): string {
-        if (bytes == null) return '-';
-        return (bytes / 1_048_576).toFixed(0) + ' MB/s';
-    }
-
     function formatUptime(seconds: number | null): string {
         if (seconds == null) return '-';
         const d = Math.floor(seconds / 86400);
         const h = Math.floor((seconds % 86400) / 3600);
         const m = Math.floor((seconds % 3600) / 60);
-        if (d > 0) return `${d}d ${h}h ${m}m`;
+        if (d > 0) return `${d} days, ${h}h ${m}m`;
         if (h > 0) return `${h}h ${m}m`;
         return `${m}m`;
     }
 
-    function pct(value: number | null): string {
+    function clampPct(value: number | null): number {
+        if (value == null) return 0;
+        return Math.min(Math.max(value, 0), 100);
+    }
+
+    function pctStr(value: number | null): string {
         if (value == null) return '-';
         return value.toFixed(1) + '%';
     }
 
-    function statusClass(status: string): string {
+    function memPct(): number | null {
+        if (!metrics?.memory_total_bytes || !metrics?.memory_used_bytes) return null;
+        return (metrics.memory_used_bytes / metrics.memory_total_bytes) * 100;
+    }
+
+    function diskPct(): number | null {
+        if (!metrics?.disk_total_bytes || !metrics?.disk_used_bytes) return null;
+        return (metrics.disk_used_bytes / metrics.disk_total_bytes) * 100;
+    }
+
+    function netPct(): number {
+        const rx = metrics?.network_rx_bytes ?? 0;
+        const tx = metrics?.network_tx_bytes ?? 0;
+        return Math.min(((rx + tx) / 1_073_741_824) * 100, 100);
+    }
+
+    function statusDotClass(status: string): string {
         switch (status.toLowerCase()) {
-            case 'online': return 'text-green-500';
-            case 'offline': return 'text-red-500';
-            case 'degraded': return 'text-yellow-500';
-            default: return 'text-muted-foreground';
+            case 'online': return 'bg-green-500';
+            case 'offline': return 'bg-red-500';
+            case 'degraded': return 'bg-yellow-500';
+            default: return 'bg-muted-foreground';
         }
+    }
+
+    function gaugeStrokeDasharray(value: number, radius: number): string {
+        const circumference = 2 * Math.PI * radius;
+        const filled = (value / 100) * circumference;
+        return `${filled.toFixed(1)} ${circumference.toFixed(1)}`;
+    }
+
+    function gaugeColor(value: number): string {
+        if (value > 80) return '#ef4444';
+        if (value > 60) return '#eab308';
+        return 'currentColor';
+    }
+
+    function refreshedLabel(timestamp: string): string {
+        const diff = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
+        return diff < 60 ? `refreshed ${diff}s ago` : `refreshed ${Math.floor(diff / 60)}m ago`;
     }
 
     async function copySshCommand() {
@@ -80,193 +113,298 @@
         setTimeout(() => { sshCopied = false; }, 2000);
     }
 
-    function openSsh() {
-        if (!node?.ip_address) return;
-        window.location.href = `ssh://root@${node.ip_address}`;
-    }
+    const tabs: { id: typeof activeTab; label: string }[] = [
+        { id: 'summary', label: 'Summary' },
+        { id: 'hardware', label: 'Hardware' },
+        { id: 'workloads', label: 'Workloads' },
+        { id: 'network', label: 'Network' },
+        { id: 'tasks', label: 'Tasks' },
+    ];
 </script>
+
+{#snippet gaugeCard(value: number, label: string, detail: string)}
+    <div class="border rounded-lg p-3 flex items-center gap-3">
+        <div class="relative shrink-0">
+            <svg width="52" height="52" viewBox="0 0 52 52" style="color: {gaugeColor(value)}">
+                <circle cx="26" cy="26" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-opacity="0.12"/>
+                <circle
+                    cx="26" cy="26" r="20" fill="none"
+                    stroke="currentColor" stroke-width="4"
+                    stroke-dasharray={gaugeStrokeDasharray(value, 20)}
+                    stroke-dashoffset={2 * Math.PI * 20 * 0.25}
+                    stroke-linecap="round"
+                    transform="rotate(-90 26 26)"
+                />
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center text-xs font-semibold">{value.toFixed(0)}%</span>
+        </div>
+        <div class="min-w-0">
+            <p class="text-xs font-medium">{label}</p>
+            <p class="text-xs text-muted-foreground truncate leading-tight mt-0.5">{detail}</p>
+        </div>
+    </div>
+{/snippet}
 
 <Sheet.Root
     open={open}
     onOpenChange={(v) => { if (!v) onClose(); }}
 >
-    <Sheet.Content side="right" class="w-[480px] sm:max-w-[480px] flex flex-col p-0 gap-0">
+    <Sheet.Content side="right" class="w-[640px] sm:max-w-[640px] flex flex-col p-0 gap-0 overflow-hidden">
         {#if node}
-            <Sheet.Header class="px-6 pt-6 pb-4 border-b shrink-0">
-                <div class="flex items-center gap-3 pr-8">
-                    <div class="flex flex-col gap-0.5">
-                        <Sheet.Title class="text-base font-semibold leading-tight">{node.hostname}</Sheet.Title>
-                        <span class="text-xs text-muted-foreground font-mono">{node.ip_address ?? 'no ip'}</span>
+            <Sheet.Header class="px-6 pt-5 pb-0 shrink-0">
+                <div class="flex items-start gap-3 pr-8 mb-4">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-lg border bg-muted shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <path d="M8 21h8M12 17v4"/>
+                        </svg>
                     </div>
-                    <span class="ml-auto text-sm font-medium {statusClass(node.status)}">{node.status}</span>
+                    <div class="flex flex-col gap-0.5 min-w-0">
+                        <Sheet.Title class="text-base font-semibold leading-tight">{node.hostname}</Sheet.Title>
+                        <span class="text-xs text-muted-foreground">{node.ip_address ?? 'no ip'}</span>
+                    </div>
+                    <div class="ml-auto flex items-center gap-1.5 shrink-0">
+                        <span class="inline-block w-2 h-2 rounded-full {statusDotClass(node.status)}"></span>
+                        <span class="text-xs font-medium">{node.status.toLowerCase()}</span>
+                    </div>
                 </div>
 
-                <div class="flex gap-1 mt-3">
-                    <button
-                        class="px-3 py-1.5 text-xs rounded-md transition-colors {activeTab === 'overview' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
-                        onclick={() => activeTab = 'overview'}
-                    >
-                        Overview
-                    </button>
-                    <button
-                        class="px-3 py-1.5 text-xs rounded-md transition-colors {activeTab === 'actions' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
-                        onclick={() => activeTab = 'actions'}
-                    >
-                        Actions
-                    </button>
+                <div class="flex flex-wrap gap-1 pb-0 -mx-1 px-1">
+                    <Button variant="default" size="sm" class="text-xs h-7 shrink-0 gap-1.5" onclick={copySshCommand}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <path d="M8 12h8M12 8l4 4-4 4"/>
+                        </svg>
+                        {sshCopied ? 'Copied' : 'SSH console'}
+                    </Button>
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                        </svg>
+                        BMC / iDRAC
+                    </Button>
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                        </svg>
+                        Reboot
+                    </Button>
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                        Drain
+                    </Button>
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5 text-red-500 hover:text-red-500" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+                        </svg>
+                        Power off
+                    </Button>
+                </div>
+
+                <div class="flex gap-0 mt-3 border-b -mx-6 px-6">
+                    {#each tabs as tab}
+                        <button
+                            class="px-3 py-2 text-xs font-medium border-b-2 transition-colors {activeTab === tab.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+                            onclick={() => activeTab = tab.id}
+                        >
+                            {tab.label}
+                        </button>
+                    {/each}
                 </div>
             </Sheet.Header>
 
-            <div class="flex-1 overflow-y-auto px-6 py-4">
-                {#if activeTab === 'overview'}
-                    <div class="flex flex-col gap-5">
-                        <section>
-                            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Node Info</p>
-                            <div class="grid grid-cols-2 gap-y-2 text-sm">
-                                <span class="text-muted-foreground">ID</span>
-                                <span class="font-mono text-xs truncate">{node.id}</span>
-                                <span class="text-muted-foreground">OS</span>
-                                <span>{node.os_type} {node.os_version}</span>
-                                <span class="text-muted-foreground">Arch</span>
-                                <span>{node.architecture}</span>
-                                <span class="text-muted-foreground">Agent</span>
-                                <span>{node.agent_version}</span>
-                                <span class="text-muted-foreground">Registered</span>
-                                <span class="text-xs">{node.registered_at.slice(0, 16)}</span>
-                                <span class="text-muted-foreground">Last heartbeat</span>
-                                <span class="text-xs">{node.last_heartbeat ? node.last_heartbeat.slice(0, 16) : 'never'}</span>
+            <div class="flex-1 overflow-y-auto">
+                {#if activeTab === 'summary'}
+                    <div class="flex flex-col gap-0">
+                        <div class="px-6 py-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Live Load</span>
+                                {#if metricsLoading}
+                                    <span class="text-xs text-muted-foreground">Loading...</span>
+                                {:else if metrics?.timestamp}
+                                    <span class="text-xs text-muted-foreground px-2 py-0.5 border rounded-md">
+                                        {refreshedLabel(metrics.timestamp)}
+                                    </span>
+                                {/if}
                             </div>
-                        </section>
 
-                        <div class="border-t"></div>
-
-                        <section>
-                            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Live Metrics</p>
-
-                            {#if metricsLoading}
-                                <p class="text-sm text-muted-foreground">Loading...</p>
-                            {:else if metricsError}
-                                <p class="text-sm text-muted-foreground">{metricsError}</p>
-                            {:else if metrics}
-                                <div class="flex flex-col gap-4">
-                                    {#if metrics.uptime_seconds != null}
-                                        <div class="flex flex-col gap-1">
-                                            <div class="flex justify-between text-xs">
-                                                <span class="text-muted-foreground">Uptime</span>
-                                                <span>{formatUptime(metrics.uptime_seconds)}</span>
-                                            </div>
-                                        </div>
+                            {#if metricsError}
+                                <p class="text-sm text-muted-foreground py-4">{metricsError}</p>
+                            {:else}
+                                <div class="grid grid-cols-2 gap-3">
+                                    {#if true}
+                                        {@const cpuVal = clampPct(metrics?.cpu_usage_percent ?? null)}
+                                        {@const cpuDetail = metrics?.cpu_model ?? ((metrics?.cpu_cores ?? '-') + ' cores')}
+                                        {@render gaugeCard(cpuVal, 'CPU', cpuDetail)}
                                     {/if}
-
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between text-xs">
-                                            <span class="text-muted-foreground">CPU{metrics.cpu_model ? ` — ${metrics.cpu_model}` : ''}</span>
-                                            <span>{pct(metrics.cpu_usage_percent)}</span>
-                                        </div>
-                                        {#if metrics.cpu_usage_percent != null}
-                                            <div class="h-1.5 bg-muted rounded-full overflow-hidden">
-                                                <div
-                                                    class="h-full rounded-full transition-all {metrics.cpu_usage_percent > 80 ? 'bg-red-500' : metrics.cpu_usage_percent > 60 ? 'bg-yellow-500' : 'bg-primary'}"
-                                                    style="width: {Math.min(metrics.cpu_usage_percent, 100)}%"
-                                                ></div>
-                                            </div>
-                                        {/if}
-                                        {#if metrics.cpu_cores != null}
-                                            <span class="text-xs text-muted-foreground">{metrics.cpu_cores} cores / {metrics.cpu_threads ?? '?'} threads</span>
-                                        {/if}
-                                    </div>
-
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between text-xs">
-                                            <span class="text-muted-foreground">Memory</span>
-                                            <span>{bytesToGb(metrics.memory_used_bytes)} / {bytesToGb(metrics.memory_total_bytes)}</span>
-                                        </div>
-                                        {#if metrics.memory_usage_percent != null}
-                                            <div class="h-1.5 bg-muted rounded-full overflow-hidden">
-                                                <div
-                                                    class="h-full rounded-full transition-all {metrics.memory_usage_percent > 80 ? 'bg-red-500' : metrics.memory_usage_percent > 60 ? 'bg-yellow-500' : 'bg-primary'}"
-                                                    style="width: {Math.min(metrics.memory_usage_percent, 100)}%"
-                                                ></div>
-                                            </div>
-                                        {/if}
-                                    </div>
-
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between text-xs">
-                                            <span class="text-muted-foreground">Disk</span>
-                                            <span>{bytesToGb(metrics.disk_used_bytes)} / {bytesToGb(metrics.disk_total_bytes)}</span>
-                                        </div>
-                                        {#if metrics.disk_usage_percent != null}
-                                            <div class="h-1.5 bg-muted rounded-full overflow-hidden">
-                                                <div
-                                                    class="h-full rounded-full transition-all {metrics.disk_usage_percent > 80 ? 'bg-red-500' : metrics.disk_usage_percent > 60 ? 'bg-yellow-500' : 'bg-primary'}"
-                                                    style="width: {Math.min(metrics.disk_usage_percent, 100)}%"
-                                                ></div>
-                                            </div>
-                                        {/if}
-                                    </div>
-
-                                    {#if metrics.network_rx_bytes != null || metrics.network_tx_bytes != null}
-                                        <div class="flex flex-col gap-1">
-                                            <span class="text-xs text-muted-foreground">Network</span>
-                                            <div class="flex gap-4 text-xs">
-                                                <span>RX {bytesToMb(metrics.network_rx_bytes)}</span>
-                                                <span>TX {bytesToMb(metrics.network_tx_bytes)}</span>
-                                            </div>
-                                        </div>
+                                    {#if true}
+                                        {@const memVal = clampPct(memPct())}
+                                        {@const memDetail = bytesToGb(metrics?.memory_total_bytes ?? null)}
+                                        {@render gaugeCard(memVal, 'Memory', memDetail)}
                                     {/if}
-
-                                    {#if metrics.kernel_version}
-                                        <div class="flex justify-between text-xs">
-                                            <span class="text-muted-foreground">Kernel</span>
-                                            <span class="font-mono text-xs">{metrics.kernel_version}</span>
-                                        </div>
+                                    {#if true}
+                                        {@const diskVal = clampPct(diskPct())}
+                                        {@const diskDetail = bytesToGb(metrics?.disk_total_bytes ?? null)}
+                                        {@render gaugeCard(diskVal, 'Disk', diskDetail)}
+                                    {/if}
+                                    {#if true}
+                                        {@const nv = netPct()}
+                                        {@const rx = metrics?.network_rx_bytes}
+                                        {@const netDetail = rx != null ? ((rx / 1_048_576).toFixed(1) + ' MB/s RX') : '-'}
+                                        {@render gaugeCard(nv, 'Network', netDetail)}
                                     {/if}
                                 </div>
                             {/if}
-                        </section>
+                        </div>
+
+                        <div class="border-t mx-6"></div>
+
+                        <div class="px-6 py-4">
+                            <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Host & Lifecycle</span>
+                            <div class="mt-3 border rounded-lg divide-y text-sm">
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Hostname</span>
+                                    <span class="font-medium">{node.hostname}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">IP address</span>
+                                    <span class="font-mono text-xs">{node.ip_address ?? '-'}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">OS</span>
+                                    <span>{node.os_type} {node.os_version}</span>
+                                </div>
+                                {#if metrics?.kernel_version}
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Kernel</span>
+                                        <span class="font-mono text-xs">{metrics.kernel_version}</span>
+                                    </div>
+                                {/if}
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Architecture</span>
+                                    <span>{node.architecture}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Agent version</span>
+                                    <span class="font-mono text-xs">{node.agent_version}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Uptime</span>
+                                    <span>{formatUptime(metrics?.uptime_seconds ?? null)}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Registered</span>
+                                    <span class="text-xs">{node.registered_at.slice(0, 16)}</span>
+                                </div>
+                                <div class="flex justify-between px-3 py-2">
+                                    <span class="text-muted-foreground">Last heartbeat</span>
+                                    <span class="text-xs">{node.last_heartbeat ? node.last_heartbeat.slice(0, 16) : 'never'}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                {:else if activeTab === 'actions'}
-                    <div class="flex flex-col gap-6">
-                        <section>
-                            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">SSH Access</p>
-                            <div class="flex flex-col gap-2">
-                                {#if node.ip_address}
-                                    <div class="flex items-center gap-2 px-3 py-2 bg-muted rounded-md font-mono text-xs">
-                                        <span class="flex-1 truncate">ssh root@{node.ip_address}</span>
+                {:else if activeTab === 'hardware'}
+                    <div class="px-6 py-4 flex flex-col gap-4">
+                        {#if metricsLoading}
+                            <p class="text-sm text-muted-foreground">Loading...</p>
+                        {:else if metrics}
+                            <div>
+                                <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">CPU</span>
+                                <div class="mt-2 border rounded-lg divide-y text-sm">
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Model</span>
+                                        <span class="text-xs text-right max-w-[60%]">{metrics.cpu_model ?? '-'}</span>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <Button variant="outline" size="sm" class="flex-1" onclick={copySshCommand}>
-                                            {sshCopied ? 'Copied' : 'Copy command'}
-                                        </Button>
-                                        <Button variant="outline" size="sm" class="flex-1" onclick={openSsh}>
-                                            Open terminal
-                                        </Button>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Cores</span>
+                                        <span>{metrics.cpu_cores ?? '-'}</span>
                                     </div>
-                                {:else}
-                                    <p class="text-sm text-muted-foreground">No IP address available</p>
-                                {/if}
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Threads</span>
+                                        <span>{metrics.cpu_threads ?? '-'}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Usage</span>
+                                        <span>{pctStr(metrics.cpu_usage_percent)}</span>
+                                    </div>
+                                </div>
                             </div>
-                        </section>
-
-                        <div class="border-t"></div>
-
-                        <section>
-                            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Power Management</p>
-                            <div class="flex flex-col gap-2">
-                                <Button variant="outline" size="sm" class="justify-start" disabled>
-                                    Reboot
-                                </Button>
-                                <Button variant="outline" size="sm" class="justify-start text-red-500 hover:text-red-500" disabled>
-                                    Power off
-                                </Button>
-                                <Button variant="outline" size="sm" class="justify-start text-green-600 hover:text-green-600" disabled>
-                                    Power on (WoL)
-                                </Button>
-                                <p class="text-xs text-muted-foreground mt-1">Power management requires agent support</p>
+                            <div>
+                                <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Memory</span>
+                                <div class="mt-2 border rounded-lg divide-y text-sm">
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Total</span>
+                                        <span>{bytesToGb(metrics.memory_total_bytes)}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Used</span>
+                                        <span>{bytesToGb(metrics.memory_used_bytes)}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Usage</span>
+                                        <span>{pctStr(memPct())}</span>
+                                    </div>
+                                </div>
                             </div>
-                        </section>
+                            <div>
+                                <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Storage</span>
+                                <div class="mt-2 border rounded-lg divide-y text-sm">
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Total</span>
+                                        <span>{bytesToGb(metrics.disk_total_bytes)}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Used</span>
+                                        <span>{bytesToGb(metrics.disk_used_bytes)}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">Usage</span>
+                                        <span>{pctStr(diskPct())}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        {:else}
+                            <p class="text-sm text-muted-foreground">{metricsError ?? 'No data'}</p>
+                        {/if}
+                    </div>
+
+                {:else if activeTab === 'workloads'}
+                    <div class="px-6 py-4">
+                        <p class="text-sm text-muted-foreground">Workload scheduling coming soon.</p>
+                    </div>
+
+                {:else if activeTab === 'network'}
+                    <div class="px-6 py-4 flex flex-col gap-4">
+                        {#if metrics}
+                            <div>
+                                <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Interface</span>
+                                <div class="mt-2 border rounded-lg divide-y text-sm">
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">IP address</span>
+                                        <span class="font-mono text-xs">{node?.ip_address ?? '-'}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">RX</span>
+                                        <span>{metrics.network_rx_bytes != null ? (metrics.network_rx_bytes / 1_048_576).toFixed(2) + ' MB/s' : '-'}</span>
+                                    </div>
+                                    <div class="flex justify-between px-3 py-2">
+                                        <span class="text-muted-foreground">TX</span>
+                                        <span>{metrics.network_tx_bytes != null ? (metrics.network_tx_bytes / 1_048_576).toFixed(2) + ' MB/s' : '-'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        {:else}
+                            <p class="text-sm text-muted-foreground">{metricsError ?? 'No data'}</p>
+                        {/if}
+                    </div>
+
+                {:else if activeTab === 'tasks'}
+                    <div class="px-6 py-4">
+                        <p class="text-sm text-muted-foreground">No active tasks.</p>
                     </div>
                 {/if}
             </div>
