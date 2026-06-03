@@ -3,15 +3,11 @@
     import ChartPieIcon from "@lucide/svelte/icons/chart-pie";
     import MapIcon from "@lucide/svelte/icons/map";
     import BookOpenIcon from "@lucide/svelte/icons/book-open";
+    import { Server, Layers, ShipWheel, Container, LaptopMinimal } from "@lucide/svelte";
     import IconBucket from "./icon-bucket.svelte";
+    import IconDashboard from "./icon-dashboard.svelte";
     import IconActivity from "./icon-activity.svelte";
     import IconLogs from "./icon-logs.svelte";
-    import IconDashboard from "./icon-dashboard.svelte";
-    import IconServer from "./icon-server.svelte";
-    import IconLayers from "./icon-layers.svelte";
-    import IconShipWheel from "./icon-ship-wheel.svelte";
-    import IconContainer from "./icon-container.svelte";
-    import IconLaptop from "./icon-laptop.svelte";
 
     const data = {
         navBottom: [
@@ -36,12 +32,12 @@
             {
                 title: "Nodes",
                 url: "/nodes",
-                icon: IconServer,
+                icon: Server,
             },
             {
                 title: "Resource groups",
                 url: "#",
-                icon: IconLayers,
+                icon: Layers,
             },
         ],
         projects: [
@@ -53,17 +49,17 @@
             {
                 name: "Kubernetes",
                 url: "#",
-                icon: IconShipWheel,
+                icon: ShipWheel,
             },
             {
                 name: "Docker",
                 url: "#",
-                icon: IconContainer,
+                icon: Container,
             },
             {
                 name: "Virtual Machines",
                 url: "#",
-                icon: IconLaptop,
+                icon: LaptopMinimal,
             },
         ],
     };
