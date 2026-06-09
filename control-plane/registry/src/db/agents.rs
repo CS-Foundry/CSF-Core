@@ -112,6 +112,21 @@ pub async fn update_heartbeat(
     Ok(())
 }
 
+pub async fn mark_degraded_by_timeout(
+    db: &DatabaseConnection,
+    timeout_seconds: i64,
+) -> Result<u64> {
+    let threshold = chrono::Utc::now().naive_utc() - chrono::Duration::seconds(timeout_seconds);
+    let result = agents::Entity::update_many()
+        .col_expr(agents::Column::Status, sea_orm::sea_query::Expr::value("Degraded"))
+        .col_expr(agents::Column::UpdatedAt, sea_orm::sea_query::Expr::value(chrono::Utc::now().naive_utc()))
+        .filter(agents::Column::LastHeartbeat.lt(threshold))
+        .filter(agents::Column::Status.eq("Online"))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
+}
+
 pub async fn mark_offline_by_timeout(
     db: &DatabaseConnection,
     timeout_seconds: i64,
@@ -129,7 +144,10 @@ pub async fn mark_offline_by_timeout(
             sea_orm::sea_query::Expr::value(chrono::Utc::now().naive_utc()),
         )
         .filter(agents::Column::LastHeartbeat.lt(threshold))
-        .filter(agents::Column::Status.eq("Online"))
+        .filter(
+            agents::Column::Status.eq("Online")
+                .or(agents::Column::Status.eq("Degraded"))
+        )
         .exec(db)
         .await?;
 
