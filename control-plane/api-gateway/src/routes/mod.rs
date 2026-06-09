@@ -18,6 +18,7 @@ pub mod events;
 pub mod networks;
 pub mod organizations;
 pub mod registry;
+pub mod releases;
 pub mod ssh_keys;
 pub mod system;
 pub mod update;
@@ -98,7 +99,8 @@ pub fn create_router() -> Router<AppState> {
 
     let api_router = Router::new()
         .merge(rate_limited_router)
-        .merge(update::routes());
+        .merge(update::routes())
+        .merge(releases::routes());
 
     Router::new()
         .route("/metrics", get(metrics::metrics_handler))

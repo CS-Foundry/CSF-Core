@@ -3,13 +3,20 @@
     import ChartPieIcon from "@lucide/svelte/icons/chart-pie";
     import MapIcon from "@lucide/svelte/icons/map";
     import BookOpenIcon from "@lucide/svelte/icons/book-open";
-    import { Server, Layers, ShipWheel, Container, LaptopMinimal } from "@lucide/svelte";
+    import { Server, Layers, ShipWheel, Container, LaptopMinimal, Settings } from "@lucide/svelte";
     import IconBucket from "./icon-bucket.svelte";
     import IconDashboard from "./icon-dashboard.svelte";
     import IconActivity from "./icon-activity.svelte";
     import IconLogs from "./icon-logs.svelte";
 
     const data = {
+        navAdmin: [
+            {
+                title: "Settings",
+                url: "/admin/settings",
+                icon: Settings,
+            },
+        ],
         navBottom: [
             {
                 title: "Monitoring",
@@ -69,6 +76,7 @@
     import NavMain from "./nav-main.svelte";
     import NavProjects from "./nav-projects.svelte";
     import NavUser from "./nav-user.svelte";
+    import UpdateCard from "./update-card.svelte";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte.js";
     import type { ComponentProps } from "svelte";
@@ -108,7 +116,10 @@
         <Sidebar.Separator />
         <NavProjects projects={data.projects} />
         <NavMain items={data.navBottom} label="" class="mt-auto" />
+        <Sidebar.Separator />
+        <NavMain items={data.navAdmin} label="Admin" />
     </Sidebar.Content>
+    <UpdateCard />
     <Sidebar.Footer>
         <NavUser />
     </Sidebar.Footer>
