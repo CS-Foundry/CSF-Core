@@ -3,13 +3,20 @@
     import ChartPieIcon from "@lucide/svelte/icons/chart-pie";
     import MapIcon from "@lucide/svelte/icons/map";
     import BookOpenIcon from "@lucide/svelte/icons/book-open";
-    import { Server, Layers, ShipWheel, Container, LaptopMinimal } from "@lucide/svelte";
+    import { Server, Layers, ShipWheel, Container, LaptopMinimal, Settings } from "@lucide/svelte";
     import IconBucket from "./icon-bucket.svelte";
     import IconDashboard from "./icon-dashboard.svelte";
     import IconActivity from "./icon-activity.svelte";
     import IconLogs from "./icon-logs.svelte";
 
     const data = {
+        navAdmin: [
+            {
+                title: "Settings",
+                url: "/admin/settings",
+                icon: Settings,
+            },
+        ],
         navBottom: [
             {
                 title: "Monitoring",
@@ -66,11 +73,15 @@
 </script>
 
 <script lang="ts">
+    import { onMount } from "svelte";
     import NavMain from "./nav-main.svelte";
     import NavProjects from "./nav-projects.svelte";
     import NavUser from "./nav-user.svelte";
+    import UpdateCard from "./update-card.svelte";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte.js";
+    import { auth } from "$lib/auth/store.svelte";
+    import { getUpdateStatus } from "$lib/api/system";
     import type { ComponentProps } from "svelte";
 
     let {
@@ -80,6 +91,17 @@
     }: ComponentProps<typeof Sidebar.Root> = $props();
 
     const sidebar = useSidebar();
+    let version = $state<string | null>(null);
+
+    onMount(async () => {
+        if (!auth.token) return;
+        try {
+            const status = await getUpdateStatus(auth.token);
+            version = status.current_version;
+        } catch {
+            // non-fatal
+        }
+    });
 </script>
 
 <Sidebar.Root bind:ref {collapsible} {...restProps}>
@@ -97,9 +119,9 @@
                 class="flex flex-col leading-tight group-data-[collapsible=icon]:hidden"
             >
                 <span class="font-semibold text-sm tracking-wide">CSFX</span>
-                <span class="text-muted-foreground text-xs"
-                    >Hypervisor v0.1</span
-                >
+                <span class="text-muted-foreground text-xs">
+                    {version ? `v${version}` : "Hypervisor"}
+                </span>
             </div>
         </button>
     </Sidebar.Header>
@@ -108,7 +130,10 @@
         <Sidebar.Separator />
         <NavProjects projects={data.projects} />
         <NavMain items={data.navBottom} label="" class="mt-auto" />
+        <Sidebar.Separator />
+        <NavMain items={data.navAdmin} label="Admin" />
     </Sidebar.Content>
+    <UpdateCard />
     <Sidebar.Footer>
         <NavUser />
     </Sidebar.Footer>
