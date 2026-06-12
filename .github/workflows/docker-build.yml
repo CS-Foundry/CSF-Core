@@ -103,7 +103,7 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.binary }}-${{ matrix.arch }}
           sha256sum ${{ matrix.binary }}-${{ matrix.arch }} > ${{ matrix.binary }}-${{ matrix.arch }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.binary }}-${{ matrix.arch }}
           path: |
@@ -173,7 +173,7 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}
           sha256sum csfx-cp-${{ matrix.binary }}-${{ matrix.arch }} > csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}
           path: |
@@ -188,7 +188,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-*
           merge-multiple: true
@@ -230,19 +230,19 @@ jobs:
           token: ${{ secrets.INFRA_REPO_TOKEN }}
           path: infra
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-agent-*
           path: /tmp/binaries
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-updater-*
           path: /tmp/binaries
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-cp-*
           path: /tmp/cp-binaries
