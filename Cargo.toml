@@ -47,7 +47,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 
 # Security
-jsonwebtoken = "9.3.0"
+jsonwebtoken = "10.0.0"
 bcrypt = "0.15"
 rsa = { version = "0.9", features = ["sha2"] }
 totp-rs = { version = "5.6", features = ["qr", "otpauth"] }
@@ -57,11 +57,11 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # OpenAPI
-utoipa = { version = "4.2", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+utoipa = { version = "5.0", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 # etcd
 etcd-client = { version = "0.14", default-features = false, features = ["tls-roots"] }
