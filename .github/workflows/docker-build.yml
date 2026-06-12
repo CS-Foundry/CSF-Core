@@ -26,7 +26,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       should_build: ${{ steps.version.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Resolve version
         id: version
@@ -68,7 +68,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -138,7 +138,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -186,7 +186,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [prepare, build-binaries, build-cp-binaries]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v8
         with:
@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [prepare, build-binaries, build-cp-binaries, attach-binaries-release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/CSFX-Infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
