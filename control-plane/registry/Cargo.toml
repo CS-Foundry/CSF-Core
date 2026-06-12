@@ -18,7 +18,7 @@ migration = { path = "../shared/migration" }
 tokio = { workspace = true, features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 
 # Logging
 tracing = { workspace = true }
