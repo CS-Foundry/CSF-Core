@@ -33,7 +33,7 @@ services:
       - csfx-network
 
   etcd:
-    image: gcr.io/etcd-development/etcd:v3.5.21
+    image: gcr.io/etcd-development/etcd:v3.6.12
     container_name: csfx-etcd-scheduler
     command:
       - etcd
