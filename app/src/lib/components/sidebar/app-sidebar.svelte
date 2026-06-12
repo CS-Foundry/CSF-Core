@@ -73,12 +73,15 @@
 </script>
 
 <script lang="ts">
+    import { onMount } from "svelte";
     import NavMain from "./nav-main.svelte";
     import NavProjects from "./nav-projects.svelte";
     import NavUser from "./nav-user.svelte";
     import UpdateCard from "./update-card.svelte";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte.js";
+    import { auth } from "$lib/auth/store.svelte";
+    import { getUpdateStatus } from "$lib/api/system";
     import type { ComponentProps } from "svelte";
 
     let {
@@ -88,6 +91,17 @@
     }: ComponentProps<typeof Sidebar.Root> = $props();
 
     const sidebar = useSidebar();
+    let version = $state<string | null>(null);
+
+    onMount(async () => {
+        if (!auth.token) return;
+        try {
+            const status = await getUpdateStatus(auth.token);
+            version = status.current_version;
+        } catch {
+            // non-fatal
+        }
+    });
 </script>
 
 <Sidebar.Root bind:ref {collapsible} {...restProps}>
@@ -105,9 +119,9 @@
                 class="flex flex-col leading-tight group-data-[collapsible=icon]:hidden"
             >
                 <span class="font-semibold text-sm tracking-wide">CSFX</span>
-                <span class="text-muted-foreground text-xs"
-                    >Hypervisor v0.1</span
-                >
+                <span class="text-muted-foreground text-xs">
+                    {version ? `v${version}` : "Hypervisor"}
+                </span>
             </div>
         </button>
     </Sidebar.Header>
