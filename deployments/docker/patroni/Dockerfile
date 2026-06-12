@@ -1,4 +1,4 @@
-FROM postgres:16-alpine
+FROM postgres:18-alpine
 
 RUN apk add --no-cache python3 py3-pip curl && \
     pip3 install --no-cache-dir --break-system-packages patroni[etcd3]==3.3.2 psycopg2-binary
