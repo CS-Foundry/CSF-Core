@@ -39,7 +39,7 @@
     "zod": "4.1.12"
   },
   "dependencies": {
-    "@icons-pack/svelte-simple-icons": "^6.5.0",
+    "@icons-pack/svelte-simple-icons": "^7.0.0",
     "@tailwindcss/typography": "0.5.19",
     "@tailwindcss/vite": "^4.1.13",
     "jsonwebtoken": "^9.0.2",
