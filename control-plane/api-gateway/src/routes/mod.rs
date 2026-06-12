@@ -52,7 +52,6 @@ pub fn create_router() -> Router<AppState> {
 
     tracing::info!("CORS configured for frontend URL: {}", frontend_url);
 
-    // Allow multiple origins for development (both Docker container and localhost)
     let allowed_origins = vec![
         "http://localhost:3000",
         "http://localhost:5173",

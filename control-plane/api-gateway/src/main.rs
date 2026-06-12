@@ -14,6 +14,7 @@ mod self_monitor;
 mod service_client;
 mod system_collector;
 mod telemetry;
+mod tls;
 mod utils;
 
 use routes::registry::{
@@ -167,12 +168,24 @@ async fn main() {
         .unwrap_or(8000);
     let listen_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
     let addr: SocketAddr = format!("{}:{}", listen_addr, port).parse().unwrap();
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %addr, "listening");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .unwrap();
+
+    let tls_enabled = std::env::var("TLS_ENABLED").unwrap_or_else(|_| "true".to_string()) != "false";
+
+    if tls_enabled {
+        let config = tls::generate_tls_config().expect("failed to generate TLS config");
+        tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %addr, "listening (HTTPS)");
+        axum_server::bind_rustls(addr, config)
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap();
+    } else {
+        tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %addr, "listening (HTTP)");
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    }
 }
