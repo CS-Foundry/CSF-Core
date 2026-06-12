@@ -256,7 +256,7 @@ services:
   # ========================================
   
   patroni1:
-    image: ghcr.io/zalando/spilo-15:3.0-p1
+    image: ghcr.io/zalando/spilo-15:3.2-p1
     container_name: patroni1
     hostname: patroni1
     environment:
@@ -328,7 +328,7 @@ services:
     restart: unless-stopped
 
   patroni2:
-    image: ghcr.io/zalando/spilo-15:3.0-p1
+    image: ghcr.io/zalando/spilo-15:3.2-p1
     container_name: patroni2
     hostname: patroni2
     environment:
@@ -393,7 +393,7 @@ services:
     restart: unless-stopped
 
   patroni3:
-    image: ghcr.io/zalando/spilo-15:3.0-p1
+    image: ghcr.io/zalando/spilo-15:3.2-p1
     container_name: patroni3
     hostname: patroni3
     environment:
