@@ -172,7 +172,7 @@ async fn main() {
     let tls_enabled = std::env::var("TLS_ENABLED").unwrap_or_else(|_| "true".to_string()) != "false";
 
     if tls_enabled {
-        let config = tls::generate_tls_config().expect("failed to generate TLS config");
+        let config = tls::generate_tls_config().await.expect("failed to generate TLS config");
         tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %addr, "listening (HTTPS)");
         axum_server::bind_rustls(addr, config)
             .serve(app.into_make_service_with_connect_info::<SocketAddr>())

@@ -1,15 +1,14 @@
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
 
-pub fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
+pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
     let cert_path = std::env::var("TLS_CERT").unwrap_or_default();
     let key_path = std::env::var("TLS_KEY").unwrap_or_default();
 
     if !cert_path.is_empty() && !key_path.is_empty() {
         let cert_pem = std::fs::read(&cert_path)?;
         let key_pem = std::fs::read(&key_path)?;
-        let config = tokio::runtime::Handle::current()
-            .block_on(RustlsConfig::from_pem(cert_pem, key_pem))?;
+        let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
         tracing::info!(cert = %cert_path, "TLS loaded from files");
         return Ok(config);
     }
@@ -34,8 +33,7 @@ pub fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
     let cert_pem = cert.pem().into_bytes();
     let key_pem = key_pair.serialize_pem().into_bytes();
 
-    let config = tokio::runtime::Handle::current()
-        .block_on(RustlsConfig::from_pem(cert_pem, key_pem))?;
+    let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
 
     tracing::info!(sans = %san_hosts, "self-signed TLS certificate generated");
     Ok(config)
