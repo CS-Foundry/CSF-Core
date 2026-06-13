@@ -131,7 +131,7 @@ pub struct AppState {
 async fn main() {
     dotenvy::dotenv().ok();
 
-    rustls::crypto::aws_lc_rs::default_provider()
+    rustls::crypto::ring::default_provider()
         .install_default()
         .expect("failed to install rustls crypto provider");
 
