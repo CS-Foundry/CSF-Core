@@ -29,6 +29,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 http = { workspace = true }
 rcgen = { workspace = true }
+rustls = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
