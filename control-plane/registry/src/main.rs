@@ -48,10 +48,8 @@ async fn main() -> anyhow::Result<()> {
     let gateway_url =
         std::env::var("API_GATEWAY_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
 
-    let skip_verify = std::env::var("CSFX_TLS_SKIP_VERIFY").as_deref() == Ok("true");
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
-        .danger_accept_invalid_certs(skip_verify)
         .build()
         .expect("Failed to build HTTP client");
 

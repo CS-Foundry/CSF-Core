@@ -85,10 +85,8 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(gateway_url: String) -> Result<Self> {
-        let skip_verify = std::env::var("CSFX_TLS_SKIP_VERIFY").as_deref() == Ok("true");
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .danger_accept_invalid_certs(skip_verify)
             .build()
             .context("Failed to build HTTP client")?;
 
