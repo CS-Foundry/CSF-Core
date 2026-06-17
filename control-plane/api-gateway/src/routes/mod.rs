@@ -93,9 +93,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(volumes::volumes_routes())
         .merge(workloads::workloads_routes())
         .merge(events::events_routes())
-        .layer(GovernorLayer {
-            config: governor_config,
-        });
+        .layer(GovernorLayer::new(governor_config));
 
     let api_router = Router::new()
         .merge(rate_limited_router)

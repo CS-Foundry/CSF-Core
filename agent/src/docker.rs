@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
-use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
-use bollard::image::CreateImageOptions;
-use bollard::models::HostConfig;
+use bollard::models::{ContainerCreateBody, HostConfig};
+use bollard::query_parameters::{
+    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, StartContainerOptionsBuilder,
+};
 use bollard::Docker;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -38,10 +39,9 @@ impl DockerManager {
     pub async fn pull_image(&self, image: &str) -> Result<()> {
         info!(image = %image, "Pulling image");
 
-        let options = CreateImageOptions {
-            from_image: image,
-            ..Default::default()
-        };
+        let options = CreateImageOptionsBuilder::default()
+            .from_image(image)
+            .build();
 
         let mut stream = self.docker.create_image(Some(options), None, None);
 
@@ -88,7 +88,7 @@ impl DockerManager {
             ..Default::default()
         };
 
-        let config = Config {
+        let config = ContainerCreateBody {
             image: Some(spec.image.clone()),
             env,
             exposed_ports: if exposed_ports.is_empty() {
@@ -104,10 +104,9 @@ impl DockerManager {
             ..Default::default()
         };
 
-        let options = CreateContainerOptions {
-            name: container_name.clone(),
-            platform: None,
-        };
+        let options = CreateContainerOptionsBuilder::default()
+            .name(&container_name)
+            .build();
 
         let container = self
             .docker
@@ -115,8 +114,10 @@ impl DockerManager {
             .await
             .context("Failed to create container")?;
 
+        let start_options = StartContainerOptionsBuilder::default().build();
+
         self.docker
-            .start_container(&container.id, None::<StartContainerOptions<String>>)
+            .start_container(&container.id, Some(start_options))
             .await
             .context("Failed to start container")?;
 
@@ -149,11 +150,11 @@ fn build_port_config(
     ports: Option<&[PortMapping]>,
 ) -> (
     HashMap<String, Option<Vec<bollard::models::PortBinding>>>,
-    HashMap<String, HashMap<(), ()>>,
+    Vec<String>,
 ) {
     let mut port_bindings: HashMap<String, Option<Vec<bollard::models::PortBinding>>> =
         HashMap::new();
-    let mut exposed_ports: HashMap<String, HashMap<(), ()>> = HashMap::new();
+    let mut exposed_ports: Vec<String> = Vec::new();
 
     if let Some(ports) = ports {
         for p in ports {
@@ -168,7 +169,7 @@ fn build_port_config(
                 }]),
             );
 
-            exposed_ports.insert(container_key, HashMap::new());
+            exposed_ports.push(container_key);
         }
     }
 

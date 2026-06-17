@@ -4,7 +4,6 @@ use crate::{
     AppState,
 };
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
@@ -103,7 +102,6 @@ async fn check(
 
 macro_rules! impl_extractor {
     ($ty:ty, $resource:expr, $action:expr) => {
-        #[async_trait]
         impl FromRequestParts<AppState> for $ty {
             type Rejection = StatusCode;
 
