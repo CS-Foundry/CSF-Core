@@ -1,2 +1,325 @@
-include:
-  - docker-compose.prod.yml
+x-rust-service: &rust-service
+  build:
+    context: .
+    dockerfile: control-plane/Dockerfile.dev.shared
+  volumes:
+    - ./Cargo.toml:/app/Cargo.toml
+    - ./Cargo.lock:/app/Cargo.lock
+    - ./control-plane/shared:/app/control-plane/shared
+    - cargo_cache:/usr/local/cargo/registry
+    - cargo_git:/usr/local/cargo/git
+  networks:
+    - csfx-network
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: csfx-postgres-dev
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-csfx_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-csfx_password}
+      POSTGRES_DB: ${POSTGRES_DB:-csfx_core}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-csfx_user} -d ${POSTGRES_DB:-csfx_core}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - csfx-network
+
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.21
+    container_name: csfx-etcd-dev
+    command:
+      - etcd
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+    ports:
+      - "2379:2379"
+    networks:
+      - csfx-network
+
+  migrate:
+    <<: *rust-service
+    container_name: csfx-migrate-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./control-plane/csfx-migrate:/app/control-plane/csfx-migrate
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_migrate:/app/target
+    command: cargo run -p csfx-migrate
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(cat /tmp/migrate-done 2>/dev/null) = 'ok' ] || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api-gateway:
+    <<: *rust-service
+    container_name: csfx-api-gateway-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      RUST_LOG: ${RUST_LOG:-debug}
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_in_production}
+      RSA_KEY_SIZE: "2048"
+      REGISTRY_SERVICE_URL: http://registry:8001
+      SCHEDULER_SERVICE_URL: http://scheduler:8002
+      VOLUME_MANAGER_URL: http://volume-manager:8003
+      FAILOVER_CONTROLLER_URL: http://failover-controller:8004
+      SDN_CONTROLLER_URL: http://sdn-controller:8005
+      FRONTEND_URL: http://localhost:5173
+      CSFX_INCLUDE_CONTAINERS: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/api-gateway:/app/control-plane/api-gateway
+      - cargo_target_api_gateway:/app/target
+    command: cargo watch -x "run -p api-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  registry:
+    <<: *rust-service
+    container_name: csfx-registry-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      ETCD_ENDPOINTS: http://etcd:2379
+      REGISTRY_PORT: "8001"
+      LISTEN_ADDR: "0.0.0.0"
+      RUST_LOG: ${RUST_LOG:-debug}
+      SCHEDULER_SERVICE_URL: http://scheduler:8002
+      API_GATEWAY_URL: http://api-gateway:8000
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/registry:/app/control-plane/registry
+      - cargo_target_registry:/app/target
+    command: cargo watch -x "run -p registry"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scheduler:
+    <<: *rust-service
+    container_name: csfx-scheduler-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      ETCD_ENDPOINTS: http://etcd:2379
+      SCHEDULER_PORT: "8002"
+      LISTEN_ADDR: "0.0.0.0"
+      RUST_LOG: ${RUST_LOG:-debug}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/scheduler:/app/control-plane/scheduler
+      - cargo_target_scheduler:/app/target
+    command: cargo watch -x "run -p scheduler"
+
+  volume-manager:
+    <<: *rust-service
+    container_name: csfx-volume-manager-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      ETCD_ENDPOINTS: http://etcd:2379
+      VOLUME_MANAGER_PORT: "8003"
+      LISTEN_ADDR: "0.0.0.0"
+      RUST_LOG: ${RUST_LOG:-debug}
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/volume-manager:/app/control-plane/volume-manager
+      - cargo_target_volume_manager:/app/target
+    command: cargo watch -x "run -p volume-manager"
+
+  failover-controller:
+    <<: *rust-service
+    container_name: csfx-failover-controller-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      FAILOVER_CONTROLLER_PORT: "8004"
+      LISTEN_ADDR: "0.0.0.0"
+      SCHEDULER_SERVICE_URL: http://scheduler:8002
+      VOLUME_MANAGER_URL: http://volume-manager:8003
+      RUST_LOG: ${RUST_LOG:-debug}
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      scheduler:
+        condition: service_started
+      volume-manager:
+        condition: service_started
+    volumes:
+      - ./control-plane/failover-controller:/app/control-plane/failover-controller
+      - cargo_target_failover_controller:/app/target
+    command: cargo watch -x "run -p failover-controller"
+
+  sdn-controller:
+    <<: *rust-service
+    container_name: csfx-sdn-controller-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      ETCD_URL: http://etcd:2379
+      SDN_CONTROLLER_PORT: "8005"
+      LISTEN_ADDR: "0.0.0.0"
+      RUST_LOG: ${RUST_LOG:-debug}
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/sdn-controller:/app/control-plane/sdn-controller
+      - cargo_target_sdn_controller:/app/target
+    command: cargo watch -x "run -p sdn-controller"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  agent-1:
+    <<: *rust-service
+    container_name: csfx-agent-dev-1
+    hostname: dev-node-1
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_1:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
+
+  agent-2:
+    <<: *rust-service
+    container_name: csfx-agent-dev-2
+    hostname: dev-node-2
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_2:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
+
+  agent-3:
+    <<: *rust-service
+    container_name: csfx-agent-dev-3
+    hostname: dev-node-3
+    environment:
+      CSFX_GATEWAY_URL: http://api-gateway:8000
+      CSFX_HEARTBEAT_INTERVAL: "15"
+      RUST_LOG: ${RUST_LOG:-debug}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    volumes:
+      - ./agent:/app/agent
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_agent:/app/target
+      - agent_state_3:/var/lib/csfx-agent
+    command: cargo run -p csfx-agent
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.dev
+    container_name: csfx-app-dev
+    environment:
+      VITE_API_URL: https://api-gateway:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./app/src:/app/src
+      - ./app/static:/app/static
+    depends_on:
+      - api-gateway
+    networks:
+      - csfx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  cargo_cache:
+  cargo_git:
+  cargo_target_migrate:
+  cargo_target_api_gateway:
+  cargo_target_registry:
+  cargo_target_scheduler:
+  cargo_target_volume_manager:
+  cargo_target_failover_controller:
+  cargo_target_sdn_controller:
+  cargo_target_agent:
+  agent_state_1:
+  agent_state_2:
+  agent_state_3:
+
+networks:
+  csfx-network:
+    driver: bridge
