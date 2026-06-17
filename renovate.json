@@ -23,14 +23,9 @@
       "matchUpdateTypes": ["minor", "patch"]
     },
     {
-      "matchManagers": ["dockerfile"],
+      "matchManagers": ["dockerfile", "docker-compose"],
       "groupName": "Docker base images",
-      "automerge": false
-    },
-    {
-      "matchDepNames": ["postgres"],
-      "groupName": "PostgreSQL",
-      "automerge": false
+      "enabled": false
     },
     {
       "matchDepNames": ["rust"],

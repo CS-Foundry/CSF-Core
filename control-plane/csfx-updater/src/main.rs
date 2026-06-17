@@ -1,8 +1,10 @@
 mod config;
 mod etcd;
 mod git_mirror;
+mod health;
 mod nix_build;
 mod poller;
+mod rollback;
 mod updater;
 
 use std::time::Duration;
@@ -97,15 +99,25 @@ async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Resul
     let mut etcd = etcd::Client::connect(cfg).await?;
 
     if etcd.get(etcd::PAUSED_KEY).await?.as_deref() == Some("true") {
+        tracing::debug!("updater paused, skipping cycle");
         return Ok(None);
     }
 
     let desired = match etcd.get(etcd::DESIRED_FLAKE_REV_KEY).await? {
         Some(v) => v,
-        None => return Ok(None),
+        None => {
+            tracing::debug!("no desired flake rev in etcd, skipping cycle");
+            return Ok(None);
+        }
     };
 
-    if desired.is_empty() || desired == last_applied {
+    if desired.is_empty() {
+        tracing::debug!("desired flake rev is empty, skipping cycle");
+        return Ok(None);
+    }
+
+    if desired == last_applied {
+        tracing::debug!(flake_rev = %desired, "already on desired rev, nothing to do");
         return Ok(None);
     }
 
@@ -131,7 +143,7 @@ async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Resul
 
     let (_cancel_tx, cancel_rx) = watch::channel(false);
 
-    match nix_build::build(&cfg.infra_repo_mirror_dir, &desired, cancel_rx).await {
+    match nix_build::build(&cfg.infra_repo_mirror_dir, &desired, &cfg.nixos_config, cancel_rx).await {
         Ok(()) => {}
         Err(e) => {
             tracing::error!(error = %e, flake_rev = %desired, "nix build failed");
@@ -142,19 +154,51 @@ async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Resul
     }
 
     match updater::switch(cfg, &desired).await {
-        Ok(()) => {
-            etcd.put(etcd::BUILD_STATUS_KEY, "ready").await?;
-            etcd.put(etcd::RESULT_KEY, "success").await?;
-            info!(flake_rev = %desired, "update complete");
-            Ok(Some(desired))
-        }
+        Ok(()) => {}
         Err(e) => {
             tracing::error!(error = %e, flake_rev = %desired, "nixos-rebuild switch failed");
             etcd.put(etcd::BUILD_STATUS_KEY, "failed").await?;
             etcd.put(etcd::RESULT_KEY, "failed").await?;
-            Ok(Some(desired))
+            return Ok(Some(desired));
         }
     }
+
+    etcd.put(etcd::BUILD_STATUS_KEY, "verifying").await?;
+    info!(
+        flake_rev = %desired,
+        timeout_secs = cfg.health_check_timeout_secs,
+        "waiting for api-gateway to become healthy"
+    );
+
+    let healthy = health::wait_for_gateway(
+        &cfg.gateway_url,
+        cfg.health_check_timeout_secs,
+        cfg.health_check_retry_interval_secs,
+    )
+    .await;
+
+    if healthy {
+        etcd.put(etcd::BUILD_STATUS_KEY, "ready").await?;
+        etcd.put(etcd::RESULT_KEY, "success").await?;
+        info!(flake_rev = %desired, "update verified and complete");
+    } else {
+        tracing::error!(
+            flake_rev = %desired,
+            timeout_secs = cfg.health_check_timeout_secs,
+            "api-gateway did not become healthy after update, triggering rollback"
+        );
+        etcd.put(etcd::BUILD_STATUS_KEY, "rolling_back").await?;
+        etcd.put(etcd::RESULT_KEY, "rolled_back").await?;
+
+        if let Err(e) = rollback::rollback().await {
+            tracing::error!(error = %e, "rollback failed");
+            etcd.put(etcd::BUILD_STATUS_KEY, "rollback_failed").await?;
+        } else {
+            etcd.put(etcd::BUILD_STATUS_KEY, "rolled_back").await?;
+        }
+    }
+
+    Ok(Some(desired))
 }
 
 fn is_valid_sha(rev: &str) -> bool {

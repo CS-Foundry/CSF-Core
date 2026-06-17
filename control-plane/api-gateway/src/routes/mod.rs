@@ -10,6 +10,7 @@ use axum::Router;
 use std::sync::Arc;
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{info_span, Span};
 
@@ -18,6 +19,8 @@ pub mod events;
 pub mod networks;
 pub mod organizations;
 pub mod registry;
+pub mod releases;
+pub mod ssh_keys;
 pub mod system;
 pub mod update;
 pub mod users;
@@ -49,11 +52,12 @@ pub fn create_router() -> Router<AppState> {
 
     tracing::info!("CORS configured for frontend URL: {}", frontend_url);
 
-    // Allow multiple origins for development (both Docker container and localhost)
     let allowed_origins = vec![
         "http://localhost:3000",
+        "http://localhost:5173",
         "http://localhost:8000",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
         "http://127.0.0.1:8000",
         &frontend_url,
     ];
@@ -76,14 +80,15 @@ pub fn create_router() -> Router<AppState> {
         .allow_credentials(true);
 
     let internal_api_router = Router::new()
-        .merge(registry::registry_routes());
+        .merge(registry::registry_routes())
+        .merge(ssh_keys::ssh_keys_internal_routes());
 
-    let api_router = Router::new()
+    let rate_limited_router = Router::new()
         .merge(agents::agents_routes())
         .merge(networks::networks_routes())
         .merge(organizations::routes())
+        .merge(ssh_keys::ssh_keys_routes())
         .merge(system::routes())
-        .merge(update::routes())
         .merge(users::users_routes())
         .merge(volumes::volumes_routes())
         .merge(workloads::workloads_routes())
@@ -92,10 +97,22 @@ pub fn create_router() -> Router<AppState> {
             config: governor_config,
         });
 
+    let api_router = Router::new()
+        .merge(rate_limited_router)
+        .merge(update::routes())
+        .merge(releases::routes());
+
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "app/build".to_string());
+    let index_path = format!("{}/index.html", static_dir);
+
+    let serve_dir = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(&index_path));
+
     Router::new()
         .route("/metrics", get(metrics::metrics_handler))
         .logged_nest("/api", api_router)
         .logged_nest("/api", internal_api_router)
+        .fallback_service(serve_dir)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<Body>| {

@@ -85,10 +85,10 @@ async fn main() -> anyhow::Result<()> {
     let health_check_handle = {
         let registry = agent_registry.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
             loop {
                 interval.tick().await;
-                registry.check_agent_health(300).await;
+                registry.check_agent_health(30, 60).await;
             }
         })
     };
