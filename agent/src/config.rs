@@ -24,8 +24,7 @@ pub fn is_registered() -> bool {
 }
 
 pub fn load_config() -> Result<DaemonConfig> {
-    let data = std::fs::read_to_string(CONFIG_FILE)
-        .context("Failed to read daemon config")?;
+    let data = std::fs::read_to_string(CONFIG_FILE).context("Failed to read daemon config")?;
     serde_json::from_str(&data).context("Failed to parse daemon config")
 }
 
@@ -53,12 +52,10 @@ pub fn save_credentials(api_key: &str) -> Result<()> {
 fn set_permissions_600(path: &str) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .context("Failed to set credentials file permissions")
+    std::fs::set_permissions(path, perms).context("Failed to set credentials file permissions")
 }
 
 #[cfg(not(unix))]
 fn set_permissions_600(_path: &str) -> Result<()> {
     Ok(())
 }
-

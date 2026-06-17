@@ -1,8 +1,6 @@
 use anyhow::Result;
 use entity::bootstrap_tokens;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
 pub async fn create(
@@ -67,9 +65,7 @@ pub async fn revoke(db: &DatabaseConnection, id: Uuid) -> Result<()> {
     Ok(())
 }
 
-pub async fn get_all_active(
-    db: &DatabaseConnection,
-) -> Result<Vec<bootstrap_tokens::Model>> {
+pub async fn get_all_active(db: &DatabaseConnection) -> Result<Vec<bootstrap_tokens::Model>> {
     Ok(bootstrap_tokens::Entity::find()
         .filter(bootstrap_tokens::Column::Revoked.eq(false))
         .all(db)

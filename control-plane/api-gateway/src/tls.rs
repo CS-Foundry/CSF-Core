@@ -17,7 +17,9 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
 
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
-    params.distinguished_name.push(DnType::CommonName, "csfx-gateway");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "csfx-gateway");
 
     let san_hosts = std::env::var("TLS_SANS").unwrap_or_else(|_| "localhost,127.0.0.1".to_string());
     for san in san_hosts.split(',') {
@@ -25,7 +27,9 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
         if let Ok(ip) = san.parse::<std::net::IpAddr>() {
             params.subject_alt_names.push(SanType::IpAddress(ip));
         } else {
-            params.subject_alt_names.push(SanType::DnsName(san.try_into()?));
+            params
+                .subject_alt_names
+                .push(SanType::DnsName(san.try_into()?));
         }
     }
 

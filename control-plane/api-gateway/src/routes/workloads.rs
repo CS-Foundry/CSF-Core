@@ -8,7 +8,10 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::{auth::rbac::{CanManageWorkloads, CanViewWorkloads}, AppState};
+use crate::{
+    auth::rbac::{CanManageWorkloads, CanViewWorkloads},
+    AppState,
+};
 
 async fn proxy_to_scheduler(
     state: &AppState,
@@ -50,7 +53,14 @@ pub async fn create_workload(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
     let header_map = header_vec(&headers);
-    proxy_to_scheduler(&state, reqwest::Method::POST, "/workloads", body_json, Some(header_map)).await
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::POST,
+        "/workloads",
+        body_json,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_workloads(
@@ -59,7 +69,14 @@ pub async fn list_workloads(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_scheduler(&state, reqwest::Method::GET, "/workloads", None, Some(header_map)).await
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::GET,
+        "/workloads",
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn delete_workload(

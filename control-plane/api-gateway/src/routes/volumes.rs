@@ -8,7 +8,10 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::{auth::rbac::{CanManageVolumes, CanViewVolumes}, AppState};
+use crate::{
+    auth::rbac::{CanManageVolumes, CanViewVolumes},
+    AppState,
+};
 
 async fn proxy_to_volume_manager(
     state: &AppState,
@@ -36,7 +39,9 @@ async fn proxy_to_volume_manager(
             tracing::error!("Failed to forward request to volume-manager: {}", e);
             Err((
                 StatusCode::BAD_GATEWAY,
-                Json(json!({ "error": "Volume Manager service unavailable", "details": e.to_string() })),
+                Json(
+                    json!({ "error": "Volume Manager service unavailable", "details": e.to_string() }),
+                ),
             ))
         }
     }
@@ -57,7 +62,14 @@ pub async fn create_volume(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::POST, "/volumes", body_json, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::POST,
+        "/volumes",
+        body_json,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_volumes(
@@ -66,7 +78,14 @@ pub async fn list_volumes(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::GET, "/volumes", None, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::GET,
+        "/volumes",
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn get_volume(
@@ -76,7 +95,14 @@ pub async fn get_volume(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::GET, &format!("/volumes/{}", id), None, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::GET,
+        &format!("/volumes/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn delete_volume(
@@ -86,7 +112,14 @@ pub async fn delete_volume(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::DELETE, &format!("/volumes/{}", id), None, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/volumes/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn attach_volume(
@@ -98,7 +131,14 @@ pub async fn attach_volume(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::POST, &format!("/volumes/{}/attach", id), body_json, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::POST,
+        &format!("/volumes/{}/attach", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn detach_volume(
@@ -108,7 +148,14 @@ pub async fn detach_volume(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::POST, &format!("/volumes/{}/detach", id), None, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::POST,
+        &format!("/volumes/{}/detach", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn create_snapshot(
@@ -120,7 +167,14 @@ pub async fn create_snapshot(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::POST, &format!("/volumes/{}/snapshots", id), body_json, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::POST,
+        &format!("/volumes/{}/snapshots", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_snapshots(
@@ -130,7 +184,14 @@ pub async fn list_snapshots(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_volume_manager(&state, reqwest::Method::GET, &format!("/volumes/{}/snapshots", id), None, Some(header_map)).await
+    proxy_to_volume_manager(
+        &state,
+        reqwest::Method::GET,
+        &format!("/volumes/{}/snapshots", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub fn volumes_routes() -> Router<AppState> {

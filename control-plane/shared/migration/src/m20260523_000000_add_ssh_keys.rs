@@ -11,7 +11,12 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(UserSshKeys::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(UserSshKeys::Id).uuid().not_null().primary_key())
+                    .col(
+                        ColumnDef::new(UserSshKeys::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(UserSshKeys::UserId).uuid().not_null())
                     .col(ColumnDef::new(UserSshKeys::Name).string().not_null())
                     .col(ColumnDef::new(UserSshKeys::PublicKey).text().not_null())
@@ -21,11 +26,7 @@ impl MigrationTrait for Migration {
                             .timestamp()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(UserSshKeys::ExpiresAt)
-                            .timestamp()
-                            .null(),
-                    )
+                    .col(ColumnDef::new(UserSshKeys::ExpiresAt).timestamp().null())
                     .to_owned(),
             )
             .await

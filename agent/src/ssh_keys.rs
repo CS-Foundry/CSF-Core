@@ -8,10 +8,7 @@ struct AuthorizedKeysResponse {
 }
 
 pub async fn fetch_authorized_keys(gateway_url: &str, agent_id: Uuid) -> Result<Vec<String>> {
-    let url = format!(
-        "{}/api/agents/{}/authorized-keys",
-        gateway_url, agent_id
-    );
+    let url = format!("{}/api/agents/{}/authorized-keys", gateway_url, agent_id);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))

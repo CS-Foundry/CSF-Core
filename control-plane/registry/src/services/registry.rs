@@ -156,7 +156,9 @@ impl AgentRegistry {
                     agent_version: db_agent.agent_version,
                     status: AgentStatus::Online,
                     registered_at: db_agent.registered_at.and_utc(),
-                    last_heartbeat: db_agent.last_heartbeat.map(|dt: NaiveDateTime| dt.and_utc()),
+                    last_heartbeat: db_agent
+                        .last_heartbeat
+                        .map(|dt: NaiveDateTime| dt.and_utc()),
                     tags: params.tags,
                 };
 
@@ -198,7 +200,9 @@ impl AgentRegistry {
             agent_version: db_agent.agent_version,
             status: AgentStatus::Online,
             registered_at: db_agent.registered_at.and_utc(),
-            last_heartbeat: db_agent.last_heartbeat.map(|dt: NaiveDateTime| dt.and_utc()),
+            last_heartbeat: db_agent
+                .last_heartbeat
+                .map(|dt: NaiveDateTime| dt.and_utc()),
             tags: params.tags,
         };
 
@@ -231,7 +235,9 @@ impl AgentRegistry {
                 agent_version: db_agent.agent_version,
                 status: AgentStatus::from_str(&db_agent.status),
                 registered_at: db_agent.registered_at.and_utc(),
-                last_heartbeat: db_agent.last_heartbeat.map(|dt: NaiveDateTime| dt.and_utc()),
+                last_heartbeat: db_agent
+                    .last_heartbeat
+                    .map(|dt: NaiveDateTime| dt.and_utc()),
                 tags: None,
             }),
             _ => None,
@@ -253,15 +259,14 @@ impl AgentRegistry {
                     agent_version: db_agent.agent_version,
                     status: AgentStatus::from_str(&db_agent.status),
                     registered_at: db_agent.registered_at.and_utc(),
-                    last_heartbeat: db_agent.last_heartbeat.map(|dt: NaiveDateTime| dt.and_utc()),
+                    last_heartbeat: db_agent
+                        .last_heartbeat
+                        .map(|dt: NaiveDateTime| dt.and_utc()),
                     tags: None,
                 })
                 .collect(),
             Err(e) => {
-                crate::log_error!(
-                    "agent_registry",
-                    &format!("Failed to list agents: {}", e)
-                );
+                crate::log_error!("agent_registry", &format!("Failed to list agents: {}", e));
                 vec![]
             }
         }
@@ -281,7 +286,9 @@ impl AgentRegistry {
     }
 
     pub async fn check_agent_health(&self, degraded_seconds: i64, offline_seconds: i64) -> usize {
-        if let Err(e) = crate::db::agents::mark_degraded_by_timeout(&self.db, degraded_seconds).await {
+        if let Err(e) =
+            crate::db::agents::mark_degraded_by_timeout(&self.db, degraded_seconds).await
+        {
             crate::log_error!("agent_registry", &format!("Failed to mark degraded: {}", e));
         }
         match crate::db::agents::mark_offline_by_timeout(&self.db, offline_seconds).await {

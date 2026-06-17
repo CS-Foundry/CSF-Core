@@ -5,7 +5,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::models::workload::{AgentResources, CreateWorkloadRequest, CreateWorkloadResponse, WorkloadStatus};
+use crate::models::workload::{
+    AgentResources, CreateWorkloadRequest, CreateWorkloadResponse, WorkloadStatus,
+};
 use crate::services::etcd::{delete_placement, put_placement, PlacementRecord};
 
 pub struct SchedulerService {
@@ -18,7 +20,10 @@ impl SchedulerService {
         Self { db, etcd }
     }
 
-    pub async fn schedule(&self, req: CreateWorkloadRequest) -> Result<CreateWorkloadResponse, String> {
+    pub async fn schedule(
+        &self,
+        req: CreateWorkloadRequest,
+    ) -> Result<CreateWorkloadResponse, String> {
         let workload = crate::db::workloads::create(&self.db, &req)
             .await
             .map_err(|e| format!("Failed to persist workload: {}", e))?;
@@ -120,7 +125,10 @@ impl SchedulerService {
 
         delete_placement(&self.etcd, workload_id).await?;
 
-        crate::log_info!("scheduler", &format!("Workload deleted workload_id={}", workload_id));
+        crate::log_info!(
+            "scheduler",
+            &format!("Workload deleted workload_id={}", workload_id)
+        );
 
         Ok(())
     }

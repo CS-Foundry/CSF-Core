@@ -12,11 +12,8 @@ use crate::{
     handlers::{admin, agent, pki},
     metrics,
     services::{
-        api_keys::ApiKeyManager,
-        bootstrap_tokens::BootstrapTokenManager,
-        pki::PkiService,
-        registry::AgentRegistry,
-        tokens::TokenManager,
+        api_keys::ApiKeyManager, bootstrap_tokens::BootstrapTokenManager, pki::PkiService,
+        registry::AgentRegistry, tokens::TokenManager,
     },
 };
 
@@ -43,16 +40,25 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/metrics", get(metrics::metrics_handler))
         // Admin — agent lifecycle
-        .route("/admin/agents/pre-register", post(admin::pre_register_agent))
+        .route(
+            "/admin/agents/pre-register",
+            post(admin::pre_register_agent),
+        )
         .route("/admin/agents/pending", get(admin::list_pending_agents))
         .route(
             "/admin/agents/pending/:agent_id",
             delete(admin::delete_pending_agent),
         )
         .route("/admin/tokens", get(admin::list_tokens))
-        .route("/admin/bootstrap-tokens", post(admin::create_bootstrap_token))
+        .route(
+            "/admin/bootstrap-tokens",
+            post(admin::create_bootstrap_token),
+        )
         .route("/admin/bootstrap-tokens", get(admin::list_bootstrap_tokens))
-        .route("/admin/bootstrap-tokens/:id/revoke", post(admin::revoke_bootstrap_token))
+        .route(
+            "/admin/bootstrap-tokens/:id/revoke",
+            post(admin::revoke_bootstrap_token),
+        )
         .route("/admin/agents", get(admin::list_agents))
         .route("/admin/agents/:agent_id", get(admin::get_agent))
         .route("/admin/agents/:agent_id", delete(admin::deregister_agent))

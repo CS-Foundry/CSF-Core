@@ -34,10 +34,7 @@ pub async fn list_volumes(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-pub async fn get_volume(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+pub async fn get_volume(State(state): State<AppState>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match state.volume_service.get_volume(id).await {
         Ok(Some(vol)) => (StatusCode::OK, Json(serde_json::json!(vol))).into_response(),
         Ok(None) => (

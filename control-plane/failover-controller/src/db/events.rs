@@ -13,8 +13,8 @@ pub async fn insert(
     affected_workloads: Option<Vec<Uuid>>,
     duration_ms: Option<i64>,
 ) -> Result<failover_events::Model> {
-    let workloads_json = affected_workloads
-        .map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
+    let workloads_json =
+        affected_workloads.map(|ids| serde_json::to_value(ids).unwrap_or(serde_json::Value::Null));
 
     let model = failover_events::ActiveModel {
         id: Set(Uuid::new_v4()),

@@ -15,10 +15,8 @@ pub struct AgentPki {
 impl AgentPki {
     pub fn load_or_generate() -> Result<Self> {
         if Path::new(KEY_FILE).exists() && Path::new(CSR_FILE).exists() {
-            let key_pem = std::fs::read_to_string(KEY_FILE)
-                .context("Failed to read agent key")?;
-            let csr_pem = std::fs::read_to_string(CSR_FILE)
-                .context("Failed to read agent CSR")?;
+            let key_pem = std::fs::read_to_string(KEY_FILE).context("Failed to read agent key")?;
+            let csr_pem = std::fs::read_to_string(CSR_FILE).context("Failed to read agent CSR")?;
 
             tracing::info!("PKI: loaded existing keypair and CSR");
             return Ok(Self { key_pem, csr_pem });
@@ -32,7 +30,9 @@ impl AgentPki {
             .context("Failed to generate ECDSA keypair")?;
 
         let mut params = CertificateParams::default();
-        params.distinguished_name.push(DnType::OrganizationName, "CS-Foundry");
+        params
+            .distinguished_name
+            .push(DnType::OrganizationName, "CS-Foundry");
 
         let csr = params
             .serialize_request(&key_pair)
@@ -86,8 +86,7 @@ impl AgentPki {
 fn set_permissions_600(path: &str) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .context("Failed to set file permissions")
+    std::fs::set_permissions(path, perms).context("Failed to set file permissions")
 }
 
 #[cfg(not(unix))]

@@ -33,7 +33,10 @@ pub async fn run(db: DatabaseConnection) {
             if let Err(e) = agent_db::set_agent_status(&db, agent.id, "Degraded").await {
                 crate::log_error!(
                     "monitor",
-                    &format!("Failed to mark agent degraded agent_id={} err={}", agent.id, e)
+                    &format!(
+                        "Failed to mark agent degraded agent_id={} err={}",
+                        agent.id, e
+                    )
                 );
                 continue;
             }
@@ -49,7 +52,10 @@ pub async fn run(db: DatabaseConnection) {
             if let Err(e) = events::insert(&db, Some(agent.id), "degraded", None, None).await {
                 crate::log_error!(
                     "monitor",
-                    &format!("Failed to insert degraded event agent_id={} err={}", agent.id, e)
+                    &format!(
+                        "Failed to insert degraded event agent_id={} err={}",
+                        agent.id, e
+                    )
                 );
             }
         }
@@ -58,7 +64,10 @@ pub async fn run(db: DatabaseConnection) {
             if let Err(e) = agent_db::set_agent_status(&db, agent.id, "Offline").await {
                 crate::log_error!(
                     "monitor",
-                    &format!("Failed to mark agent offline agent_id={} err={}", agent.id, e)
+                    &format!(
+                        "Failed to mark agent offline agent_id={} err={}",
+                        agent.id, e
+                    )
                 );
                 continue;
             }

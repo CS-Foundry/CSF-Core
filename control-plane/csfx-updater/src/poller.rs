@@ -122,7 +122,10 @@ async fn dereference_tag(cfg: &Config, tag_sha: &str) -> Result<String> {
         .await?;
 
     if !resp.status().is_success() {
-        bail!("GitHub API returned {} when dereferencing tag", resp.status());
+        bail!(
+            "GitHub API returned {} when dereferencing tag",
+            resp.status()
+        );
     }
 
     let tag: GitHubTag = resp.json().await?;

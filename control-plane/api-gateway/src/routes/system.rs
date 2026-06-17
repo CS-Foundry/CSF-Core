@@ -1,6 +1,14 @@
-use axum::{extract::{Query, State}, http::StatusCode, response::Json, routing::get, Router};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::Json,
+    routing::get,
+    Router,
+};
 use entity::entities::{agent_metrics, agents};
-use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder, Statement};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder, Statement,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::middleware::AuthenticatedUser;
@@ -56,8 +64,7 @@ fn is_container_id(hostname: &str) -> bool {
         return false;
     }
     let trimmed = hostname.trim();
-    trimmed.len() == 12
-        && trimmed.chars().all(|c| c.is_ascii_hexdigit())
+    trimmed.len() == 12 && trimmed.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,8 +164,9 @@ async fn get_cluster_stats(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        let (cpu_pct, mem_total, mem_used, disk_total, disk_used, uptime, cores) =
-            latest_metric.as_ref().map(|m| {
+        let (cpu_pct, mem_total, mem_used, disk_total, disk_used, uptime, cores) = latest_metric
+            .as_ref()
+            .map(|m| {
                 (
                     m.cpu_usage_percent,
                     m.memory_total_bytes,
@@ -168,7 +176,8 @@ async fn get_cluster_stats(
                     m.uptime_seconds,
                     m.cpu_cores,
                 )
-            }).unwrap_or_default();
+            })
+            .unwrap_or_default();
 
         if let Some(c) = cores {
             total_cpu_cores += c as i64;

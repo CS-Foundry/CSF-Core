@@ -15,7 +15,12 @@ impl IpamService {
         Self { etcd }
     }
 
-    pub async fn allocate(&mut self, network_id: Uuid, cidr: &str, workload_id: Uuid) -> Result<String> {
+    pub async fn allocate(
+        &mut self,
+        network_id: Uuid,
+        cidr: &str,
+        workload_id: Uuid,
+    ) -> Result<String> {
         let (base, prefix_len) = parse_cidr(cidr)?;
         let total = 1u32 << (32 - prefix_len);
 
@@ -60,7 +65,11 @@ impl IpamService {
     ) -> Result<()> {
         let base_key = format!("/csfx/peers/{}/{}", network_id, node_id);
         self.etcd
-            .put(format!("{}/overlay_ip", base_key).as_str(), overlay_ip, None)
+            .put(
+                format!("{}/overlay_ip", base_key).as_str(),
+                overlay_ip,
+                None,
+            )
             .await
             .context("etcd put overlay_ip failed")?;
 

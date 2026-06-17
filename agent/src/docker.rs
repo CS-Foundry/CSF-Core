@@ -30,8 +30,8 @@ pub struct DockerManager {
 
 impl DockerManager {
     pub fn new() -> Result<Self> {
-        let docker = Docker::connect_with_unix_defaults()
-            .context("Failed to connect to Docker socket")?;
+        let docker =
+            Docker::connect_with_unix_defaults().context("Failed to connect to Docker socket")?;
         Ok(Self { docker })
     }
 
@@ -72,11 +72,10 @@ impl DockerManager {
     pub async fn start_container(&self, spec: &WorkloadSpec) -> Result<String> {
         let container_name = format!("csfx-{}", spec.workload_id);
 
-        let env: Option<Vec<String>> = spec.env_vars.as_ref().map(|vars| {
-            vars.iter()
-                .map(|(k, v)| format!("{}={}", k, v))
-                .collect()
-        });
+        let env: Option<Vec<String>> = spec
+            .env_vars
+            .as_ref()
+            .map(|vars| vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
         let (port_bindings, exposed_ports) = build_port_config(spec.ports.as_deref());
 

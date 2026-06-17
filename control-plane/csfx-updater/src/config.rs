@@ -32,10 +32,8 @@ impl Config {
                 .context("INFRA_REPO_MIRROR_URL must be set")?,
             infra_repo_github: env::var("INFRA_REPO_GITHUB")
                 .context("INFRA_REPO_GITHUB must be set (e.g. csfx-cloud/CSFX-Infra)")?,
-            infra_repo_branch: env::var("INFRA_REPO_BRANCH")
-                .unwrap_or_else(|_| "main".to_string()),
-            nixos_config: env::var("NIXOS_CONFIG")
-                .unwrap_or_else(|_| "csfx-node".to_string()),
+            infra_repo_branch: env::var("INFRA_REPO_BRANCH").unwrap_or_else(|_| "main".to_string()),
+            nixos_config: env::var("NIXOS_CONFIG").unwrap_or_else(|_| "csfx-node".to_string()),
             gateway_url: env::var("GATEWAY_URL")
                 .unwrap_or_else(|_| "https://localhost:8000".to_string()),
             health_check_timeout_secs: env::var("HEALTH_CHECK_TIMEOUT_SECS")

@@ -2,7 +2,11 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-pub async fn wait_for_gateway(gateway_url: &str, timeout_secs: u64, retry_interval_secs: u64) -> bool {
+pub async fn wait_for_gateway(
+    gateway_url: &str,
+    timeout_secs: u64,
+    retry_interval_secs: u64,
+) -> bool {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
     let probe_url = format!("{}/api/public-key", gateway_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()

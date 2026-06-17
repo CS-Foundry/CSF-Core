@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use entity::{invalid_jwt, key, user, InvalidJwt, Key, User};
-use tracing::warn;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
 use thiserror::Error;
 use totp_rs::{Algorithm, Secret, TOTP};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{

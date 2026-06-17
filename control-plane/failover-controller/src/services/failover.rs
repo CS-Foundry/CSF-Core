@@ -132,10 +132,7 @@ impl FailoverService {
             Err(e) => {
                 crate::log_warn!(
                     "failover",
-                    &format!(
-                        "Reschedule request failed agent_id={} err={}",
-                        agent_id, e
-                    )
+                    &format!("Reschedule request failed agent_id={} err={}", agent_id, e)
                 );
             }
         }
