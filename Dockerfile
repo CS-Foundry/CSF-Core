@@ -1,0 +1,72 @@
+FROM rust:1.88-slim-bookworm AS base
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpq-dev \
+    curl \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM base AS cargo-tools
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install cargo-watch --version 7.8.0 --locked
+
+FROM base AS dependencies
+
+COPY Cargo.toml Cargo.lock ./
+
+COPY agent/Cargo.toml ./agent/
+COPY control-plane/api-gateway/Cargo.toml ./control-plane/api-gateway/
+COPY control-plane/scheduler/Cargo.toml ./control-plane/scheduler/
+COPY control-plane/failover-controller/Cargo.toml ./control-plane/failover-controller/
+COPY control-plane/sdn-controller/Cargo.toml ./control-plane/sdn-controller/
+COPY control-plane/volume-manager/Cargo.toml ./control-plane/volume-manager/
+COPY control-plane/registry/Cargo.toml ./control-plane/registry/
+COPY control-plane/shared/entity/Cargo.toml ./control-plane/shared/entity/
+COPY control-plane/shared/migration/Cargo.toml ./control-plane/shared/migration/
+COPY control-plane/shared/shared/Cargo.toml ./control-plane/shared/shared/
+COPY control-plane/csfx-migrate/Cargo.toml ./control-plane/csfx-migrate/
+COPY control-plane/csfx-updater/Cargo.toml ./control-plane/csfx-updater/
+
+RUN mkdir -p agent/src \
+    control-plane/api-gateway/src \
+    control-plane/scheduler/src \
+    control-plane/failover-controller/src \
+    control-plane/sdn-controller/src \
+    control-plane/volume-manager/src \
+    control-plane/registry/src \
+    control-plane/shared/entity/src \
+    control-plane/shared/migration/src \
+    control-plane/shared/shared/src \
+    control-plane/csfx-migrate/src \
+    control-plane/csfx-updater/src \
+    && echo "fn main() {}" > agent/src/main.rs \
+    && echo "fn main() {}" > control-plane/api-gateway/src/main.rs \
+    && echo "fn main() {}" > control-plane/scheduler/src/main.rs \
+    && echo "fn main() {}" > control-plane/failover-controller/src/main.rs \
+    && echo "fn main() {}" > control-plane/sdn-controller/src/main.rs \
+    && echo "fn main() {}" > control-plane/volume-manager/src/main.rs \
+    && echo "fn main() {}" > control-plane/registry/src/main.rs \
+    && echo "fn main() {}" > control-plane/csfx-migrate/src/main.rs \
+    && echo "fn main() {}" > control-plane/csfx-updater/src/main.rs \
+    && echo "pub fn lib() {}" > control-plane/shared/entity/src/lib.rs \
+    && echo "pub fn lib() {}" > control-plane/shared/migration/src/lib.rs \
+    && echo "pub fn lib() {}" > control-plane/shared/shared/src/lib.rs
+
+COPY control-plane/shared/ ./control-plane/shared/
+
+RUN rm -rf /usr/local/cargo/registry/src/* /usr/local/cargo/registry/cache/* && \
+    cargo fetch
+
+FROM dependencies AS final
+
+COPY --from=cargo-tools /usr/local/cargo/bin/cargo-watch /usr/local/cargo/bin/
+
+EXPOSE 8000 8001
+
+CMD ["cargo", "watch", "--help"]

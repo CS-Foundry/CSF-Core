@@ -26,7 +26,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       should_build: ${{ steps.version.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Resolve version
         id: version
@@ -68,7 +68,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -85,7 +85,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -103,7 +103,7 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.binary }}-${{ matrix.arch }}
           sha256sum ${{ matrix.binary }}-${{ matrix.arch }} > ${{ matrix.binary }}-${{ matrix.arch }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.binary }}-${{ matrix.arch }}
           path: |
@@ -176,7 +176,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -193,7 +193,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -211,7 +211,7 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}
           sha256sum csfx-cp-${{ matrix.binary }}-${{ matrix.arch }} > csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: csfx-cp-${{ matrix.binary }}-${{ matrix.arch }}
           path: |
@@ -224,9 +224,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [prepare, build-binaries, build-cp-binaries, build-frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-*
           merge-multiple: true
@@ -264,25 +264,25 @@ jobs:
     runs-on: ubuntu-latest
     needs: [prepare, build-binaries, build-cp-binaries, build-frontend, attach-binaries-release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/CSFX-Infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
           path: infra
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-agent-*
           path: /tmp/binaries
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-updater-*
           path: /tmp/binaries
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: csfx-cp-*
           path: /tmp/cp-binaries
