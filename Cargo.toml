@@ -97,7 +97,7 @@ image = "0.25"
 sysinfo = "0.39"
 bollard = "0.21"
 futures-util = "0.3"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 [profile.release]
 opt-level = 3

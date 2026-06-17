@@ -35,7 +35,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # HTTP Client for Patroni
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # Utilities
 dotenvy = { workspace = true }
