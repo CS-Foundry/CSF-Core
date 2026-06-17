@@ -21,7 +21,7 @@ async-trait = { workspace = true }
 etcd-client = { workspace = true }
 
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 
 # Database
 sea-orm = { workspace = true }
