@@ -1,7 +1,7 @@
 x-rust-service: &rust-service
   build:
     context: .
-    dockerfile: control-plane/Dockerfile.dev.shared
+    dockerfile: control-plane/Dockerfile
   volumes:
     - ./Cargo.toml:/app/Cargo.toml
     - ./Cargo.lock:/app/Cargo.lock
@@ -289,7 +289,7 @@ services:
   app:
     build:
       context: ./app
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: csfx-app-dev
     environment:
       VITE_API_URL: https://api-gateway:8000
