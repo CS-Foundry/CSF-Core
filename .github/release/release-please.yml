@@ -2,10 +2,9 @@ name: Release Please
 
 on:
   workflow_call:
-    inputs:
+    secrets:
       token:
         required: true
-        type: string
     outputs:
       release_created:
         value: ${{ jobs.release-please.outputs.release_created }}
@@ -32,4 +31,4 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ inputs.token }}
+          token: ${{ secrets.token }}

@@ -15,7 +15,7 @@ jobs:
   release-please:
     name: Release Please
     uses: ./.github/release/release-please.yml
-    with:
+    secrets:
       token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
   resolve-version:
