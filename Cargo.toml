@@ -70,6 +70,7 @@ etcd-client = { version = "0.19", default-features = false, features = ["tls-roo
 # PKI
 rcgen = { version = "0.14", features = ["pem", "x509-parser"] }
 rustls = { version = "0.23", features = ["ring"] }
+ring = "0.17"
 x509-parser = "0.18"
 
 # Metrics
@@ -97,7 +98,7 @@ image = "0.25"
 sysinfo = "0.39"
 bollard = "0.21"
 futures-util = "0.3"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "webpki-roots"] }
 
 [profile.release]
 opt-level = 3

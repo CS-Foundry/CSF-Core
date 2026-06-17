@@ -13,6 +13,10 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install ring crypto provider");
+
     dotenvy::dotenv().ok();
 
     tracing_subscriber::fmt()
