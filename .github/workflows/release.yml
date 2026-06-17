@@ -14,7 +14,7 @@ permissions:
 jobs:
   release-please:
     name: Release Please
-    uses: ./.github/release/release-please.yml
+    uses: ./.github/workflows/release/release-please.yml
     secrets:
       token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
@@ -43,26 +43,26 @@ jobs:
   build-binaries:
     name: Build Binaries
     needs: resolve-version
-    uses: ./.github/release/build-binaries.yml
+    uses: ./.github/workflows/release/build-binaries.yml
     with:
       version: ${{ needs.resolve-version.outputs.version }}
 
   build-cp:
     name: Build Control Plane
     needs: resolve-version
-    uses: ./.github/release/build-cp.yml
+    uses: ./.github/workflows/release/build-cp.yml
     with:
       version: ${{ needs.resolve-version.outputs.version }}
 
   build-frontend:
     name: Build Frontend
     needs: resolve-version
-    uses: ./.github/release/build-frontend.yml
+    uses: ./.github/workflows/release/build-frontend.yml
 
   publish:
     name: Publish
     needs: [release-please, resolve-version, build-binaries, build-cp, build-frontend]
-    uses: ./.github/release/publish.yml
+    uses: ./.github/workflows/release/publish.yml
     with:
       version: ${{ needs.resolve-version.outputs.version }}
       prerelease: ${{ needs.release-please.outputs.release_created != 'true' }}
@@ -72,7 +72,7 @@ jobs:
   update-infra:
     name: Update Infra
     needs: [release-please, resolve-version, build-binaries, build-cp, build-frontend, publish]
-    uses: ./.github/release/update-infra.yml
+    uses: ./.github/workflows/release/update-infra.yml
     with:
       version: ${{ needs.resolve-version.outputs.version }}
       infra_ref: main
