@@ -177,10 +177,7 @@ impl TokenManager {
                 })
                 .collect(),
             Err(e) => {
-                crate::log_error!(
-                    "token_manager",
-                    &format!("Failed to list tokens: {}", e)
-                );
+                crate::log_error!("token_manager", &format!("Failed to list tokens: {}", e));
                 vec![]
             }
         }

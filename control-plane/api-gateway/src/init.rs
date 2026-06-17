@@ -2,10 +2,7 @@ use entity::{
     key, organization, permission, role, role_permission, user, user_organization, Key,
     Organization, Permission, Role, RolePermission, User, UserOrganization,
 };
-use sea_orm::{
-    ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter,
-};
+use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use crate::auth::crypto::{generate_salt, hash_password, RsaKeyPair};
@@ -66,26 +63,91 @@ pub async fn initialize_database(
 
     // 3. Create default permissions
     let permissions_to_create = vec![
-        ("organization.view", "organization", "view", "View organization details"),
-        ("organization.update", "organization", "update", "Update organization"),
-        ("organization.delete", "organization", "delete", "Delete organization"),
-        ("members.view", "members", "view", "View organization members"),
-        ("members.create", "members", "create", "Add members to organization"),
+        (
+            "organization.view",
+            "organization",
+            "view",
+            "View organization details",
+        ),
+        (
+            "organization.update",
+            "organization",
+            "update",
+            "Update organization",
+        ),
+        (
+            "organization.delete",
+            "organization",
+            "delete",
+            "Delete organization",
+        ),
+        (
+            "members.view",
+            "members",
+            "view",
+            "View organization members",
+        ),
+        (
+            "members.create",
+            "members",
+            "create",
+            "Add members to organization",
+        ),
         ("members.update", "members", "update", "Update member roles"),
-        ("members.delete", "members", "delete", "Remove members from organization"),
+        (
+            "members.delete",
+            "members",
+            "delete",
+            "Remove members from organization",
+        ),
         ("users.view", "users", "view", "View user list and details"),
         ("users.create", "users", "create", "Create new users"),
         ("users.update", "users", "update", "Update user details"),
         ("users.delete", "users", "delete", "Delete users"),
         ("agents.view", "agents", "view", "View agents and metrics"),
-        ("agents.manage", "agents", "manage", "Register and manage agents"),
+        (
+            "agents.manage",
+            "agents",
+            "manage",
+            "Register and manage agents",
+        ),
         ("workloads.view", "workloads", "view", "View workloads"),
-        ("workloads.manage", "workloads", "manage", "Create and delete workloads"),
-        ("volumes.view", "volumes", "view", "View volumes and snapshots"),
-        ("volumes.manage", "volumes", "manage", "Create, attach, detach and delete volumes"),
-        ("networks.view", "networks", "view", "View networks and policies"),
-        ("networks.manage", "networks", "manage", "Create and manage networks"),
-        ("system.manage", "system", "manage", "Trigger control plane updates"),
+        (
+            "workloads.manage",
+            "workloads",
+            "manage",
+            "Create and delete workloads",
+        ),
+        (
+            "volumes.view",
+            "volumes",
+            "view",
+            "View volumes and snapshots",
+        ),
+        (
+            "volumes.manage",
+            "volumes",
+            "manage",
+            "Create, attach, detach and delete volumes",
+        ),
+        (
+            "networks.view",
+            "networks",
+            "view",
+            "View networks and policies",
+        ),
+        (
+            "networks.manage",
+            "networks",
+            "manage",
+            "Create and manage networks",
+        ),
+        (
+            "system.manage",
+            "system",
+            "manage",
+            "Trigger control plane updates",
+        ),
     ];
 
     let mut permission_map = std::collections::HashMap::new();
@@ -177,10 +239,14 @@ pub async fn initialize_database(
         Role::insert(new_role).exec_without_returning(db).await?;
 
         let operator_perms = [
-            "agents.view", "agents.manage",
-            "workloads.view", "workloads.manage",
-            "volumes.view", "volumes.manage",
-            "networks.view", "networks.manage",
+            "agents.view",
+            "agents.manage",
+            "workloads.view",
+            "workloads.manage",
+            "volumes.view",
+            "volumes.manage",
+            "networks.view",
+            "networks.manage",
             "members.view",
         ];
         for perm_name in operator_perms {
@@ -189,7 +255,9 @@ pub async fn initialize_database(
                     role_id: ActiveValue::Set(role_id),
                     permission_id: ActiveValue::Set(*perm_id),
                 };
-                RolePermission::insert(role_perm).exec_without_returning(db).await?;
+                RolePermission::insert(role_perm)
+                    .exec_without_returning(db)
+                    .await?;
             }
         }
         tracing::info!("Operator role created");
@@ -217,8 +285,12 @@ pub async fn initialize_database(
         Role::insert(new_role).exec_without_returning(db).await?;
 
         let viewer_perms = [
-            "agents.view", "workloads.view", "volumes.view", "networks.view",
-            "organization.view", "members.view",
+            "agents.view",
+            "workloads.view",
+            "volumes.view",
+            "networks.view",
+            "organization.view",
+            "members.view",
         ];
         for perm_name in viewer_perms {
             if let Some(perm_id) = permission_map.get(perm_name) {
@@ -226,7 +298,9 @@ pub async fn initialize_database(
                     role_id: ActiveValue::Set(role_id),
                     permission_id: ActiveValue::Set(*perm_id),
                 };
-                RolePermission::insert(role_perm).exec_without_returning(db).await?;
+                RolePermission::insert(role_perm)
+                    .exec_without_returning(db)
+                    .await?;
             }
         }
         tracing::info!("Viewer role created");

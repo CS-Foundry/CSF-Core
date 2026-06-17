@@ -105,8 +105,7 @@ pub fn create_router() -> Router<AppState> {
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "app/build".to_string());
     let index_path = format!("{}/index.html", static_dir);
 
-    let serve_dir = ServeDir::new(&static_dir)
-        .not_found_service(ServeFile::new(&index_path));
+    let serve_dir = ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
 
     Router::new()
         .route("/metrics", get(metrics::metrics_handler))

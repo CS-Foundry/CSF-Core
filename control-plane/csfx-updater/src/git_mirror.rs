@@ -49,6 +49,5 @@ pub async fn rev_exists(mirror_dir: &str, rev: &str) -> Result<bool> {
         .output()
         .await?;
 
-    Ok(output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim() == "commit")
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "commit")
 }

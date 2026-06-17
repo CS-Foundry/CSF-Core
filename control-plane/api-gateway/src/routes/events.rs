@@ -36,7 +36,9 @@ async fn proxy_to_failover(
             tracing::error!("Failed to forward request to failover-controller: {}", e);
             Err((
                 StatusCode::BAD_GATEWAY,
-                Json(json!({ "error": "Failover controller unavailable", "details": e.to_string() })),
+                Json(
+                    json!({ "error": "Failover controller unavailable", "details": e.to_string() }),
+                ),
             ))
         }
     }
@@ -51,7 +53,14 @@ pub async fn list_events(
         .iter()
         .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
         .collect();
-    proxy_to_failover(&state, reqwest::Method::GET, "/events", None, Some(header_map)).await
+    proxy_to_failover(
+        &state,
+        reqwest::Method::GET,
+        "/events",
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub fn events_routes() -> Router<AppState> {

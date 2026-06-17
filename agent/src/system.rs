@@ -40,15 +40,16 @@ fn detect_os() -> (String, String) {
             .or_else(|| parse_os_release_field(&content, "BUILD_ID"));
 
         if let Some(os_type) = id {
-            let os_version = version.unwrap_or_else(|| {
-                System::os_version().unwrap_or_else(|| "unknown".to_string())
-            });
+            let os_version = version
+                .unwrap_or_else(|| System::os_version().unwrap_or_else(|| "unknown".to_string()));
             return (os_type.to_lowercase(), os_version);
         }
     }
 
     (
-        System::name().unwrap_or_else(|| "linux".to_string()).to_lowercase(),
+        System::name()
+            .unwrap_or_else(|| "linux".to_string())
+            .to_lowercase(),
         System::os_version().unwrap_or_else(|| "unknown".to_string()),
     )
 }
@@ -73,9 +74,13 @@ pub fn collect_metrics() -> SystemMetrics {
     let memory_used_bytes = sys.used_memory();
 
     let disks = Disks::new_with_refreshed_list();
-    let (disk_total_bytes, disk_used_bytes) = disks.iter().fold((0u64, 0u64), |(total, used), d| {
-        (total + d.total_space(), used + (d.total_space() - d.available_space()))
-    });
+    let (disk_total_bytes, disk_used_bytes) =
+        disks.iter().fold((0u64, 0u64), |(total, used), d| {
+            (
+                total + d.total_space(),
+                used + (d.total_space() - d.available_space()),
+            )
+        });
 
     let networks = Networks::new_with_refreshed_list();
     let (network_rx_bytes, network_tx_bytes) =

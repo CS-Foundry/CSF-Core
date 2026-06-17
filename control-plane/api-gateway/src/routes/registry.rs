@@ -789,7 +789,14 @@ pub async fn create_bootstrap_token(
         .iter()
         .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
         .collect();
-    proxy_to_registry(&state, reqwest::Method::POST, "/admin/bootstrap-tokens", body_json, Some(header_map)).await
+    proxy_to_registry(
+        &state,
+        reqwest::Method::POST,
+        "/admin/bootstrap-tokens",
+        body_json,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_bootstrap_tokens(
@@ -801,7 +808,14 @@ pub async fn list_bootstrap_tokens(
         .iter()
         .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
         .collect();
-    proxy_to_registry(&state, reqwest::Method::GET, "/admin/bootstrap-tokens", None, Some(header_map)).await
+    proxy_to_registry(
+        &state,
+        reqwest::Method::GET,
+        "/admin/bootstrap-tokens",
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn revoke_bootstrap_token(
@@ -814,7 +828,14 @@ pub async fn revoke_bootstrap_token(
         .iter()
         .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
         .collect();
-    proxy_to_registry(&state, reqwest::Method::POST, &format!("/admin/bootstrap-tokens/{}/revoke", id), None, Some(header_map)).await
+    proxy_to_registry(
+        &state,
+        reqwest::Method::POST,
+        &format!("/admin/bootstrap-tokens/{}/revoke", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 /// Registry health check
@@ -865,7 +886,9 @@ pub async fn internal_bootstrap_token(
         &state,
         reqwest::Method::POST,
         "/admin/bootstrap-tokens",
-        Some(json!({"description": "auto-issued for node bootstrap", "ttl_hours": 1, "max_uses": 1})),
+        Some(
+            json!({"description": "auto-issued for node bootstrap", "ttl_hours": 1, "max_uses": 1}),
+        ),
         None,
     )
     .await
@@ -874,7 +897,10 @@ pub async fn internal_bootstrap_token(
 pub fn registry_routes() -> Router<AppState> {
     Router::new()
         // Internal - node bootstrap (no auth, IP-restricted)
-        .route("/registry/internal/bootstrap-token", get(internal_bootstrap_token))
+        .route(
+            "/registry/internal/bootstrap-token",
+            get(internal_bootstrap_token),
+        )
         // Admin routes - Pre-Registration (NEW WORKFLOW)
         .route(
             "/registry/admin/agents/pre-register",
@@ -886,9 +912,18 @@ pub fn registry_routes() -> Router<AppState> {
             post(delete_pending_agent),
         )
         // Admin routes - Bootstrap Token Management
-        .route("/registry/admin/bootstrap-tokens", post(create_bootstrap_token))
-        .route("/registry/admin/bootstrap-tokens", get(list_bootstrap_tokens))
-        .route("/registry/admin/bootstrap-tokens/:id/revoke", post(revoke_bootstrap_token))
+        .route(
+            "/registry/admin/bootstrap-tokens",
+            post(create_bootstrap_token),
+        )
+        .route(
+            "/registry/admin/bootstrap-tokens",
+            get(list_bootstrap_tokens),
+        )
+        .route(
+            "/registry/admin/bootstrap-tokens/:id/revoke",
+            post(revoke_bootstrap_token),
+        )
         // Admin routes - Token Management (DEPRECATED)
         .route("/registry/admin/tokens", post(create_token))
         .route("/registry/admin/tokens", get(list_tokens))
@@ -910,10 +945,7 @@ pub fn registry_routes() -> Router<AppState> {
         .route("/registry/agents/register", post(register_agent))
         .route("/registry/agents/:id/heartbeat", post(agent_heartbeat))
         // Agent - certificate management
-        .route(
-            "/registry/agents/:id/certificate",
-            post(issue_certificate),
-        )
+        .route("/registry/agents/:id/certificate", post(issue_certificate))
         .route(
             "/registry/agents/:id/rotate-certificate",
             post(rotate_certificate),

@@ -20,7 +20,10 @@ pub async fn create_network(
         Ok(network) => Ok((StatusCode::CREATED, Json(json!(network)))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to create network");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -32,7 +35,10 @@ pub async fn list_networks(
         Ok(networks) => Ok(Json(json!(networks))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to list networks");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -43,10 +49,16 @@ pub async fn get_network(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     match db::get_network(&state.db, id).await {
         Ok(Some(network)) => Ok(Json(json!(network))),
-        Ok(None) => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Network not found"})))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Network not found"})),
+        )),
         Err(e) => {
             tracing::error!(error = %e, "Failed to get network");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -59,7 +71,10 @@ pub async fn delete_network(
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(e) => {
             tracing::error!(error = %e, "Failed to delete network");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -73,7 +88,10 @@ pub async fn create_policy(
         Ok(policy) => Ok((StatusCode::CREATED, Json(json!(policy)))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to create policy");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -86,7 +104,10 @@ pub async fn list_policies(
         Ok(policies) => Ok(Json(json!(policies))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to list policies");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -98,11 +119,25 @@ pub async fn add_member(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let network = match db::get_network(&state.db, network_id).await {
         Ok(Some(n)) => n,
-        Ok(None) => return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Network not found"})))),
-        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()})))),
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Network not found"})),
+            ))
+        }
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
     };
 
-    let allocated_ip = match state.ipam.allocate(network_id, &network.cidr, req.workload_id).await {
+    let allocated_ip = match state
+        .ipam
+        .allocate(network_id, &network.cidr, req.workload_id)
+        .await
+    {
         Ok(ip) => ip,
         Err(e) => {
             tracing::error!(error = %e, "IPAM allocation failed");
@@ -114,7 +149,10 @@ pub async fn add_member(
         Ok(member) => Ok((StatusCode::CREATED, Json(json!(member)))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to add network member");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -127,7 +165,10 @@ pub async fn list_members(
         Ok(members) => Ok(Json(json!(members))),
         Err(e) => {
             tracing::error!(error = %e, "Failed to list network members");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }
@@ -136,7 +177,9 @@ pub async fn remove_member(
     State(mut state): State<AppState>,
     Path((network_id, workload_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let members = db::list_members(&state.db, network_id).await.unwrap_or_default();
+    let members = db::list_members(&state.db, network_id)
+        .await
+        .unwrap_or_default();
     let ip = members
         .iter()
         .find(|m| m.workload_id == workload_id)
@@ -150,7 +193,10 @@ pub async fn remove_member(
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(e) => {
             tracing::error!(error = %e, "Failed to remove network member");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
         }
     }
 }

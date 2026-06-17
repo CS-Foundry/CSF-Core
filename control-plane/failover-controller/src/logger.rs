@@ -58,9 +58,7 @@ pub fn init_logger_with_service(service_name: &'static str) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let fmt_layer = fmt::layer().with_target(false).with_thread_ids(true);
 
-    let registry = tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt_layer);
+    let registry = tracing_subscriber::registry().with(filter).with(fmt_layer);
 
     match build_otlp_provider(service_name) {
         Some(provider) => {
@@ -79,11 +77,21 @@ pub fn log_message(level: LogLevel, module: &str, location: &str, description: &
     let lvl: Level = level.into();
 
     match lvl {
-        Level::ERROR => event!(Level::ERROR, module = %module, location = %location, "{}", description),
-        Level::WARN  => event!(Level::WARN,  module = %module, location = %location, "{}", description),
-        Level::INFO  => event!(Level::INFO,  module = %module, location = %location, "{}", description),
-        Level::DEBUG => event!(Level::DEBUG, module = %module, location = %location, "{}", description),
-        Level::TRACE => event!(Level::TRACE, module = %module, location = %location, "{}", description),
+        Level::ERROR => {
+            event!(Level::ERROR, module = %module, location = %location, "{}", description)
+        }
+        Level::WARN => {
+            event!(Level::WARN,  module = %module, location = %location, "{}", description)
+        }
+        Level::INFO => {
+            event!(Level::INFO,  module = %module, location = %location, "{}", description)
+        }
+        Level::DEBUG => {
+            event!(Level::DEBUG, module = %module, location = %location, "{}", description)
+        }
+        Level::TRACE => {
+            event!(Level::TRACE, module = %module, location = %location, "{}", description)
+        }
     }
 }
 

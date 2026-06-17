@@ -1,4 +1,10 @@
-use axum::{extract::State, http::StatusCode, response::Json, routing::{get, post}, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::Json,
+    routing::{get, post},
+    Router,
+};
 use etcd_client::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -120,7 +126,9 @@ async fn etcd_get(client: &mut Client, key: &str) -> Result<Option<String>, Stat
 
 fn is_valid_version(version: &str) -> bool {
     let v = version.trim_start_matches('v');
-    !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    !v.is_empty()
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 async fn pause_updates(
@@ -144,13 +152,10 @@ async fn resume_updates(
     State(_state): State<AppState>,
 ) -> Result<StatusCode, StatusCode> {
     let mut client = etcd_client().await?;
-    client
-        .delete(ETCD_PAUSED_KEY, None)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to delete update_paused from etcd");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    client.delete(ETCD_PAUSED_KEY, None).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to delete update_paused from etcd");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     tracing::info!("updates resumed");
     Ok(StatusCode::NO_CONTENT)
 }

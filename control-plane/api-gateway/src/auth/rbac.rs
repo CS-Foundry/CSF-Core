@@ -42,7 +42,11 @@ async fn extract_claims(parts: &mut Parts, state: &AppState) -> Result<Claims, S
                 .and_then(|cookies| {
                     cookies.split(';').find_map(|cookie| {
                         let mut p = cookie.trim().splitn(2, '=');
-                        if p.next()? == "token" { p.next() } else { None }
+                        if p.next()? == "token" {
+                            p.next()
+                        } else {
+                            None
+                        }
                     })
                 })
         })
@@ -107,9 +111,7 @@ macro_rules! impl_extractor {
                 parts: &mut Parts,
                 state: &AppState,
             ) -> Result<Self, Self::Rejection> {
-                check(parts, state, $resource, $action)
-                    .await
-                    .map(Self)
+                check(parts, state, $resource, $action).await.map(Self)
             }
         }
     };

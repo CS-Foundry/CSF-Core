@@ -6,7 +6,9 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
-    models::agent::{ErrorResponse, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse},
+    models::agent::{
+        ErrorResponse, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse,
+    },
     server::AppState,
     services::registry::RegisterAgentParams,
 };
@@ -108,7 +110,10 @@ pub async fn register_agent(
         if let Err(e) = state.api_key_manager.revoke_all_keys(agent.id).await {
             crate::log_warn!(
                 "agent_handler",
-                &format!("Failed to revoke old API keys for agent={}: {}", agent.id, e)
+                &format!(
+                    "Failed to revoke old API keys for agent={}: {}",
+                    agent.id, e
+                )
             );
         }
     }
@@ -300,7 +305,10 @@ async fn forward_container_statuses(
     if let Err(e) = state.http_client.post(&url).json(&payload).send().await {
         crate::log_warn!(
             "agent_handler",
-            &format!("Failed to forward container statuses to scheduler err={}", e)
+            &format!(
+                "Failed to forward container statuses to scheduler err={}",
+                e
+            )
         );
     }
 }

@@ -1,5 +1,5 @@
-use crate::ceph::core::CephClient;
 use super::types::*;
+use crate::ceph::core::CephClient;
 use anyhow::{Context, Result};
 
 pub struct PoolManager {
@@ -26,7 +26,9 @@ impl PoolManager {
             .arg(pool.pg_num.to_string())
             .arg(pool.pgp_num.to_string());
 
-        self.client.execute(cmd).await
+        self.client
+            .execute(cmd)
+            .await
             .context("Failed to create pool")?;
 
         // Replikation setzen
@@ -37,7 +39,9 @@ impl PoolManager {
             .arg("size")
             .arg(pool.size.to_string());
 
-        self.client.execute(cmd).await
+        self.client
+            .execute(cmd)
+            .await
             .context("Failed to set pool size")?;
 
         // Min size setzen
@@ -48,7 +52,9 @@ impl PoolManager {
             .arg("min_size")
             .arg(pool.min_size.to_string());
 
-        self.client.execute(cmd).await
+        self.client
+            .execute(cmd)
+            .await
             .context("Failed to set pool min_size")?;
 
         // RBD Pool initialisieren
@@ -59,7 +65,9 @@ impl PoolManager {
             .arg(&pool.name)
             .arg("rbd");
 
-        self.client.execute(cmd).await
+        self.client
+            .execute(cmd)
+            .await
             .context("Failed to enable RBD application")?;
 
         crate::log_info!(
@@ -84,7 +92,9 @@ impl PoolManager {
             .arg(pool_name) // Bestätigung
             .arg("--yes-i-really-really-mean-it");
 
-        self.client.execute(cmd).await
+        self.client
+            .execute(cmd)
+            .await
             .context("Failed to delete pool")?;
 
         Ok(())
@@ -93,19 +103,17 @@ impl PoolManager {
     /// Listet alle Pools auf
     pub async fn list_pools(&self) -> Result<Vec<String>> {
         crate::log_debug!("pool_manager", "Listing all Ceph pools");
-        
-        let cmd = CephCommand::new("osd")
-            .arg("pool")
-            .arg("ls");
+
+        let cmd = CephCommand::new("osd").arg("pool").arg("ls");
 
         let output = self.client.execute(cmd).await?;
         let pools: Vec<String> = serde_json::from_str(&output)?;
-        
+
         crate::log_debug!(
             "pool_manager",
             &format!("Found {} pools: {}", pools.len(), pools.join(", "))
         );
-        
+
         Ok(pools)
     }
 

@@ -2,8 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use entity::entities::{network_members, network_policies, networks};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use uuid::Uuid;
 
@@ -24,10 +23,7 @@ pub async fn create_network(
         updated_at: Set(None),
     };
 
-    model
-        .insert(db)
-        .await
-        .context("Failed to insert network")
+    model.insert(db).await.context("Failed to insert network")
 }
 
 pub async fn list_networks(db: &DatabaseConnection) -> Result<Vec<networks::Model>> {

@@ -1,11 +1,7 @@
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use sea_orm::DatabaseConnection;
 
-use crate::{
-    handlers::networks,
-    metrics,
-    services::ipam::IpamService,
-};
+use crate::{handlers::networks, metrics, services::ipam::IpamService};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,7 +23,10 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics::metrics_handler))
-        .route("/networks", get(networks::list_networks).post(networks::create_network))
+        .route(
+            "/networks",
+            get(networks::list_networks).post(networks::create_network),
+        )
         .route(
             "/networks/:id",
             get(networks::get_network).delete(networks::delete_network),

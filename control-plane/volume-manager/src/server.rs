@@ -24,10 +24,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/volumes", axum::routing::post(volumes::create_volume))
         .route("/volumes", get(volumes::list_volumes))
         .route("/volumes/:id", get(volumes::get_volume))
-        .route("/volumes/:id", axum::routing::delete(volumes::delete_volume))
-        .route("/volumes/:id/attach", axum::routing::post(volumes::attach_volume))
-        .route("/volumes/:id/detach", axum::routing::post(volumes::detach_volume))
-        .route("/volumes/:id/snapshots", axum::routing::post(volumes::create_snapshot))
+        .route(
+            "/volumes/:id",
+            axum::routing::delete(volumes::delete_volume),
+        )
+        .route(
+            "/volumes/:id/attach",
+            axum::routing::post(volumes::attach_volume),
+        )
+        .route(
+            "/volumes/:id/detach",
+            axum::routing::post(volumes::detach_volume),
+        )
+        .route(
+            "/volumes/:id/snapshots",
+            axum::routing::post(volumes::create_snapshot),
+        )
         .route("/volumes/:id/snapshots", get(volumes::list_snapshots))
         .with_state(state)
 }

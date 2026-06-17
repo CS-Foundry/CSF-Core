@@ -27,7 +27,11 @@ async fn main() -> Result<()> {
     let gateway_url = std::env::var("CSFX_GATEWAY_URL")
         .context("CSFX_GATEWAY_URL environment variable is required")?;
 
-    if let Some(username) = std::env::args().nth(1).filter(|a| a == "--authorized-keys").and_then(|_| std::env::args().nth(2)) {
+    if let Some(username) = std::env::args()
+        .nth(1)
+        .filter(|a| a == "--authorized-keys")
+        .and_then(|_| std::env::args().nth(2))
+    {
         let agent_id = config::load_config()
             .context("Failed to load daemon config")?
             .agent_id;
@@ -43,11 +47,10 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
 
-    let api_client = client::ApiClient::new(gateway_url.clone())
-        .context("Failed to initialize API client")?;
+    let api_client =
+        client::ApiClient::new(gateway_url.clone()).context("Failed to initialize API client")?;
 
-    let agent_pki = pki::AgentPki::load_or_generate()
-        .context("Failed to initialize PKI")?;
+    let agent_pki = pki::AgentPki::load_or_generate().context("Failed to initialize PKI")?;
 
     let (agent_id, api_key) = if config::is_registered() {
         info!("Existing registration found, loading credentials");
@@ -56,8 +59,13 @@ async fn main() -> Result<()> {
         (cfg.agent_id, creds.api_key)
     } else {
         info!("No registration found, starting registration");
-        perform_registration(&api_client, &gateway_url, heartbeat_interval_secs, &agent_pki)
-            .await?
+        perform_registration(
+            &api_client,
+            &gateway_url,
+            heartbeat_interval_secs,
+            &agent_pki,
+        )
+        .await?
     };
 
     let api_client = if pki::AgentPki::has_certificate() {
@@ -91,8 +99,7 @@ async fn main() -> Result<()> {
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    let mounted_volumes: Arc<Mutex<HashMap<String, String>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let mounted_volumes: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
     run_heartbeat_loop(
         &api_client,
@@ -114,7 +121,10 @@ async fn perform_registration(
     heartbeat_interval_secs: u64,
     agent_pki: &pki::AgentPki,
 ) -> Result<(uuid::Uuid, String)> {
-    let token = match std::env::var("CSFX_REGISTRATION_TOKEN").ok().filter(|t| !t.is_empty()) {
+    let token = match std::env::var("CSFX_REGISTRATION_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+    {
         Some(t) => t,
         None => {
             info!("CSFX_REGISTRATION_TOKEN not set, fetching bootstrap token from gateway");
@@ -148,8 +158,7 @@ async fn perform_registration(
         .context("Registration request failed")?;
 
     if let (Some(cert_pem), Some(ca_pem)) = (&resp.certificate_pem, &resp.ca_cert_pem) {
-        pki::AgentPki::save_certificate(cert_pem, ca_pem)
-            .context("Failed to save certificate")?;
+        pki::AgentPki::save_certificate(cert_pem, ca_pem).context("Failed to save certificate")?;
         info!("PKI: certificate received and stored");
     } else {
         warn!("Registry did not issue a certificate during registration");
@@ -247,7 +256,10 @@ async fn run_heartbeat_loop(
     }
 
     if failure_count > 0 {
-        error!(failures = failure_count, "Agent shutting down with unresolved heartbeat failures");
+        error!(
+            failures = failure_count,
+            "Agent shutting down with unresolved heartbeat failures"
+        );
     }
 }
 
@@ -318,10 +330,7 @@ async fn process_workloads(
     };
 
     for workload in workloads {
-        let already_running = running_containers
-            .lock()
-            .await
-            .contains_key(&workload.id);
+        let already_running = running_containers.lock().await.contains_key(&workload.id);
 
         if already_running {
             continue;

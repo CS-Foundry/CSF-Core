@@ -5,11 +5,11 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use base64::Engine as _;
 use chrono::Utc;
 use entity::entities::{user_ssh_keys, UserSshKeys};
 use sea_orm::{ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
-use base64::Engine as _;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -37,10 +37,7 @@ pub struct SshKeysForAgentResponse {
 }
 
 fn compute_fingerprint(public_key: &str) -> String {
-    let key_part = public_key
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or(public_key);
+    let key_part = public_key.split_whitespace().nth(1).unwrap_or(public_key);
 
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(key_part)
@@ -164,6 +161,5 @@ pub fn ssh_keys_routes() -> Router<AppState> {
 }
 
 pub fn ssh_keys_internal_routes() -> Router<AppState> {
-    Router::new()
-        .route("/agents/:agent_id/authorized-keys", get(get_keys_for_agent))
+    Router::new().route("/agents/:agent_id/authorized-keys", get(get_keys_for_agent))
 }

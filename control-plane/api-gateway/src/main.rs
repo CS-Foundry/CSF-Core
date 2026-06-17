@@ -173,10 +173,13 @@ async fn main() {
     let listen_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
     let addr: SocketAddr = format!("{}:{}", listen_addr, port).parse().unwrap();
 
-    let tls_enabled = std::env::var("TLS_ENABLED").unwrap_or_else(|_| "true".to_string()) != "false";
+    let tls_enabled =
+        std::env::var("TLS_ENABLED").unwrap_or_else(|_| "true".to_string()) != "false";
 
     if tls_enabled {
-        let config = tls::generate_tls_config().await.expect("failed to generate TLS config");
+        let config = tls::generate_tls_config()
+            .await
+            .expect("failed to generate TLS config");
         tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %addr, "listening (HTTPS)");
         axum_server::bind_rustls(addr, config)
             .serve(app.into_make_service_with_connect_info::<SocketAddr>())

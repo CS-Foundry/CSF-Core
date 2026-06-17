@@ -193,14 +193,11 @@ pub async fn get_agent_endpoint(
             )
         })?;
 
-    let public_key_pem = crate::db::certificates::get_active_certificate(
-        &state.db,
-        agent_id,
-    )
-    .await
-    .ok()
-    .flatten()
-    .map(|c| c.public_key_pem);
+    let public_key_pem = crate::db::certificates::get_active_certificate(&state.db, agent_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|c| c.public_key_pem);
 
     Ok(Json(AgentEndpointResponse {
         agent_id,

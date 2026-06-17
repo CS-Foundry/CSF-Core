@@ -1,8 +1,6 @@
 use anyhow::Result;
 use entity::{agent_certificates, certificate_revocations};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
 pub async fn create_certificate(

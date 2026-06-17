@@ -171,15 +171,31 @@ impl ApiClient {
             self.gateway_url, agent_id
         );
 
-        let (cpu_usage_percent, cpu_cores, memory_total_bytes, memory_used_bytes,
-             disk_total_bytes, disk_used_bytes, network_rx_bytes, network_tx_bytes,
-             uptime_seconds) = metrics.map(|m| (
-            Some(m.cpu_usage_percent), Some(m.cpu_cores),
-            Some(m.memory_total_bytes), Some(m.memory_used_bytes),
-            Some(m.disk_total_bytes), Some(m.disk_used_bytes),
-            Some(m.network_rx_bytes), Some(m.network_tx_bytes),
-            Some(m.uptime_seconds),
-        )).unwrap_or_default();
+        let (
+            cpu_usage_percent,
+            cpu_cores,
+            memory_total_bytes,
+            memory_used_bytes,
+            disk_total_bytes,
+            disk_used_bytes,
+            network_rx_bytes,
+            network_tx_bytes,
+            uptime_seconds,
+        ) = metrics
+            .map(|m| {
+                (
+                    Some(m.cpu_usage_percent),
+                    Some(m.cpu_cores),
+                    Some(m.memory_total_bytes),
+                    Some(m.memory_used_bytes),
+                    Some(m.disk_total_bytes),
+                    Some(m.disk_used_bytes),
+                    Some(m.network_rx_bytes),
+                    Some(m.network_tx_bytes),
+                    Some(m.uptime_seconds),
+                )
+            })
+            .unwrap_or_default();
 
         let mut req = self
             .client
@@ -216,10 +232,7 @@ impl ApiClient {
             .context("Failed to parse heartbeat response")
     }
 
-    pub async fn fetch_assigned_workloads(
-        &self,
-        api_key: &str,
-    ) -> Result<Vec<AssignedWorkload>> {
+    pub async fn fetch_assigned_workloads(&self, api_key: &str) -> Result<Vec<AssignedWorkload>> {
         let url = format!("{}/api/agents/self/workloads", self.gateway_url);
 
         let resp = self
@@ -232,7 +245,11 @@ impl ApiClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            anyhow::bail!("Failed to fetch workloads status={} {}", status, resp.text().await.unwrap_or_default());
+            anyhow::bail!(
+                "Failed to fetch workloads status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
         }
 
         let all: Vec<AssignedWorkload> = resp
@@ -289,7 +306,11 @@ impl ApiClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            anyhow::bail!("Failed to fetch volumes status={} {}", status, resp.text().await.unwrap_or_default());
+            anyhow::bail!(
+                "Failed to fetch volumes status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
         }
 
         let all: Vec<AssignedVolume> = resp

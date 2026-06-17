@@ -8,7 +8,10 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::{auth::rbac::{CanManageNetworks, CanViewNetworks}, AppState};
+use crate::{
+    auth::rbac::{CanManageNetworks, CanViewNetworks},
+    AppState,
+};
 
 async fn proxy_to_sdn(
     state: &AppState,
@@ -55,7 +58,14 @@ pub async fn list_networks(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::GET, "/networks", None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::GET,
+        "/networks",
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn create_network(
@@ -65,7 +75,14 @@ pub async fn create_network(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::POST, "/networks", Some(body), Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::POST,
+        "/networks",
+        Some(body),
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn get_network(
@@ -75,7 +92,14 @@ pub async fn get_network(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::GET, &format!("/networks/{}", id), None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::GET,
+        &format!("/networks/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn delete_network(
@@ -85,7 +109,14 @@ pub async fn delete_network(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::DELETE, &format!("/networks/{}", id), None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/networks/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_policies(
@@ -95,7 +126,14 @@ pub async fn list_policies(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::GET, &format!("/networks/{}/policies", id), None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::GET,
+        &format!("/networks/{}/policies", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn create_policy(
@@ -106,7 +144,14 @@ pub async fn create_policy(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::POST, &format!("/networks/{}/policies", id), Some(body), Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::POST,
+        &format!("/networks/{}/policies", id),
+        Some(body),
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn list_members(
@@ -116,7 +161,14 @@ pub async fn list_members(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::GET, &format!("/networks/{}/members", id), None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::GET,
+        &format!("/networks/{}/members", id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn add_member(
@@ -127,7 +179,14 @@ pub async fn add_member(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::POST, &format!("/networks/{}/members", id), Some(body), Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::POST,
+        &format!("/networks/{}/members", id),
+        Some(body),
+        Some(header_map),
+    )
+    .await
 }
 
 pub async fn remove_member(
@@ -137,14 +196,24 @@ pub async fn remove_member(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let header_map = header_vec(&headers);
-    proxy_to_sdn(&state, reqwest::Method::DELETE, &format!("/networks/{}/members/{}", id, workload_id), None, Some(header_map)).await
+    proxy_to_sdn(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/networks/{}/members/{}", id, workload_id),
+        None,
+        Some(header_map),
+    )
+    .await
 }
 
 pub fn networks_routes() -> Router<AppState> {
     Router::new()
         .route("/networks", get(list_networks).post(create_network))
         .route("/networks/:id", get(get_network).delete(delete_network))
-        .route("/networks/:id/policies", get(list_policies).post(create_policy))
+        .route(
+            "/networks/:id/policies",
+            get(list_policies).post(create_policy),
+        )
         .route("/networks/:id/members", get(list_members).post(add_member))
         .route("/networks/:id/members/:workload_id", delete(remove_member))
 }
