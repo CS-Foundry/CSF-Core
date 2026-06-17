@@ -83,7 +83,7 @@ opentelemetry = { version = "0.32" }
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "trace"] }
 opentelemetry-semantic-conventions = { version = "0.32" }
-tracing-opentelemetry = { version = "0.32" }
+tracing-opentelemetry = { version = "0.33" }
 
 # Other
 rand = "0.10"
