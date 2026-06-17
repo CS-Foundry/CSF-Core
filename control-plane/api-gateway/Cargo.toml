@@ -30,6 +30,7 @@ hyper-util = { workspace = true }
 http = { workspace = true }
 rcgen = { workspace = true }
 rustls = { workspace = true }
+ring = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

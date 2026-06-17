@@ -39,6 +39,8 @@ sea-orm = { workspace = true }
 
 reqwest = { workspace = true }
 etcd-client = { workspace = true }
+ring = { workspace = true }
+rustls = { workspace = true }
 
 # Crypto
 sha2 = { workspace = true }
