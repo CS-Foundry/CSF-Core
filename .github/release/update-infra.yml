@@ -1,0 +1,134 @@
+name: Update Infra
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      infra_ref:
+        required: true
+        type: string
+    secrets:
+      infra_token:
+        required: true
+
+jobs:
+  update-infra:
+    name: Update CSFX-Infra versions.nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/CSFX-Infra
+          token: ${{ secrets.infra_token }}
+          ref: ${{ inputs.infra_ref }}
+          path: infra
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: csfx-agent-*
+          path: /tmp/binaries
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: csfx-updater-*
+          path: /tmp/binaries
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: csfx-cp-*
+          path: /tmp/cp-binaries
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: csfx-frontend
+          path: /tmp/frontend
+
+      - name: Write versions.nix
+        run: |
+          VERSION="${{ inputs.version }}"
+          REPO="${{ github.repository }}"
+          RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
+
+          get_sha256() {
+            awk '{print $1}' "/tmp/binaries/${1}.sha256" 2>/dev/null
+          }
+
+          get_cp_sha256() {
+            awk '{print $1}' "/tmp/cp-binaries/${1}.sha256" 2>/dev/null
+          }
+
+          FRONTEND_SHA256=$(awk '{print $1}' /tmp/frontend/csfx-frontend.tar.gz.sha256 2>/dev/null)
+
+          cat > infra/versions.nix <<EOF
+          {
+            csfx = {
+              version = "${VERSION}";
+              agent = {
+                amd64 = {
+                  url    = "${RELEASE_BASE}/csfx-agent-amd64";
+                  sha256 = "$(get_sha256 csfx-agent-amd64)";
+                };
+                arm64 = {
+                  url    = "${RELEASE_BASE}/csfx-agent-arm64";
+                  sha256 = "$(get_sha256 csfx-agent-arm64)";
+                };
+              };
+              controlPlane = {
+                migrate = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-csfx-migrate-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-csfx-migrate-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-csfx-migrate-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-csfx-migrate-arm64)"; };
+                };
+                api-gateway = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-api-gateway-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-api-gateway-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-api-gateway-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-api-gateway-arm64)"; };
+                };
+                registry = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-registry-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-registry-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-registry-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-registry-arm64)"; };
+                };
+                scheduler = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-scheduler-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-scheduler-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-scheduler-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-scheduler-arm64)"; };
+                };
+                volume-manager = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-volume-manager-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-volume-manager-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-volume-manager-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-volume-manager-arm64)"; };
+                };
+                failover-controller = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-failover-controller-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-failover-controller-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-failover-controller-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-failover-controller-arm64)"; };
+                };
+                sdn-controller = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-cp-sdn-controller-amd64"; sha256 = "$(get_cp_sha256 csfx-cp-sdn-controller-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-cp-sdn-controller-arm64"; sha256 = "$(get_cp_sha256 csfx-cp-sdn-controller-arm64)"; };
+                };
+                csfx-updater = {
+                  amd64 = { url = "${RELEASE_BASE}/csfx-updater-amd64"; sha256 = "$(get_sha256 csfx-updater-amd64)"; };
+                  arm64  = { url = "${RELEASE_BASE}/csfx-updater-arm64"; sha256 = "$(get_sha256 csfx-updater-arm64)"; };
+                };
+              };
+              frontend = {
+                url    = "${RELEASE_BASE}/csfx-frontend.tar.gz";
+                sha256 = "${FRONTEND_SHA256}";
+              };
+            };
+          }
+          EOF
+
+      - name: Commit and push versions.nix
+        run: |
+          VERSION="${{ inputs.version }}"
+          cd infra
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.nix
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "chore: update versions.nix for v${VERSION}"
+          git push origin ${{ inputs.infra_ref }}
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"

@@ -1,0 +1,35 @@
+name: Release Please
+
+on:
+  workflow_call:
+    inputs:
+      token:
+        required: true
+        type: string
+    outputs:
+      release_created:
+        value: ${{ jobs.release-please.outputs.release_created }}
+      version:
+        value: ${{ jobs.release-please.outputs.version }}
+      tag_name:
+        value: ${{ jobs.release-please.outputs.tag_name }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ inputs.token }}

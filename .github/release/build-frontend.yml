@@ -1,0 +1,41 @@
+name: Build Frontend
+
+on:
+  workflow_call:
+
+jobs:
+  build-frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build
+        working-directory: app
+        env:
+          VITE_API_URL: ""
+        run: npm run build
+
+      - name: Archive
+        run: tar -czf csfx-frontend.tar.gz -C app/build .
+
+      - name: Checksum
+        run: sha256sum csfx-frontend.tar.gz > csfx-frontend.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csfx-frontend
+          path: |
+            csfx-frontend.tar.gz
+            csfx-frontend.tar.gz.sha256
+          retention-days: 7

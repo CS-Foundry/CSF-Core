@@ -1,0 +1,69 @@
+name: Publish Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      prerelease:
+        required: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.prerelease && 'pre-release' || 'release' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: csfx-*
+          merge-multiple: true
+
+      - name: Build CP bins list
+        id: cp-bins
+        run: |
+          BINS=""
+          for svc in api-gateway registry scheduler volume-manager failover-controller sdn-controller csfx-migrate; do
+            for arch in amd64 arm64; do
+              BINS="${BINS} csfx-cp-${svc}-${arch} csfx-cp-${svc}-${arch}.sha256"
+            done
+          done
+          echo "bins=${BINS}" >> $GITHUB_OUTPUT
+
+      - name: Create pre-release
+        if: ${{ inputs.prerelease }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --prerelease \
+            --generate-notes \
+            csfx-updater-amd64 csfx-updater-amd64.sha256 \
+            csfx-updater-arm64 csfx-updater-arm64.sha256 \
+            csfx-agent-amd64 csfx-agent-amd64.sha256 \
+            csfx-agent-arm64 csfx-agent-arm64.sha256 \
+            csfx-frontend.tar.gz csfx-frontend.tar.gz.sha256 \
+            ${{ steps.cp-bins.outputs.bins }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach to full release
+        if: ${{ !inputs.prerelease }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          gh release upload "v${VERSION}" \
+            csfx-updater-amd64 csfx-updater-amd64.sha256 \
+            csfx-updater-arm64 csfx-updater-arm64.sha256 \
+            csfx-agent-amd64 csfx-agent-amd64.sha256 \
+            csfx-agent-arm64 csfx-agent-arm64.sha256 \
+            csfx-frontend.tar.gz csfx-frontend.tar.gz.sha256 \
+            ${{ steps.cp-bins.outputs.bins }} \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

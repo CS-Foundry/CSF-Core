@@ -1,0 +1,70 @@
+name: Build Binaries
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.binary }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        binary:
+          - csfx-updater
+          - csfx-agent
+        arch:
+          - amd64
+          - arm64
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            sudo apt-get install -y musl-tools protobuf-compiler
+          else
+            sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools protobuf-compiler
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.binary }}-${{ matrix.arch }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
+          CSFX_BUILD_VERSION: ${{ inputs.version }}
+        run: |
+          cargo build --release --bin ${{ matrix.binary }} --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.binary }}-${{ matrix.arch }}
+          sha256sum ${{ matrix.binary }}-${{ matrix.arch }} > ${{ matrix.binary }}-${{ matrix.arch }}.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}-${{ matrix.arch }}
+          path: |
+            ${{ matrix.binary }}-${{ matrix.arch }}
+            ${{ matrix.binary }}-${{ matrix.arch }}.sha256
+          retention-days: 7
