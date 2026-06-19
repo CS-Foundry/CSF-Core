@@ -107,5 +107,5 @@ pub fn workloads_routes() -> Router<AppState> {
     Router::new()
         .route("/workloads", post(create_workload))
         .route("/workloads", get(list_workloads))
-        .route("/workloads/:id", delete(delete_workload))
+        .route("/workloads/{id}", delete(delete_workload))
 }

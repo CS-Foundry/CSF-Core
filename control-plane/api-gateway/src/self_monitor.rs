@@ -109,8 +109,8 @@ impl SelfMonitor {
     pub fn collect_metrics(&mut self) -> LocalSystemMetrics {
         // Refresh all data
         self.system.refresh_all();
-        self.networks.refresh(false);
-        self.disks.refresh(false);
+        self.networks.refresh();
+        self.disks.refresh();
 
         // CPU info
         let cpu_model = self

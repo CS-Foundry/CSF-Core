@@ -95,7 +95,7 @@ sha2 = "0.11"
 cookie = { version = "0.18.1", features = ["percent-encode"] }
 qrcode = "0.14"
 image = "0.25"
-sysinfo = "0.39"
+sysinfo = "0.32"
 bollard = "0.21"
 futures-util = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "webpki-roots"] }

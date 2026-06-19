@@ -56,10 +56,10 @@ impl LocalSystemCollector {
         system.refresh_all();
 
         let mut networks = self.networks.lock().unwrap();
-        networks.refresh(false);
+        networks.refresh();
 
         let mut disks = self.disks.lock().unwrap();
-        disks.refresh(false);
+        disks.refresh();
 
         // CPU info
         let cpu_model = system

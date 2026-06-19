@@ -908,7 +908,7 @@ pub fn registry_routes() -> Router<AppState> {
         )
         .route("/registry/admin/agents/pending", get(list_pending_agents))
         .route(
-            "/registry/admin/agents/pending/:id",
+            "/registry/admin/agents/pending/{id}",
             post(delete_pending_agent),
         )
         // Admin routes - Bootstrap Token Management
@@ -921,7 +921,7 @@ pub fn registry_routes() -> Router<AppState> {
             get(list_bootstrap_tokens),
         )
         .route(
-            "/registry/admin/bootstrap-tokens/:id/revoke",
+            "/registry/admin/bootstrap-tokens/{id}/revoke",
             post(revoke_bootstrap_token),
         )
         // Admin routes - Token Management (DEPRECATED)
@@ -932,22 +932,22 @@ pub fn registry_routes() -> Router<AppState> {
         .route("/registry/admin/statistics", get(get_statistics))
         // Admin routes - PKI
         .route(
-            "/registry/admin/agents/:id/revoke",
+            "/registry/admin/agents/{id}/revoke",
             post(revoke_certificate),
         )
         .route(
-            "/registry/admin/agents/:id/endpoint",
+            "/registry/admin/agents/{id}/endpoint",
             get(get_agent_endpoint),
         )
         // Public PKI
         .route("/registry/pki/crl", get(get_crl))
         // Agent routes
         .route("/registry/agents/register", post(register_agent))
-        .route("/registry/agents/:id/heartbeat", post(agent_heartbeat))
+        .route("/registry/agents/{id}/heartbeat", post(agent_heartbeat))
         // Agent - certificate management
-        .route("/registry/agents/:id/certificate", post(issue_certificate))
+        .route("/registry/agents/{id}/certificate", post(issue_certificate))
         .route(
-            "/registry/agents/:id/rotate-certificate",
+            "/registry/agents/{id}/rotate-certificate",
             post(rotate_certificate),
         )
         // Health check

@@ -157,9 +157,9 @@ pub fn ssh_keys_routes() -> Router<AppState> {
     Router::new()
         .route("/ssh-keys", get(list_ssh_keys))
         .route("/ssh-keys", post(add_ssh_key))
-        .route("/ssh-keys/:id", delete(delete_ssh_key))
+        .route("/ssh-keys/{id}", delete(delete_ssh_key))
 }
 
 pub fn ssh_keys_internal_routes() -> Router<AppState> {
-    Router::new().route("/agents/:agent_id/authorized-keys", get(get_keys_for_agent))
+    Router::new().route("/agents/{agent_id}/authorized-keys", get(get_keys_for_agent))
 }

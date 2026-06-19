@@ -209,11 +209,11 @@ pub async fn remove_member(
 pub fn networks_routes() -> Router<AppState> {
     Router::new()
         .route("/networks", get(list_networks).post(create_network))
-        .route("/networks/:id", get(get_network).delete(delete_network))
+        .route("/networks/{id}", get(get_network).delete(delete_network))
         .route(
-            "/networks/:id/policies",
+            "/networks/{id}/policies",
             get(list_policies).post(create_policy),
         )
-        .route("/networks/:id/members", get(list_members).post(add_member))
-        .route("/networks/:id/members/:workload_id", delete(remove_member))
+        .route("/networks/{id}/members", get(list_members).post(add_member))
+        .route("/networks/{id}/members/{workload_id}", delete(remove_member))
 }

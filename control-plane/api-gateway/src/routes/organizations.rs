@@ -19,17 +19,17 @@ pub fn routes() -> Router<AppState> {
         // User management endpoints
         .route("/organization/users", axum::routing::get(list_users))
         .route("/organization/users", axum::routing::post(create_user))
-        .route("/organization/users/:user_id", axum::routing::get(get_user))
+        .route("/organization/users/{user_id}", axum::routing::get(get_user))
         .route(
-            "/organization/users/:user_id",
+            "/organization/users/{user_id}",
             axum::routing::put(update_user),
         )
         .route(
-            "/organization/users/:user_id",
+            "/organization/users/{user_id}",
             axum::routing::delete(delete_user),
         )
         .route(
-            "/organization/users/:user_id/role",
+            "/organization/users/{user_id}/role",
             axum::routing::put(update_user_role),
         )
 }

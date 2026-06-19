@@ -376,7 +376,7 @@ pub fn agents_routes() -> Router<AppState> {
         .route("/agents/self/volumes", get(get_self_volumes))
         // Protected endpoints (for frontend)
         .route("/agents", get(list_agents))
-        .route("/agents/:id", get(get_agent))
-        .route("/agents/:id/metrics", get(get_agent_metrics))
-        .route("/agents/:id/metrics/latest", get(get_agent_metrics_latest))
+        .route("/agents/{id}", get(get_agent))
+        .route("/agents/{id}/metrics", get(get_agent_metrics))
+        .route("/agents/{id}/metrics/latest", get(get_agent_metrics_latest))
 }
