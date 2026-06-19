@@ -31,7 +31,7 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/workloads", get(workloads::list_workloads))
         .route(
-            "/workloads/:id",
+            "/workloads/{id}",
             axum::routing::delete(workloads::delete_workload),
         )
         .route(

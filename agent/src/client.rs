@@ -87,6 +87,7 @@ impl ApiClient {
     pub fn new(gateway_url: String) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .danger_accept_invalid_certs(true)
             .build()
             .context("Failed to build HTTP client")?;
 

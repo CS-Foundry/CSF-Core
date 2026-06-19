@@ -80,6 +80,7 @@ services:
       SDN_CONTROLLER_URL: http://sdn-controller:8005
       FRONTEND_URL: http://localhost:5173
       CSFX_INCLUDE_CONTAINERS: "true"
+      TLS_ENABLED: "false"
     ports:
       - "8000:8000"
     depends_on:
