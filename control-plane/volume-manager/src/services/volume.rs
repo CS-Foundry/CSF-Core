@@ -1,4 +1,4 @@
-use crate::{log_warn};
+use crate::log_warn;
 use etcd_client::Client as EtcdClient;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -24,7 +24,11 @@ impl VolumeService {
         etcd: Arc<Mutex<EtcdClient>>,
         ceph: Option<Arc<CephManager>>,
     ) -> Self {
-        Self { db, _etcd: etcd, ceph }
+        Self {
+            db,
+            _etcd: etcd,
+            ceph,
+        }
     }
 
     pub async fn create_volume(&self, req: CreateVolumeRequest) -> Result<VolumeResponse, String> {
@@ -67,7 +71,11 @@ impl VolumeService {
             .ok_or_else(|| format!("Volume {} not found", id))?;
 
         if let Some(ceph) = &self.ceph {
-            if let Err(e) = ceph.rbd_manager.delete_image(&model.pool, &model.image_name).await {
+            if let Err(e) = ceph
+                .rbd_manager
+                .delete_image(&model.pool, &model.image_name)
+                .await
+            {
                 log_warn!("volume_service", &format!("Ceph RBD delete failed: {}", e));
             }
         }
@@ -86,7 +94,11 @@ impl VolumeService {
             .ok_or_else(|| format!("Volume {} not found", volume_id))?;
 
         let device = if let Some(ceph) = &self.ceph {
-            match ceph.rbd_manager.map_device(&model.pool, &model.image_name).await {
+            match ceph
+                .rbd_manager
+                .map_device(&model.pool, &model.image_name)
+                .await
+            {
                 Ok(dev) => Some(dev),
                 Err(e) => {
                     log_warn!("volume_service", &format!("Ceph RBD map failed: {}", e));
@@ -141,7 +153,10 @@ impl VolumeService {
                 .create_snapshot(&model.pool, &model.image_name, &req.name)
                 .await
             {
-                log_warn!("volume_service", &format!("Ceph snapshot create failed: {}", e));
+                log_warn!(
+                    "volume_service",
+                    &format!("Ceph snapshot create failed: {}", e)
+                );
             }
         }
 

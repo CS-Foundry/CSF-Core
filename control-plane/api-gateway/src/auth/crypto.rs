@@ -1,6 +1,6 @@
 use base64::Engine;
 use bcrypt::{hash, verify, DEFAULT_COST};
-use rand::rngs::OsRng;
+use rsa::rand_core::{OsRng, RngCore};
 use rsa::{
     pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey},
     RsaPrivateKey, RsaPublicKey,
@@ -56,13 +56,12 @@ impl RsaKeyPair {
 }
 
 pub fn decrypt_password(encrypted_password: &str, private_key: &str) -> CryptoResult<String> {
+    use rsa::sha2::Sha256;
     use rsa::Oaep;
-    use sha2::Sha256;
 
     let private_key = RsaPrivateKey::from_pkcs1_pem(private_key)?;
     let encrypted_bytes = base64::engine::general_purpose::STANDARD.decode(encrypted_password)?;
 
-    // Use SHA-256 for RSA-OAEP padding
     let padding = Oaep::new::<Sha256>();
     let decrypted = private_key.decrypt(padding, &encrypted_bytes)?;
 
@@ -80,9 +79,10 @@ pub fn verify_password(password: &str, salt: &str, hashed: &str) -> CryptoResult
 }
 
 pub fn encrypt_secret(plaintext: &str, key_b64: &str) -> CryptoResult<String> {
-    use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
-    use rand::RngCore;
-
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
     let key_bytes = base64::engine::general_purpose::STANDARD
         .decode(key_b64)
         .map_err(|_| CryptoError::InvalidEncryptedData)?;
@@ -90,7 +90,8 @@ pub fn encrypt_secret(plaintext: &str, key_b64: &str) -> CryptoResult<String> {
         return Err(CryptoError::InvalidEncryptedData);
     }
 
-    let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| CryptoError::InvalidEncryptedData)?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| CryptoError::InvalidEncryptedData)?;
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
@@ -105,7 +106,10 @@ pub fn encrypt_secret(plaintext: &str, key_b64: &str) -> CryptoResult<String> {
 }
 
 pub fn decrypt_secret(encoded: &str, key_b64: &str) -> CryptoResult<String> {
-    use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
 
     let key_bytes = base64::engine::general_purpose::STANDARD
         .decode(key_b64)
@@ -122,7 +126,8 @@ pub fn decrypt_secret(encoded: &str, key_b64: &str) -> CryptoResult<String> {
     }
 
     let (nonce_bytes, ciphertext) = combined.split_at(12);
-    let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| CryptoError::InvalidEncryptedData)?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| CryptoError::InvalidEncryptedData)?;
     let nonce = Nonce::from_slice(nonce_bytes);
 
     let plaintext = cipher
@@ -133,16 +138,14 @@ pub fn decrypt_secret(encoded: &str, key_b64: &str) -> CryptoResult<String> {
 }
 
 pub fn generate_salt() -> String {
-    use rand::Rng;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
                             abcdefghijklmnopqrstuvwxyz\
                             0123456789";
     const SALT_LEN: usize = 32;
-    let mut rng = rand::thread_rng();
 
     (0..SALT_LEN)
         .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
+            let idx = rand::random_range(0..CHARSET.len());
             CHARSET[idx] as char
         })
         .collect()

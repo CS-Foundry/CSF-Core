@@ -1,8 +1,6 @@
 use chrono::Utc;
 use entity::entities::workloads;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait,
-};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait};
 use uuid::Uuid;
 
 use crate::models::workload::{CreateWorkloadRequest, WorkloadResponse, WorkloadStatus};
@@ -84,10 +82,7 @@ pub async fn update_container_status(
     Ok(())
 }
 
-pub async fn delete(
-    db: &DatabaseConnection,
-    workload_id: Uuid,
-) -> Result<(), sea_orm::DbErr> {
+pub async fn delete(db: &DatabaseConnection, workload_id: Uuid) -> Result<(), sea_orm::DbErr> {
     let workload = workloads::Entity::find_by_id(workload_id)
         .one(db)
         .await?

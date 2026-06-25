@@ -114,7 +114,11 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
-            .drop_table(Table::drop().table(CertificateRevocations::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(CertificateRevocations::Table)
+                    .to_owned(),
+            )
             .await?;
 
         manager

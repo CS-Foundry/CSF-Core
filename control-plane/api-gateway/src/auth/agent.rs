@@ -1,6 +1,5 @@
 use crate::AppState;
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
@@ -16,10 +15,13 @@ pub struct AgentApiKey {
 fn hash_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
-#[async_trait]
 impl FromRequestParts<AppState> for AgentApiKey {
     type Rejection = StatusCode;
 

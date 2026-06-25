@@ -232,7 +232,11 @@ impl ServiceClient {
     ) -> Result<(StatusCode, Option<serde_json::Value>)> {
         let url = format!("{}{}", self.failover_controller_url, path);
 
-        tracing::debug!("Forwarding {} request to failover-controller: {}", method, url);
+        tracing::debug!(
+            "Forwarding {} request to failover-controller: {}",
+            method,
+            url
+        );
 
         let mut request = match method {
             reqwest::Method::GET => self.client.get(&url),

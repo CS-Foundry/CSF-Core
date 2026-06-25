@@ -68,7 +68,7 @@ impl LocalSystemCollector {
             .map(|cpu| cpu.brand().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
 
-        let cpu_cores = system.physical_core_count().unwrap_or(0) as u32;
+        let cpu_cores = system.cpus().len() as u32;
         let cpu_threads = system.cpus().len() as u32;
 
         let cpu_usage_percent = if !system.cpus().is_empty() {

@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use crate::models::workload::AgentResources;
 
-
 const TOTAL_CPU_MILLICORES: i32 = 4000;
 const TOTAL_MEMORY_BYTES: i64 = 8 * 1024 * 1024 * 1024;
 const TOTAL_DISK_BYTES: i64 = 100 * 1024 * 1024 * 1024;
@@ -67,7 +66,6 @@ pub async fn get_assigned_workload_resources(
     let cpu: i32 = workloads.iter().map(|w| w.cpu_millicores).sum();
     let mem: i64 = workloads.iter().map(|w| w.memory_bytes).sum();
     let disk: i64 = workloads.iter().map(|w| w.disk_bytes).sum();
-
 
     Ok((cpu, mem, disk))
 }

@@ -3,7 +3,6 @@ use crate::{
     AppState,
 };
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
@@ -14,7 +13,6 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 // Custom extractor for authenticated requests
 pub struct AuthenticatedUser(pub Claims);
 
-#[async_trait]
 impl FromRequestParts<AppState> for AuthenticatedUser {
     type Rejection = StatusCode;
 

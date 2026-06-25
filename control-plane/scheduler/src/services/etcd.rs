@@ -1,7 +1,7 @@
 use etcd_client::Client;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,10 +32,7 @@ pub async fn put_placement(
     Ok(())
 }
 
-pub async fn delete_placement(
-    etcd: &Arc<Mutex<Client>>,
-    workload_id: Uuid,
-) -> Result<(), String> {
+pub async fn delete_placement(etcd: &Arc<Mutex<Client>>, workload_id: Uuid) -> Result<(), String> {
     let key = format!("/csfx/placements/{}", workload_id);
 
     etcd.lock()

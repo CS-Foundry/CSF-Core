@@ -4,7 +4,6 @@ use crate::{
     AppState,
 };
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
@@ -42,7 +41,11 @@ async fn extract_claims(parts: &mut Parts, state: &AppState) -> Result<Claims, S
                 .and_then(|cookies| {
                     cookies.split(';').find_map(|cookie| {
                         let mut p = cookie.trim().splitn(2, '=');
-                        if p.next()? == "token" { p.next() } else { None }
+                        if p.next()? == "token" {
+                            p.next()
+                        } else {
+                            None
+                        }
                     })
                 })
         })
@@ -99,7 +102,6 @@ async fn check(
 
 macro_rules! impl_extractor {
     ($ty:ty, $resource:expr, $action:expr) => {
-        #[async_trait]
         impl FromRequestParts<AppState> for $ty {
             type Rejection = StatusCode;
 
@@ -107,9 +109,7 @@ macro_rules! impl_extractor {
                 parts: &mut Parts,
                 state: &AppState,
             ) -> Result<Self, Self::Rejection> {
-                check(parts, state, $resource, $action)
-                    .await
-                    .map(Self)
+                check(parts, state, $resource, $action).await.map(Self)
             }
         }
     };

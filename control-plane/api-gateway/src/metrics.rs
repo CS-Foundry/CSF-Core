@@ -1,5 +1,7 @@
 use axum::response::IntoResponse;
-use prometheus::{register_counter_vec, register_histogram_vec, CounterVec, Encoder, HistogramVec, TextEncoder};
+use prometheus::{
+    register_counter_vec, register_histogram_vec, CounterVec, Encoder, HistogramVec, TextEncoder,
+};
 use std::sync::OnceLock;
 
 static HTTP_REQUESTS_TOTAL: OnceLock<CounterVec> = OnceLock::new();
@@ -46,7 +48,10 @@ pub async fn metrics_handler() -> impl IntoResponse {
         .encode(&metric_families, &mut buffer)
         .expect("failed to encode metrics");
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         buffer,
     )
 }

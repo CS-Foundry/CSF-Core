@@ -1,8 +1,8 @@
 use chrono::Utc;
 use entity::entities::{volume_snapshots, volumes};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait,
-    QueryFilter, ColumnTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
+    QueryFilter,
 };
 use uuid::Uuid;
 
@@ -14,7 +14,10 @@ pub async fn create(
     db: &DatabaseConnection,
     req: &CreateVolumeRequest,
 ) -> Result<volumes::Model, sea_orm::DbErr> {
-    let pool = req.pool.clone().unwrap_or_else(|| "csfx-volumes".to_string());
+    let pool = req
+        .pool
+        .clone()
+        .unwrap_or_else(|| "csfx-volumes".to_string());
     let image_name = format!("{}-{}", req.name, Uuid::new_v4());
 
     let model = volumes::ActiveModel {

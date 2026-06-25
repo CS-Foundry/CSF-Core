@@ -1,16 +1,10 @@
 use anyhow::Result;
 use chrono::Utc;
 use entity::entities::agents;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
-pub async fn set_agent_status(
-    db: &DatabaseConnection,
-    agent_id: Uuid,
-    status: &str,
-) -> Result<()> {
+pub async fn set_agent_status(db: &DatabaseConnection, agent_id: Uuid, status: &str) -> Result<()> {
     let agent = agents::Entity::find_by_id(agent_id)
         .one(db)
         .await?

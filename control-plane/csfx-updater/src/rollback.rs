@@ -11,7 +11,10 @@ pub async fn rollback() -> Result<()> {
         .await?;
 
     if !status.success() {
-        bail!("nixos-rebuild switch --rollback failed with status {}", status);
+        bail!(
+            "nixos-rebuild switch --rollback failed with status {}",
+            status
+        );
     }
 
     info!("rollback complete");

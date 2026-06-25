@@ -13,6 +13,10 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install ring crypto provider");
+
     dotenvy::dotenv().ok();
 
     tracing_subscriber::fmt()
@@ -143,7 +147,14 @@ async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Resul
 
     let (_cancel_tx, cancel_rx) = watch::channel(false);
 
-    match nix_build::build(&cfg.infra_repo_mirror_dir, &desired, &cfg.nixos_config, cancel_rx).await {
+    match nix_build::build(
+        &cfg.infra_repo_mirror_dir,
+        &desired,
+        &cfg.nixos_config,
+        cancel_rx,
+    )
+    .await
+    {
         Ok(()) => {}
         Err(e) => {
             tracing::error!(error = %e, flake_rev = %desired, "nix build failed");

@@ -89,10 +89,7 @@ pub async fn delete_pending_agent(
         .await
     {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
-        Err(e) => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e }),
-        )),
+        Err(e) => Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: e }))),
     }
 }
 
@@ -144,16 +141,29 @@ pub async fn get_statistics(
 pub async fn create_bootstrap_token(
     State(state): State<AppState>,
     Json(request): Json<CreateBootstrapTokenRequest>,
-) -> Result<Json<crate::services::bootstrap_tokens::BootstrapToken>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    Json<crate::services::bootstrap_tokens::BootstrapToken>,
+    (StatusCode, Json<ErrorResponse>),
+> {
     let ttl_hours = request.ttl_hours.unwrap_or(24 * 30);
     let max_uses = request.max_uses.unwrap_or(100);
 
     state
         .bootstrap_token_manager
-        .create(request.description, "admin".to_string(), ttl_hours, max_uses)
+        .create(
+            request.description,
+            "admin".to_string(),
+            ttl_hours,
+            max_uses,
+        )
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: e })))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
 }
 
 pub async fn list_bootstrap_tokens(
@@ -170,6 +180,10 @@ pub async fn revoke_bootstrap_token(
         .bootstrap_token_manager
         .revoke(id)
         .await
-        .map(|_| Json(RevokeBootstrapTokenResponse { message: format!("Bootstrap token {} revoked", id) }))
+        .map(|_| {
+            Json(RevokeBootstrapTokenResponse {
+                message: format!("Bootstrap token {} revoked", id),
+            })
+        })
         .map_err(|e| (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })))
 }
