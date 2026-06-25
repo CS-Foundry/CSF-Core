@@ -43,7 +43,7 @@
             },
             {
                 title: "Resource groups",
-                url: "#",
+                url: "/resource-groups",
                 icon: Layers,
             },
         ],
