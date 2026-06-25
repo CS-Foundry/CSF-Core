@@ -11,6 +11,7 @@ pub struct Model {
     pub overlay_type: String,
     pub status: String,
     pub organization_id: Option<Uuid>,
+    pub resource_group_id: Option<Uuid>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -21,6 +22,14 @@ pub enum Relation {
     Policies,
     #[sea_orm(has_many = "super::network_members::Entity")]
     Members,
+    #[sea_orm(
+        belongs_to = "super::resource_groups::Entity",
+        from = "Column::ResourceGroupId",
+        to = "super::resource_groups::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    ResourceGroup,
 }
 
 impl Related<super::network_policies::Entity> for Entity {
@@ -32,6 +41,12 @@ impl Related<super::network_policies::Entity> for Entity {
 impl Related<super::network_members::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Members.def()
+    }
+}
+
+impl Related<super::resource_groups::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceGroup.def()
     }
 }
 

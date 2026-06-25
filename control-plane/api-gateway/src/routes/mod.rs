@@ -20,6 +20,7 @@ pub mod networks;
 pub mod organizations;
 pub mod registry;
 pub mod releases;
+pub mod resource_groups;
 pub mod ssh_keys;
 pub mod system;
 pub mod update;
@@ -93,6 +94,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(volumes::volumes_routes())
         .merge(workloads::workloads_routes())
         .merge(events::events_routes())
+        .merge(resource_groups::resource_groups_routes())
         .layer(GovernorLayer::new(governor_config));
 
     let api_router = Router::new()

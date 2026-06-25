@@ -32,6 +32,7 @@ pub async fn create(
         container_id: Set(None),
         created_by: Set(None),
         organization_id: Set(None),
+        resource_group_id: Set(req.resource_group_id),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -103,6 +104,7 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         status: WorkloadStatus::from_str(&m.status),
         assigned_agent_id: m.assigned_agent_id,
         container_id: m.container_id,
+        resource_group_id: m.resource_group_id,
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

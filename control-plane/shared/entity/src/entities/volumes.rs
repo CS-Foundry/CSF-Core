@@ -15,6 +15,7 @@ pub struct Model {
     pub attached_to_workload: Option<Uuid>,
     pub mapped_device: Option<String>,
     pub organization_id: Option<Uuid>,
+    pub resource_group_id: Option<Uuid>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -29,6 +30,14 @@ pub enum Relation {
     Agent,
     #[sea_orm(has_many = "super::volume_snapshots::Entity")]
     Snapshots,
+    #[sea_orm(
+        belongs_to = "super::resource_groups::Entity",
+        from = "Column::ResourceGroupId",
+        to = "super::resource_groups::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    ResourceGroup,
 }
 
 impl Related<super::agents::Entity> for Entity {
@@ -40,6 +49,12 @@ impl Related<super::agents::Entity> for Entity {
 impl Related<super::volume_snapshots::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Snapshots.def()
+    }
+}
+
+impl Related<super::resource_groups::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceGroup.def()
     }
 }
 
