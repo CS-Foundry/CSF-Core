@@ -293,7 +293,7 @@ services:
       dockerfile: Dockerfile
     container_name: csfx-app-dev
     environment:
-      VITE_API_URL: https://api-gateway:8000
+      VITE_API_URL: http://api-gateway:8000
     ports:
       - "5173:5173"
     volumes:
