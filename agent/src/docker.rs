@@ -11,9 +11,15 @@ use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortMapping {
-    pub host_port: u16,
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub node_port: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VolumeMount {
+    pub volume_id: String,
+    pub mount_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +29,7 @@ pub struct WorkloadSpec {
     pub image: String,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
+    pub volume_mounts: Option<Vec<VolumeMount>>,
 }
 
 pub struct DockerManager {
@@ -79,12 +86,26 @@ impl DockerManager {
 
         let (port_bindings, exposed_ports) = build_port_config(spec.ports.as_deref());
 
+        let binds = spec.volume_mounts.as_deref().map(|mounts| {
+            mounts
+                .iter()
+                .map(|m| {
+                    format!(
+                        "{}:{}",
+                        crate::rbd::mount_point_for(&m.volume_id),
+                        m.mount_path
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
         let host_config = HostConfig {
             port_bindings: if port_bindings.is_empty() {
                 None
             } else {
                 Some(port_bindings)
             },
+            binds,
             ..Default::default()
         };
 
@@ -160,16 +181,17 @@ fn build_port_config(
         for p in ports {
             let proto = p.protocol.as_deref().unwrap_or("tcp");
             let container_key = format!("{}/{}", p.container_port, proto);
+            exposed_ports.push(container_key.clone());
 
-            port_bindings.insert(
-                container_key.clone(),
-                Some(vec![bollard::models::PortBinding {
-                    host_ip: Some("0.0.0.0".to_string()),
-                    host_port: Some(p.host_port.to_string()),
-                }]),
-            );
-
-            exposed_ports.push(container_key);
+            if let Some(node_port) = p.node_port {
+                port_bindings.insert(
+                    container_key,
+                    Some(vec![bollard::models::PortBinding {
+                        host_ip: Some("0.0.0.0".to_string()),
+                        host_port: Some(node_port.to_string()),
+                    }]),
+                );
+            }
         }
     }
 

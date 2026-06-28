@@ -5,6 +5,7 @@ pub struct CreateNetworkRequest {
     pub name: String,
     pub cidr: String,
     pub overlay_type: String,
+    pub resource_group_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

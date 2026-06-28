@@ -36,6 +36,12 @@ impl WorkloadStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VolumeMount {
+    pub volume_id: Uuid,
+    pub mount_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkloadRequest {
     pub name: String,
     pub image: String,
@@ -44,13 +50,15 @@ pub struct CreateWorkloadRequest {
     pub disk_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
+    pub volume_mounts: Option<Vec<VolumeMount>>,
+    pub resource_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortMapping {
-    pub host_port: u16,
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub node_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +80,8 @@ pub struct WorkloadResponse {
     pub status: WorkloadStatus,
     pub assigned_agent_id: Option<Uuid>,
     pub container_id: Option<String>,
+    pub volume_mounts: Option<Vec<VolumeMount>>,
+    pub resource_group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

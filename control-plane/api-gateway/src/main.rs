@@ -125,6 +125,7 @@ impl utoipa::Modify for SecurityAddon {
 pub struct AppState {
     pub db_conn: DbConn,
     pub service_client: service_client::ServiceClient,
+    pub default_org_id: Option<uuid::Uuid>,
 }
 
 #[tokio::main]
@@ -149,14 +150,18 @@ async fn main() {
         }
     };
 
-    if let Err(e) = init::initialize_database(&db_conn).await {
-        tracing::error!(error = %e, "failed to initialize database");
-        std::process::exit(1);
-    }
+    let default_org_id = match init::initialize_database(&db_conn).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to initialize database");
+            std::process::exit(1);
+        }
+    };
 
     let state = AppState {
         db_conn: db_conn.clone(),
         service_client: service_client::ServiceClient::new(),
+        default_org_id: Some(default_org_id),
     };
 
     tracing::info!("starting self-monitoring service");

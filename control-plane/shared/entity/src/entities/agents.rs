@@ -21,6 +21,8 @@ pub struct Model {
     pub tags: Option<Json>,
     pub capabilities: Option<Json>,
     pub public_key_pem: Option<String>,
+    pub wg_public_key: Option<String>,
+    pub wg_endpoint: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -51,8 +51,11 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
 
-    let api_client =
-        client::ApiClient::new(gateway_url.clone()).context("Failed to initialize API client")?;
+    let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
+    let (_wg_private_key, wg_public_key) = client::generate_wg_keypair();
+
+    let api_client = client::ApiClient::new(gateway_url.clone(), wg_public_key, wg_endpoint)
+        .context("Failed to initialize API client")?;
 
     let agent_pki = pki::AgentPki::load_or_generate().context("Failed to initialize PKI")?;
 
@@ -201,7 +204,7 @@ async fn run_heartbeat_loop(
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
 
                 if let Some(ref dm) = docker {
-                    process_workloads(client, api_key, dm, &running_containers).await;
+                    process_workloads(client, api_key, dm, &running_containers, &mounted_volumes).await;
                 }
 
                 let statuses = build_container_statuses(&running_containers).await;
@@ -324,6 +327,7 @@ async fn process_workloads(
     api_key: &str,
     docker: &docker::DockerManager,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
 ) {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
         Ok(w) => w,
@@ -347,12 +351,31 @@ async fn process_workloads(
             continue;
         }
 
+        if let Some(ref mounts) = workload.volume_mounts {
+            let locked = mounted_volumes.lock().await;
+            let all_ready = mounts.iter().all(|m| locked.contains_key(&m.volume_id));
+            drop(locked);
+            if !all_ready {
+                info!(workload_id = %workload.id, "Waiting for volumes to be mounted, deferring workload");
+                continue;
+            }
+        }
+
         let spec = docker::WorkloadSpec {
             workload_id: workload.id.clone(),
             name: workload.name.clone(),
             image: workload.image.clone(),
             env_vars: workload.env_vars,
             ports: workload.ports,
+            volume_mounts: workload.volume_mounts.map(|mounts| {
+                mounts
+                    .into_iter()
+                    .map(|m| docker::VolumeMount {
+                        volume_id: m.volume_id,
+                        mount_path: m.mount_path,
+                    })
+                    .collect()
+            }),
         };
 
         match docker.start_container(&spec).await {

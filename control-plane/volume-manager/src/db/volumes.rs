@@ -31,6 +31,7 @@ pub async fn create(
         attached_to_workload: Set(None),
         mapped_device: Set(None),
         organization_id: Set(None),
+        resource_group_id: Set(req.resource_group_id),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -140,6 +141,7 @@ pub fn into_response(m: volumes::Model) -> VolumeResponse {
         attached_to_agent: m.attached_to_agent,
         attached_to_workload: m.attached_to_workload,
         mapped_device: m.mapped_device,
+        resource_group_id: m.resource_group_id,
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

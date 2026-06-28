@@ -62,6 +62,7 @@ pub struct CreateVolumeRequest {
     pub name: String,
     pub size_gb: i32,
     pub pool: Option<String>,
+    pub resource_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +87,7 @@ pub struct VolumeResponse {
     pub attached_to_agent: Option<Uuid>,
     pub attached_to_workload: Option<Uuid>,
     pub mapped_device: Option<String>,
+    pub resource_group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

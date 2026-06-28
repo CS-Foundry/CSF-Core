@@ -18,6 +18,9 @@ mod m20260307_000000_add_networks;
 mod m20260308_000000_add_org_scoping;
 mod m20260309_000000_add_bootstrap_tokens;
 mod m20260523_000000_add_ssh_keys;
+mod m20260625_000000_add_resource_groups;
+mod m20260628_000000_add_volume_mounts;
+mod m20260628_100000_rg_cidr_unique_agent_wg;
 
 pub struct Migrator;
 
@@ -43,6 +46,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260308_000000_add_org_scoping::Migration),
             Box::new(m20260309_000000_add_bootstrap_tokens::Migration),
             Box::new(m20260523_000000_add_ssh_keys::Migration),
+            Box::new(m20260625_000000_add_resource_groups::Migration),
+            Box::new(m20260628_000000_add_volume_mounts::Migration),
+            Box::new(m20260628_100000_rg_cidr_unique_agent_wg::Migration),
         ]
     }
 }

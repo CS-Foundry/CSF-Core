@@ -8,7 +8,7 @@ use axum::{
     http::{request::Parts, StatusCode},
 };
 use chrono::Utc;
-use entity::{organization, InvalidJwt, Organization};
+use entity::{InvalidJwt};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
@@ -26,6 +26,8 @@ pub struct CanManageVolumes(pub Claims);
 pub struct CanViewNetworks(pub Claims);
 pub struct CanManageNetworks(pub Claims);
 pub struct CanManageSystem(pub Claims);
+pub struct CanViewResourceGroups(pub Claims);
+pub struct CanManageResourceGroups(pub Claims);
 
 async fn extract_claims(parts: &mut Parts, state: &AppState) -> Result<Claims, StatusCode> {
     let token = parts
@@ -70,13 +72,9 @@ async fn extract_claims(parts: &mut Parts, state: &AppState) -> Result<Claims, S
     Ok(token_data.claims)
 }
 
-async fn get_default_org(state: &AppState) -> Result<Uuid, StatusCode> {
-    Organization::find()
-        .filter(organization::Column::Name.eq("Default Organization"))
-        .one(&state.db_conn)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .map(|o| o.id)
+fn get_default_org(state: &AppState) -> Result<Uuid, StatusCode> {
+    state
+        .default_org_id
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -87,7 +85,7 @@ async fn check(
     action: &str,
 ) -> Result<Claims, StatusCode> {
     let claims = extract_claims(parts, state).await?;
-    let org_id = get_default_org(state).await?;
+    let org_id = get_default_org(state)?;
     let rbac = RbacService::new(state.db_conn.clone());
     let allowed = rbac
         .has_permission(claims.user_id, org_id, resource, action)
@@ -124,3 +122,5 @@ impl_extractor!(CanManageVolumes, "volumes", "manage");
 impl_extractor!(CanViewNetworks, "networks", "view");
 impl_extractor!(CanManageNetworks, "networks", "manage");
 impl_extractor!(CanManageSystem, "system", "manage");
+impl_extractor!(CanViewResourceGroups, "resource_groups", "view");
+impl_extractor!(CanManageResourceGroups, "resource_groups", "manage");

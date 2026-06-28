@@ -208,7 +208,11 @@ pub async fn heartbeat(
         }
     }
 
-    match state.agent_registry.update_heartbeat(agent_id).await {
+    match state
+        .agent_registry
+        .update_heartbeat(agent_id, request.wg_public_key.clone(), request.wg_endpoint.clone())
+        .await
+    {
         Ok(_) => {
             forward_metrics(&state, agent_id, &request).await;
 

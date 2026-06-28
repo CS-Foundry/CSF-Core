@@ -9,7 +9,7 @@ use crate::auth::crypto::{generate_salt, hash_password, RsaKeyPair};
 
 pub async fn initialize_database(
     db: &DatabaseConnection,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
     tracing::info!("Initializing database with default data...");
 
     // 1. Create RSA key pair if not exists
@@ -148,6 +148,18 @@ pub async fn initialize_database(
             "manage",
             "Trigger control plane updates",
         ),
+        (
+            "resource_groups.view",
+            "resource_groups",
+            "view",
+            "View resource groups and their resources",
+        ),
+        (
+            "resource_groups.manage",
+            "resource_groups",
+            "manage",
+            "Create, update, and delete resource groups",
+        ),
     ];
 
     let mut permission_map = std::collections::HashMap::new();
@@ -248,6 +260,8 @@ pub async fn initialize_database(
             "networks.view",
             "networks.manage",
             "members.view",
+            "resource_groups.view",
+            "resource_groups.manage",
         ];
         for perm_name in operator_perms {
             if let Some(perm_id) = permission_map.get(perm_name) {
@@ -291,6 +305,7 @@ pub async fn initialize_database(
             "networks.view",
             "organization.view",
             "members.view",
+            "resource_groups.view",
         ];
         for perm_name in viewer_perms {
             if let Some(perm_id) = permission_map.get(perm_name) {
@@ -360,5 +375,5 @@ pub async fn initialize_database(
     }
 
     tracing::info!("Database initialization completed");
-    Ok(())
+    Ok(default_org_id)
 }
