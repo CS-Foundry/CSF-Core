@@ -31,12 +31,13 @@
     let activeTab = $state<"all" | "container" | "volume">("all");
     let filterText = $state("");
 
-    let showDeployContainer = $state(false);
-    let showCreateVolume = $state(false);
+    let deployDialog = $state<HTMLDialogElement | null>(null);
+    let volumeDialog = $state<HTMLDialogElement | null>(null);
     let deploying = $state(false);
     let creatingVolume = $state(false);
     let deployError = $state<string | null>(null);
     let volumeError = $state<string | null>(null);
+    let downloadingVpn = $state(false);
 
     let formImage = $state("");
     let formName = $state("");
@@ -80,9 +81,24 @@
         if (!raw.trim()) return null;
         const result: PortMapping[] = [];
         for (const part of raw.trim().split(",")) {
-            const m = part.trim().match(/^(\d+):(\d+)(?:\/(tcp|udp))?$/);
-            if (!m) continue;
-            result.push({ host_port: parseInt(m[1]), container_port: parseInt(m[2]), protocol: m[3] ?? null });
+            const t = part.trim();
+            const nodePort = t.match(/^(\d+):(\d+)(?:\/(tcp|udp))?$/);
+            if (nodePort) {
+                result.push({
+                    container_port: parseInt(nodePort[2]),
+                    protocol: nodePort[3] ?? null,
+                    node_port: parseInt(nodePort[1]),
+                });
+                continue;
+            }
+            const internal = t.match(/^(\d+)(?:\/(tcp|udp))?$/);
+            if (internal) {
+                result.push({
+                    container_port: parseInt(internal[1]),
+                    protocol: internal[2] ?? null,
+                    node_port: null,
+                });
+            }
         }
         return result.length ? result : null;
     }
@@ -118,7 +134,7 @@
                 volume_mounts: parseVolumeMounts(formVolumeMounts),
                 resource_group_id: rgId,
             });
-            showDeployContainer = false;
+            deployDialog?.close();
             resetDeployForm();
             workloads = await listResourceGroupWorkloads(auth.token, rgId);
         } catch (e) {
@@ -138,7 +154,7 @@
                 size_gb: parseInt(volFormSize),
                 resource_group_id: rgId,
             });
-            showCreateVolume = false;
+            volumeDialog?.close();
             volFormName = "";
             volFormSize = "10";
             volumes = await listResourceGroupVolumes(auth.token, rgId);
@@ -169,6 +185,33 @@
         }
     }
 
+    async function downloadVpnConfig() {
+        if (!auth.token) return;
+        downloadingVpn = true;
+        try {
+            const resp = await fetch(`/api/resource-groups/${rgId}/vpn-config`, {
+                headers: { Authorization: `Bearer ${auth.token}` },
+            });
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => ({}));
+                throw new Error(body.error ?? `HTTP ${resp.status}`);
+            }
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const cd = resp.headers.get("content-disposition") ?? "";
+            const fn = cd.match(/filename="([^"]+)"/)?.[1] ?? `csfx-vpn.conf`;
+            a.href = url;
+            a.download = fn;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "VPN config download failed";
+        } finally {
+            downloadingVpn = false;
+        }
+    }
+
     function resetDeployForm() {
         formImage = "";
         formName = "";
@@ -178,6 +221,7 @@
         formEnv = "";
         formPorts = "";
         formVolumeMounts = "";
+        deployError = null;
     }
 
     type ResourceItem =
@@ -234,6 +278,120 @@
     onMount(load);
 </script>
 
+<dialog
+    bind:this={deployDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-lg rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => resetDeployForm()}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Deploy Container</h2>
+            <button
+                class="text-muted-foreground hover:text-foreground"
+                onclick={() => deployDialog?.close()}
+                aria-label="Close"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-name">Name</label>
+                <input id="d-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-app" bind:value={formName} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-image">Image</label>
+                <input id="d-image" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="nginx:latest" bind:value={formImage} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-cpu">CPU (millicores)</label>
+                <input id="d-cpu" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="500" bind:value={formCpu} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-mem">Memory (MB)</label>
+                <input id="d-mem" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="512" bind:value={formMemory} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-disk">Disk (MB)</label>
+                <input id="d-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="1024" bind:value={formDisk} />
+            </div>
+            <div class="flex flex-col gap-1 sm:col-span-2">
+                <label class="text-xs text-muted-foreground" for="d-ports">
+                    Ports — <span class="font-mono">nodePort:containerPort</span> to expose externally,
+                    <span class="font-mono">containerPort</span> for internal mesh only
+                </label>
+                <input id="d-ports" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="8080:80, 443 (internal only)" bind:value={formPorts} />
+            </div>
+        </div>
+        {#if volumes.length > 0}
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="d-vols">
+                    Volume Mounts (name-or-id:/mount/path, one per line)
+                </label>
+                <textarea
+                    id="d-vols"
+                    class="border rounded px-3 py-1.5 text-sm bg-background font-mono resize-none"
+                    rows={Math.min(4, volumes.length + 1)}
+                    placeholder={volumes.map(v => `${v.name}:/data`).slice(0, 2).join("\n")}
+                    bind:value={formVolumeMounts}
+                ></textarea>
+                <p class="text-xs text-muted-foreground">Available: {volumes.map(v => v.name).join(", ")}</p>
+            </div>
+        {/if}
+        <div class="flex flex-col gap-1">
+            <label class="text-xs text-muted-foreground" for="d-env">Environment Variables (KEY=VALUE, one per line)</label>
+            <textarea id="d-env" class="border rounded px-3 py-1.5 text-sm bg-background font-mono resize-none" rows={3} placeholder={"NODE_ENV=production\nPORT=3000"} bind:value={formEnv}></textarea>
+        </div>
+        {#if deployError}
+            <p class="text-xs text-destructive">{deployError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => deployDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleDeploy} disabled={deploying || !formName || !formImage}>
+                {deploying ? "Deploying..." : "Deploy"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={volumeDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { volumeError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Create Volume</h2>
+            <button
+                class="text-muted-foreground hover:text-foreground"
+                onclick={() => volumeDialog?.close()}
+                aria-label="Close"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="v-name">Name</label>
+                <input id="v-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="postgres-data" bind:value={volFormName} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="v-size">Size (GB)</label>
+                <input id="v-size" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="10" bind:value={volFormSize} />
+            </div>
+        </div>
+        {#if volumeError}
+            <p class="text-xs text-destructive">{volumeError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => volumeDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleCreateVolume} disabled={creatingVolume || !volFormName}>
+                {creatingVolume ? "Creating..." : "Create"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
 <header class="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
     <Sidebar.Trigger class="-ms-1" />
     <span class="text-sm text-muted-foreground">/</span>
@@ -267,11 +425,15 @@
                 {/if}
                 <p class="text-xs text-muted-foreground font-mono mt-1">{group.internal_cidr}</p>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
-                <Button size="sm" variant="outline" onclick={() => { showCreateVolume = true; showDeployContainer = false; }}>
+            <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <Button size="sm" variant="outline" onclick={downloadVpnConfig} disabled={downloadingVpn}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    {downloadingVpn ? "Generating..." : "Connect VPN"}
+                </Button>
+                <Button size="sm" variant="outline" onclick={() => volumeDialog?.showModal()}>
                     Add Volume
                 </Button>
-                <Button size="sm" onclick={() => { showDeployContainer = true; showCreateVolume = false; }}>
+                <Button size="sm" onclick={() => deployDialog?.showModal()}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Deploy Container
                 </Button>
@@ -300,95 +462,6 @@
                 <p class="text-xs text-muted-foreground mt-0.5">across containers</p>
             </div>
         </div>
-
-        {#if showDeployContainer}
-            <div class="border rounded-lg p-5 flex flex-col gap-4 bg-muted/20">
-                <h2 class="text-sm font-semibold">Deploy Container</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-name">Name</label>
-                        <input id="d-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-app" bind:value={formName} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-image">Image</label>
-                        <input id="d-image" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="nginx:latest" bind:value={formImage} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-cpu">CPU (millicores)</label>
-                        <input id="d-cpu" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="500" bind:value={formCpu} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-mem">Memory (MB)</label>
-                        <input id="d-mem" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="512" bind:value={formMemory} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-disk">Disk (MB)</label>
-                        <input id="d-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="1024" bind:value={formDisk} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-ports">Ports (host:container, comma-separated)</label>
-                        <input id="d-ports" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="8080:80, 443:443/tcp" bind:value={formPorts} />
-                    </div>
-                </div>
-                {#if volumes.length > 0}
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="d-vols">
-                            Volume Mounts (name-or-id:/mount/path, one per line)
-                        </label>
-                        <textarea
-                            id="d-vols"
-                            class="border rounded px-3 py-1.5 text-sm bg-background font-mono resize-none"
-                            rows={volumes.length > 3 ? 3 : volumes.length + 1}
-                            placeholder={volumes.map(v => `${v.name}:/data`).slice(0, 2).join("\n")}
-                            bind:value={formVolumeMounts}
-                        ></textarea>
-                        <p class="text-xs text-muted-foreground">Available: {volumes.map(v => v.name).join(", ")}</p>
-                    </div>
-                {/if}
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-muted-foreground" for="d-env">Environment Variables (KEY=VALUE, one per line)</label>
-                    <textarea id="d-env" class="border rounded px-3 py-1.5 text-sm bg-background font-mono resize-none" rows={3} placeholder={"NODE_ENV=production\nPORT=3000"} bind:value={formEnv}></textarea>
-                </div>
-                {#if deployError}
-                    <p class="text-xs text-destructive">{deployError}</p>
-                {/if}
-                <div class="flex gap-2">
-                    <Button size="sm" onclick={handleDeploy} disabled={deploying || !formName || !formImage}>
-                        {deploying ? "Deploying..." : "Deploy"}
-                    </Button>
-                    <Button size="sm" variant="outline" onclick={() => { showDeployContainer = false; deployError = null; resetDeployForm(); }}>
-                        Cancel
-                    </Button>
-                </div>
-            </div>
-        {/if}
-
-        {#if showCreateVolume}
-            <div class="border rounded-lg p-5 flex flex-col gap-4 bg-muted/20">
-                <h2 class="text-sm font-semibold">Create Volume</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="v-name">Name</label>
-                        <input id="v-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="postgres-data" bind:value={volFormName} />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs text-muted-foreground" for="v-size">Size (GB)</label>
-                        <input id="v-size" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="10" bind:value={volFormSize} />
-                    </div>
-                </div>
-                {#if volumeError}
-                    <p class="text-xs text-destructive">{volumeError}</p>
-                {/if}
-                <div class="flex gap-2">
-                    <Button size="sm" onclick={handleCreateVolume} disabled={creatingVolume || !volFormName}>
-                        {creatingVolume ? "Creating..." : "Create"}
-                    </Button>
-                    <Button size="sm" variant="outline" onclick={() => { showCreateVolume = false; volumeError = null; }}>
-                        Cancel
-                    </Button>
-                </div>
-            </div>
-        {/if}
 
         {#if error}
             <p class="text-xs text-destructive">{error}</p>

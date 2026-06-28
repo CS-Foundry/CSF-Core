@@ -166,6 +166,8 @@ pub async fn register_agent(
             tags: ActiveValue::Set(registration.tags),
             capabilities: ActiveValue::Set(None),
             public_key_pem: ActiveValue::Set(None),
+            wg_public_key: ActiveValue::Set(None),
+            wg_endpoint: ActiveValue::Set(None),
         };
 
         new_agent.insert(&state.db_conn).await.map_err(|e| {

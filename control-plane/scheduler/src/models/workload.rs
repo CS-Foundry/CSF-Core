@@ -56,9 +56,9 @@ pub struct CreateWorkloadRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortMapping {
-    pub host_port: u16,
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub node_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

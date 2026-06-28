@@ -128,6 +128,8 @@ pub struct HeartbeatRequest {
     pub network_rx_bytes: Option<u64>,
     pub network_tx_bytes: Option<u64>,
     pub uptime_seconds: Option<u64>,
+    pub wg_public_key: Option<String>,
+    pub wg_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

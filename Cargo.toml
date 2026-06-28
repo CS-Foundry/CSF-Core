@@ -88,6 +88,7 @@ tracing-opentelemetry = { version = "0.33" }
 
 # Other
 rand = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 sha1 = "0.11"

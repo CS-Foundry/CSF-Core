@@ -11,9 +11,9 @@ use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortMapping {
-    pub host_port: u16,
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub node_port: Option<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -181,16 +181,17 @@ fn build_port_config(
         for p in ports {
             let proto = p.protocol.as_deref().unwrap_or("tcp");
             let container_key = format!("{}/{}", p.container_port, proto);
+            exposed_ports.push(container_key.clone());
 
-            port_bindings.insert(
-                container_key.clone(),
-                Some(vec![bollard::models::PortBinding {
-                    host_ip: Some("0.0.0.0".to_string()),
-                    host_port: Some(p.host_port.to_string()),
-                }]),
-            );
-
-            exposed_ports.push(container_key);
+            if let Some(node_port) = p.node_port {
+                port_bindings.insert(
+                    container_key,
+                    Some(vec![bollard::models::PortBinding {
+                        host_ip: Some("0.0.0.0".to_string()),
+                        host_port: Some(node_port.to_string()),
+                    }]),
+                );
+            }
         }
     }
 

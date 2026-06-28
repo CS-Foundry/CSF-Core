@@ -1,17 +1,20 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Json},
+    http::{header, StatusCode},
+    response::{IntoResponse, Json, Response},
     routing::get,
     Router,
 };
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::Utc;
 use entity::{
-    entities::{networks, resource_groups, volumes, workloads},
-    Networks, ResourceGroups, Volumes, Workloads,
+    entities::{agents, networks, resource_groups, volumes, workloads},
+    Agents, Networks, ResourceGroups, Volumes, Workloads,
 };
+use ring::rand::{SecureRandom, SystemRandom};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -90,8 +93,27 @@ pub async fn create_resource_group(
     Json(req): Json<CreateResourceGroupRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let org_id = get_org_id(&state);
-    let now = Utc::now().naive_utc();
 
+    let existing = ResourceGroups::find()
+        .filter(resource_groups::Column::InternalCidr.eq(&req.internal_cidr))
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to check cidr uniqueness");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    if existing.is_some() {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!({ "error": format!("CIDR {} is already in use by another resource group", req.internal_cidr) })),
+        ));
+    }
+
+    let now = Utc::now().naive_utc();
     let model = resource_groups::ActiveModel {
         id: Set(Uuid::new_v4()),
         organization_id: Set(org_id),
@@ -332,6 +354,117 @@ pub async fn list_resource_group_networks(
     Ok((StatusCode::OK, Json(json!(nets))))
 }
 
+pub async fn get_vpn_config(
+    CanViewResourceGroups(_claims): CanViewResourceGroups,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = get_org_id(&state);
+
+    let group = ResourceGroups::find_by_id(id)
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to get resource group");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "resource group not found" })),
+            )
+        })?;
+
+    let gateway_agent = Agents::find()
+        .filter(agents::Column::Status.eq("Online"))
+        .filter(agents::Column::WgPublicKey.is_not_null())
+        .filter(agents::Column::WgEndpoint.is_not_null())
+        .order_by_asc(agents::Column::RegisteredAt)
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to find gateway agent");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "no WireGuard-enabled agent online" })),
+            )
+        })?;
+
+    let server_pubkey = gateway_agent.wg_public_key.as_deref().unwrap_or("");
+    let endpoint = gateway_agent.wg_endpoint.as_deref().unwrap_or("");
+
+    let client_private_key = generate_wg_key().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "failed to generate keypair" })),
+        )
+    })?;
+
+    let dns = first_host_ip(&group.internal_cidr).unwrap_or_else(|| "1.1.1.1".to_string());
+
+    let config = format!(
+        "[Interface]\nPrivateKey = {client_private_key}\nAddress = {dns}/32\nDNS = {dns}\n\n[Peer]\nPublicKey = {server_pubkey}\nEndpoint = {endpoint}\nAllowedIPs = {cidr}\nPersistentKeepalive = 25\n",
+        client_private_key = client_private_key,
+        dns = dns,
+        server_pubkey = server_pubkey,
+        endpoint = endpoint,
+        cidr = group.internal_cidr,
+    );
+
+    let filename = format!("csfx-{}.conf", group.name.to_lowercase().replace(' ', "-"));
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", filename),
+            ),
+        ],
+        config,
+    )
+        .into_response())
+}
+
+fn generate_wg_key() -> Result<String, ring::error::Unspecified> {
+    let rng = SystemRandom::new();
+    let mut key_bytes = [0u8; 32];
+    rng.fill(&mut key_bytes)?;
+    key_bytes[0] &= 248;
+    key_bytes[31] &= 127;
+    key_bytes[31] |= 64;
+    Ok(B64.encode(key_bytes))
+}
+
+fn first_host_ip(cidr: &str) -> Option<String> {
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let octets: Vec<u8> = parts[0]
+        .split('.')
+        .filter_map(|o| o.parse().ok())
+        .collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let n = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]);
+    let host = n + 1;
+    let [a, b, c, d] = host.to_be_bytes();
+    Some(format!("{}.{}.{}.{}", a, b, c, d))
+}
+
 pub fn resource_groups_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -354,4 +487,5 @@ pub fn resource_groups_routes() -> Router<AppState> {
             "/resource-groups/{id}/networks",
             get(list_resource_group_networks),
         )
+        .route("/resource-groups/{id}/vpn-config", get(get_vpn_config))
 }

@@ -18,9 +18,9 @@ export interface CreateResourceGroupRequest {
 }
 
 export interface PortMapping {
-    host_port: number;
     container_port: number;
     protocol: string | null;
+    node_port: number | null;
 }
 
 export interface VolumeMount {

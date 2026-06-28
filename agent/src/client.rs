@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use reqwest::Client;
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -48,6 +50,8 @@ struct HeartbeatRequest {
     network_rx_bytes: Option<u64>,
     network_tx_bytes: Option<u64>,
     uptime_seconds: Option<u64>,
+    wg_public_key: Option<String>,
+    wg_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -88,10 +92,24 @@ pub struct ApiClient {
     client: Client,
     gateway_url: String,
     cert_pem: Option<String>,
+    wg_public_key: String,
+    wg_endpoint: Option<String>,
+}
+
+pub fn generate_wg_keypair() -> (String, String) {
+    let rng = SystemRandom::new();
+    let mut private_bytes = [0u8; 32];
+    rng.fill(&mut private_bytes).expect("failed to generate WireGuard key");
+    private_bytes[0] &= 248;
+    private_bytes[31] &= 127;
+    private_bytes[31] |= 64;
+    let secret = x25519_dalek::StaticSecret::from(private_bytes);
+    let public = x25519_dalek::PublicKey::from(&secret);
+    (B64.encode(private_bytes), B64.encode(public.to_bytes()))
 }
 
 impl ApiClient {
-    pub fn new(gateway_url: String) -> Result<Self> {
+    pub fn new(gateway_url: String, wg_public_key: String, wg_endpoint: Option<String>) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .danger_accept_invalid_certs(true)
@@ -102,6 +120,8 @@ impl ApiClient {
             client,
             gateway_url,
             cert_pem: None,
+            wg_public_key,
+            wg_endpoint,
         })
     }
 
@@ -221,6 +241,8 @@ impl ApiClient {
                 network_rx_bytes,
                 network_tx_bytes,
                 uptime_seconds,
+                wg_public_key: Some(self.wg_public_key.clone()),
+                wg_endpoint: self.wg_endpoint.clone(),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {

@@ -43,6 +43,12 @@ impl SchedulerService {
             agent.free_disk_bytes -= reserved_disk;
         }
 
+        let volume_pinned_agent = self.resolve_volume_affinity(&req).await?;
+
+        if let Some(required_agent) = volume_pinned_agent {
+            agents.retain(|a| a.agent_id == required_agent);
+        }
+
         match self.first_fit(&req, &agents) {
             Some(agent_id) => {
                 crate::db::workloads::assign(&self.db, workload.id, agent_id)
@@ -90,6 +96,40 @@ impl SchedulerService {
                 })
             }
         }
+    }
+
+    async fn resolve_volume_affinity(
+        &self,
+        req: &CreateWorkloadRequest,
+    ) -> Result<Option<Uuid>, String> {
+        let mounts = match &req.volume_mounts {
+            Some(m) if !m.is_empty() => m,
+            _ => return Ok(None),
+        };
+
+        let mut pinned: Option<Uuid> = None;
+
+        for mount in mounts {
+            let agent_id =
+                crate::db::agents::get_volume_agent(&self.db, mount.volume_id)
+                    .await
+                    .map_err(|e| format!("Failed to check volume affinity: {}", e))?;
+
+            if let Some(aid) = agent_id {
+                match pinned {
+                    None => pinned = Some(aid),
+                    Some(existing) if existing != aid => {
+                        return Err(format!(
+                            "Volume mounts require conflicting agents: {} vs {}",
+                            existing, aid
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(pinned)
     }
 
     fn first_fit(&self, req: &CreateWorkloadRequest, agents: &[AgentResources]) -> Option<Uuid> {

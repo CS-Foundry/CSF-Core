@@ -51,8 +51,11 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
 
-    let api_client =
-        client::ApiClient::new(gateway_url.clone()).context("Failed to initialize API client")?;
+    let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
+    let (_wg_private_key, wg_public_key) = client::generate_wg_keypair();
+
+    let api_client = client::ApiClient::new(gateway_url.clone(), wg_public_key, wg_endpoint)
+        .context("Failed to initialize API client")?;
 
     let agent_pki = pki::AgentPki::load_or_generate().context("Failed to initialize PKI")?;
 

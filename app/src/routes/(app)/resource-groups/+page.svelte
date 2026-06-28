@@ -15,7 +15,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let creating = $state(false);
-    let showCreate = $state(false);
+    let createDialog = $state<HTMLDialogElement | null>(null);
 
     let newName = $state("");
     let newCidr = $state("10.100.0.0/24");
@@ -44,7 +44,7 @@
                 internal_cidr: newCidr,
             });
             groups = [...groups, created];
-            showCreate = false;
+            createDialog?.close();
             newName = "";
             newCidr = "10.100.0.0/24";
             newDescription = "";
@@ -77,6 +77,63 @@
     onMount(load);
 </script>
 
+<dialog
+    bind:this={createDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-md rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { createError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">New Resource Group</h2>
+            <button
+                class="text-muted-foreground hover:text-foreground"
+                onclick={() => createDialog?.close()}
+                aria-label="Close"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-name">Name</label>
+                <input
+                    id="rg-name"
+                    class="border rounded px-3 py-1.5 text-sm bg-background"
+                    placeholder="production"
+                    bind:value={newName}
+                />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-cidr">Internal CIDR</label>
+                <input
+                    id="rg-cidr"
+                    class="border rounded px-3 py-1.5 text-sm bg-background font-mono"
+                    placeholder="10.100.0.0/24"
+                    bind:value={newCidr}
+                />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-desc">Description</label>
+                <input
+                    id="rg-desc"
+                    class="border rounded px-3 py-1.5 text-sm bg-background"
+                    placeholder="Optional"
+                    bind:value={newDescription}
+                />
+            </div>
+        </div>
+        {#if createError}
+            <p class="text-xs text-destructive">{createError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => createDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleCreate} disabled={creating || !newName || !newCidr}>
+                {creating ? "Creating..." : "Create"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
 <header class="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
     <Sidebar.Trigger class="-ms-1" />
     <span class="text-sm text-muted-foreground">/</span>
@@ -91,7 +148,7 @@
                 Isolated namespaces with dedicated internal networks
             </p>
         </div>
-        <Button size="sm" onclick={() => (showCreate = true)}>
+        <Button size="sm" onclick={() => createDialog?.showModal()}>
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
@@ -99,52 +156,6 @@
             New Resource Group
         </Button>
     </div>
-
-    {#if showCreate}
-        <div class="border rounded-lg p-5 flex flex-col gap-4 bg-muted/20">
-            <h2 class="text-sm font-semibold">Create Resource Group</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-muted-foreground" for="rg-name">Name</label>
-                    <input
-                        id="rg-name"
-                        class="border rounded px-3 py-1.5 text-sm bg-background"
-                        placeholder="production"
-                        bind:value={newName}
-                    />
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-muted-foreground" for="rg-cidr">Internal CIDR</label>
-                    <input
-                        id="rg-cidr"
-                        class="border rounded px-3 py-1.5 text-sm bg-background font-mono"
-                        placeholder="10.100.0.0/24"
-                        bind:value={newCidr}
-                    />
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-xs text-muted-foreground" for="rg-desc">Description</label>
-                    <input
-                        id="rg-desc"
-                        class="border rounded px-3 py-1.5 text-sm bg-background"
-                        placeholder="Optional"
-                        bind:value={newDescription}
-                    />
-                </div>
-            </div>
-            {#if createError}
-                <p class="text-xs text-destructive">{createError}</p>
-            {/if}
-            <div class="flex gap-2">
-                <Button size="sm" onclick={handleCreate} disabled={creating || !newName || !newCidr}>
-                    {creating ? "Creating..." : "Create"}
-                </Button>
-                <Button size="sm" variant="outline" onclick={() => { showCreate = false; createError = null; }}>
-                    Cancel
-                </Button>
-            </div>
-        </div>
-    {/if}
 
     {#if error}
         <p class="text-sm text-destructive">{error}</p>

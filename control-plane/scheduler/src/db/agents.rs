@@ -1,4 +1,4 @@
-use entity::entities::{agent_metrics, agents};
+use entity::entities::{agent_metrics, agents, volumes};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
 
@@ -68,4 +68,12 @@ pub async fn get_assigned_workload_resources(
     let disk: i64 = workloads.iter().map(|w| w.disk_bytes).sum();
 
     Ok((cpu, mem, disk))
+}
+
+pub async fn get_volume_agent(
+    db: &DatabaseConnection,
+    volume_id: Uuid,
+) -> Result<Option<Uuid>, sea_orm::DbErr> {
+    let vol = volumes::Entity::find_by_id(volume_id).one(db).await?;
+    Ok(vol.and_then(|v| v.attached_to_agent))
 }
