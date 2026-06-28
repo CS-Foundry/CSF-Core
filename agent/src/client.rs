@@ -63,6 +63,12 @@ pub struct HeartbeatResponse {
     pub post_update_heartbeats: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct VolumeMount {
+    pub volume_id: String,
+    pub mount_path: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AssignedWorkload {
     pub id: String,
@@ -73,6 +79,7 @@ pub struct AssignedWorkload {
     pub disk_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<crate::docker::PortMapping>>,
+    pub volume_mounts: Option<Vec<VolumeMount>>,
     pub status: String,
     pub container_id: Option<String>,
 }

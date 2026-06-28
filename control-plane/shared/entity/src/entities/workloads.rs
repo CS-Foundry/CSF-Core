@@ -13,6 +13,7 @@ pub struct Model {
     pub disk_bytes: i64,
     pub env_vars: Option<Json>,
     pub ports: Option<Json>,
+    pub volume_mounts: Option<Json>,
     pub status: String,
     pub assigned_agent_id: Option<Uuid>,
     pub container_id: Option<String>,

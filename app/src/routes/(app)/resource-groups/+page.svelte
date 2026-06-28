@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
     import {
         listResourceGroups,
@@ -175,7 +176,10 @@
                     </tr>
                 {:else}
                     {#each groups as group (group.id)}
-                        <tr class="border-t hover:bg-muted/30 transition-colors">
+                        <tr
+                            class="border-t hover:bg-muted/30 transition-colors cursor-pointer"
+                            onclick={() => goto(`/resource-groups/${group.id}`)}
+                        >
                             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{group.id.slice(0, 8)}</td>
                             <td class="px-4 py-3 font-medium">{group.name}</td>
                             <td class="px-4 py-3 font-mono text-xs">{group.internal_cidr}</td>
@@ -189,7 +193,7 @@
                                     size="sm"
                                     variant="ghost"
                                     class="text-destructive hover:text-destructive"
-                                    onclick={() => handleDelete(group.id)}
+                                    onclick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
                                 >
                                     Delete
                                 </Button>

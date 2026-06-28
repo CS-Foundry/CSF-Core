@@ -17,12 +17,19 @@ pub struct PortMapping {
 }
 
 #[derive(Debug, Clone)]
+pub struct VolumeMount {
+    pub volume_id: String,
+    pub mount_path: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct WorkloadSpec {
     pub workload_id: String,
     pub name: String,
     pub image: String,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
+    pub volume_mounts: Option<Vec<VolumeMount>>,
 }
 
 pub struct DockerManager {
@@ -79,12 +86,26 @@ impl DockerManager {
 
         let (port_bindings, exposed_ports) = build_port_config(spec.ports.as_deref());
 
+        let binds = spec.volume_mounts.as_deref().map(|mounts| {
+            mounts
+                .iter()
+                .map(|m| {
+                    format!(
+                        "{}:{}",
+                        crate::rbd::mount_point_for(&m.volume_id),
+                        m.mount_path
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
         let host_config = HostConfig {
             port_bindings: if port_bindings.is_empty() {
                 None
             } else {
                 Some(port_bindings)
             },
+            binds,
             ..Default::default()
         };
 
