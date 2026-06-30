@@ -92,16 +92,7 @@ async fn main() -> Result<()> {
 
     info!(agent_id = %agent_id, "Agent registered, starting heartbeat loop");
 
-    let docker_manager = match docker::DockerManager::new() {
-        Ok(dm) => {
-            info!("Docker socket connected");
-            Some(Arc::new(dm))
-        }
-        Err(e) => {
-            warn!(error = %e, "Docker unavailable, container management disabled");
-            None
-        }
-    };
+    let docker_manager: Arc<Mutex<Option<docker::DockerManager>>> = Arc::new(Mutex::new(None));
 
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -190,7 +181,7 @@ async fn run_heartbeat_loop(
     agent_id: uuid::Uuid,
     api_key: &str,
     interval_secs: u64,
-    docker: Option<Arc<docker::DockerManager>>,
+    docker: Arc<Mutex<Option<docker::DockerManager>>>,
     running_containers: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
 ) {
@@ -202,10 +193,7 @@ async fn run_heartbeat_loop(
         tokio::select! {
             _ = interval.tick() => {
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
-
-                if let Some(ref dm) = docker {
-                    process_workloads(client, api_key, dm, &running_containers, &mounted_volumes).await;
-                }
+                process_workloads(client, api_key, &docker, &running_containers, &mounted_volumes).await;
 
                 let statuses = build_container_statuses(&running_containers).await;
                 let metrics = system::collect_metrics();
@@ -325,7 +313,7 @@ async fn process_volumes(
 async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
-    docker: &docker::DockerManager,
+    docker: &Arc<Mutex<Option<docker::DockerManager>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
 ) {
@@ -336,6 +324,25 @@ async fn process_workloads(
             return;
         }
     };
+
+    if workloads.is_empty() {
+        return;
+    }
+
+    let mut docker_guard = docker.lock().await;
+    if docker_guard.is_none() {
+        match docker::DockerManager::ensure_running().await {
+            Ok(dm) => {
+                info!("Docker ready");
+                *docker_guard = Some(dm);
+            }
+            Err(e) => {
+                warn!(error = %e, "Docker unavailable, deferring workloads");
+                return;
+            }
+        }
+    }
+    let docker = docker_guard.as_ref().expect("docker manager initialized above");
 
     for workload in workloads {
         let already_running = running_containers.lock().await.contains_key(&workload.id);
