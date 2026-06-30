@@ -8,17 +8,11 @@ use axum::{
     http::{request::Parts, StatusCode},
 };
 use chrono::Utc;
-use entity::{InvalidJwt};
+use entity::InvalidJwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-pub struct RequirePermission {
-    pub claims: Claims,
-    pub organization_id: Uuid,
-}
-
 pub struct CanViewAgents(pub Claims);
-pub struct CanManageAgents(pub Claims);
 pub struct CanViewWorkloads(pub Claims);
 pub struct CanManageWorkloads(pub Claims);
 pub struct CanViewVolumes(pub Claims);
@@ -114,7 +108,6 @@ macro_rules! impl_extractor {
 }
 
 impl_extractor!(CanViewAgents, "agents", "view");
-impl_extractor!(CanManageAgents, "agents", "manage");
 impl_extractor!(CanViewWorkloads, "workloads", "view");
 impl_extractor!(CanManageWorkloads, "workloads", "manage");
 impl_extractor!(CanViewVolumes, "volumes", "view");

@@ -262,6 +262,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/CSFX-Infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
+          ref: develop
           path: infra
 
       - uses: actions/download-artifact@v8
@@ -418,6 +419,6 @@ jobs:
           git add versions.nix
           git diff --cached --quiet && echo "no changes" && exit 0
           git commit -m "chore: update versions.nix for v${VERSION}"
-          git push origin main
+          git push origin develop
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
