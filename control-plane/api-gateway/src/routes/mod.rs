@@ -16,11 +16,13 @@ use tracing::{info_span, Span};
 
 pub mod agents;
 pub mod events;
+pub mod logs;
 pub mod networks;
 pub mod organizations;
 pub mod registry;
 pub mod releases;
 pub mod resource_groups;
+pub mod settings;
 pub mod ssh_keys;
 pub mod system;
 pub mod update;
@@ -95,6 +97,8 @@ pub fn create_router() -> Router<AppState> {
         .merge(workloads::workloads_routes())
         .merge(events::events_routes())
         .merge(resource_groups::resource_groups_routes())
+        .merge(logs::logs_routes())
+        .merge(settings::settings_routes())
         .layer(GovernorLayer::new(governor_config));
 
     let api_router = Router::new()

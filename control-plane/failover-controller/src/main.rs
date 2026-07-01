@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
 
     dotenvy::dotenv().ok();
 
-    logger::init_logger();
+    let log_receiver = logger::init_logger();
 
     metrics::init();
     log_info!("main", "CSFX Failover Controller starting...");
@@ -27,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Failed to connect to database");
     log_info!("main", "Database connection established");
+    shared::spawn_log_writer(log_receiver, db.clone());
 
     let state = server::AppState { db: db.clone() };
 

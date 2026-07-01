@@ -50,15 +50,21 @@ fn build_otlp_provider(service_name: &str) -> Option<SdkTracerProvider> {
     Some(provider)
 }
 
-pub fn init_logger() {
-    init_logger_with_service(env!("CARGO_PKG_NAME"));
+pub fn init_logger() -> tokio::sync::mpsc::UnboundedReceiver<shared::db_log_layer::LogRecord> {
+    init_logger_with_service(env!("CARGO_PKG_NAME"))
 }
 
-pub fn init_logger_with_service(service_name: &'static str) {
+pub fn init_logger_with_service(
+    service_name: &'static str,
+) -> tokio::sync::mpsc::UnboundedReceiver<shared::db_log_layer::LogRecord> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let fmt_layer = fmt::layer().with_target(false).with_thread_ids(true);
+    let (db_layer, db_receiver) = shared::db_log_layer::DbLogLayer::new(service_name);
 
-    let registry = tracing_subscriber::registry().with(filter).with(fmt_layer);
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(db_layer);
 
     match build_otlp_provider(service_name) {
         Some(provider) => {
@@ -71,6 +77,8 @@ pub fn init_logger_with_service(service_name: &'static str) {
             registry.init();
         }
     }
+
+    db_receiver
 }
 
 pub fn log_message(level: LogLevel, module: &str, location: &str, description: &str) {

@@ -4817,13 +4817,16 @@ version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "dotenvy",
+ "entity",
  "sea-orm",
  "serde",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

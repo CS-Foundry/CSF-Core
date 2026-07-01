@@ -22,6 +22,8 @@ pub struct CanManageNetworks(pub Claims);
 pub struct CanManageSystem(pub Claims);
 pub struct CanViewResourceGroups(pub Claims);
 pub struct CanManageResourceGroups(pub Claims);
+pub struct CanViewLogs(pub Claims);
+pub struct CanManageLogs(pub Claims);
 
 async fn extract_claims(parts: &mut Parts, state: &AppState) -> Result<Claims, StatusCode> {
     let token = parts
@@ -117,3 +119,5 @@ impl_extractor!(CanManageNetworks, "networks", "manage");
 impl_extractor!(CanManageSystem, "system", "manage");
 impl_extractor!(CanViewResourceGroups, "resource_groups", "view");
 impl_extractor!(CanManageResourceGroups, "resource_groups", "manage");
+impl_extractor!(CanViewLogs, "logs", "view");
+impl_extractor!(CanManageLogs, "logs", "manage");

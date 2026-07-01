@@ -3,7 +3,14 @@
     import ChartPieIcon from "@lucide/svelte/icons/chart-pie";
     import MapIcon from "@lucide/svelte/icons/map";
     import BookOpenIcon from "@lucide/svelte/icons/book-open";
-    import { Server, Layers, ShipWheel, Container, LaptopMinimal, Settings } from "@lucide/svelte";
+    import {
+        Server,
+        Layers,
+        ShipWheel,
+        Container,
+        LaptopMinimal,
+        Settings,
+    } from "@lucide/svelte";
     import IconBucket from "./icon-bucket.svelte";
     import IconDashboard from "./icon-dashboard.svelte";
     import IconActivity from "./icon-activity.svelte";
@@ -25,7 +32,7 @@
             },
             {
                 title: "Logs",
-                url: "#",
+                url: "/logs",
                 icon: IconLogs,
             },
         ],

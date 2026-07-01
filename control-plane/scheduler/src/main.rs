@@ -14,7 +14,7 @@ mod services;
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    logger::init_logger();
+    let log_receiver = logger::init_logger();
 
     metrics::init();
     log_info!("main", "CSFX Scheduler Service starting...");
@@ -25,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Failed to connect to database");
     log_info!("main", "Database connection established");
+    shared::spawn_log_writer(log_receiver, db.clone());
 
     let etcd_endpoints =
         std::env::var("ETCD_ENDPOINTS").unwrap_or_else(|_| "http://localhost:2379".to_string());
