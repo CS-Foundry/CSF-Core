@@ -1,6 +1,7 @@
 <script lang="ts">
     import "./layout.css";
     import { browser } from "$app/environment";
+    import { Toaster } from "$lib/components/ui/sonner/index.js";
 
     let { children } = $props();
 
@@ -18,3 +19,4 @@
 </svelte:head>
 
 {@render children()}
+<Toaster />
