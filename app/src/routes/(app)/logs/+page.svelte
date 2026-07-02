@@ -3,7 +3,7 @@
     import { auth } from "$lib/auth/store.svelte";
     import { listLogs, type LogEntry, type LogsFilter } from "$lib/api/logs";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
-    import { Button } from "$lib/components/ui/button/index.js";
+    import * as Sheet from "$lib/components/ui/sheet/index.js";
     import { Input } from "$lib/components/ui/input/index.js";
 
     const SERVICES = [
@@ -17,14 +17,17 @@
     const LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"];
     const CLASSIFICATIONS = ["security", "performance", "audit", "system", "network", "storage"];
     const REFRESH_INTERVAL_MS = 7000;
-    const RECENT_LIST_LIMIT = 200;
+    const PAGE_LIMIT = 100;
 
     let entries = $state<LogEntry[]>([]);
+    let total = $state(0);
+    let hasMore = $state(false);
+    let offset = $state(0);
     let loading = $state(true);
     let error = $state<string | null>(null);
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-    let selectedServices = $state<Set<string>>(new Set());
+    let selectedService = $state("");
     let selectedLevel = $state("");
     let selectedClassification = $state("");
     let searchText = $state("");
@@ -34,8 +37,12 @@
     let workloadId = $state("");
     let organizationId = $state("");
 
+    let selectedEntry = $state<LogEntry | null>(null);
+    let detailOpen = $state(false);
+
     function currentFilter(): LogsFilter {
         return {
+            service: selectedService || undefined,
             level: selectedLevel || undefined,
             classification: selectedClassification || undefined,
             q: searchText || undefined,
@@ -44,7 +51,8 @@
             agent_id: agentId || undefined,
             workload_id: workloadId || undefined,
             organization_id: organizationId || undefined,
-            limit: RECENT_LIST_LIMIT,
+            limit: PAGE_LIMIT,
+            offset,
         };
     }
 
@@ -53,30 +61,14 @@
         try {
             const response = await listLogs(auth.token, currentFilter());
             entries = response.entries;
+            total = response.total;
+            hasMore = response.has_more;
             error = null;
         } catch (e) {
             error = e instanceof Error ? e.message : "Failed to load logs";
         } finally {
             loading = false;
         }
-    }
-
-    function toggleService(service: string) {
-        const next = new Set(selectedServices);
-        if (next.has(service)) {
-            next.delete(service);
-        } else {
-            next.add(service);
-        }
-        selectedServices = next;
-    }
-
-    function visibleServices(): string[] {
-        return selectedServices.size === 0 ? SERVICES : SERVICES.filter((s) => selectedServices.has(s));
-    }
-
-    function entriesForService(service: string): LogEntry[] {
-        return entries.filter((entry) => entry.service === service);
     }
 
     function levelClass(level: string): string {
@@ -88,8 +80,38 @@
         }
     }
 
-    function formatTime(timestamp: string): string {
-        return timestamp.slice(11, 19);
+    function severityBars(level: string): number {
+        switch (level) {
+            case "ERROR": return 3;
+            case "WARN": return 2;
+            default: return 1;
+        }
+    }
+
+    function severityBarClass(level: string): string {
+        switch (level) {
+            case "ERROR": return "bg-red-500";
+            case "WARN": return "bg-yellow-500";
+            default: return "bg-green-500";
+        }
+    }
+
+    function formatDateTime(timestamp: string): string {
+        return new Date(timestamp).toLocaleString();
+    }
+
+    function openDetail(entry: LogEntry) {
+        selectedEntry = entry;
+        detailOpen = true;
+    }
+
+    function nextPage() {
+        if (!hasMore) return;
+        offset += PAGE_LIMIT;
+    }
+
+    function prevPage() {
+        offset = Math.max(0, offset - PAGE_LIMIT);
     }
 
     onMount(() => {
@@ -102,6 +124,7 @@
     });
 
     $effect(() => {
+        selectedService;
         selectedLevel;
         selectedClassification;
         searchText;
@@ -110,8 +133,21 @@
         agentId;
         workloadId;
         organizationId;
-        selectedServices;
+        offset;
         load();
+    });
+
+    $effect(() => {
+        selectedService;
+        selectedLevel;
+        selectedClassification;
+        searchText;
+        fromTime;
+        toTime;
+        agentId;
+        workloadId;
+        organizationId;
+        offset = 0;
     });
 </script>
 
@@ -122,24 +158,18 @@
 </header>
 
 <div class="flex h-[calc(100vh-4rem)]">
-    <aside class="w-80 shrink-0 border-r flex flex-col overflow-hidden">
-        <div class="p-4 flex flex-col gap-3 border-b overflow-y-auto max-h-[50%]">
+    <aside class="w-72 shrink-0 border-r flex flex-col overflow-y-auto">
+        <div class="p-4 flex flex-col gap-3">
             <h2 class="text-xs font-semibold uppercase text-muted-foreground">Filters</h2>
 
             <div class="flex flex-col gap-1">
-                <span class="text-xs text-muted-foreground">Services</span>
-                <div class="flex flex-wrap gap-1">
+                <label class="text-xs text-muted-foreground" for="service-select">Service</label>
+                <select id="service-select" class="border rounded px-2 py-1.5 text-sm bg-background" bind:value={selectedService}>
+                    <option value="">All services</option>
                     {#each SERVICES as service (service)}
-                        <button
-                            class="text-xs px-2 py-1 rounded border {selectedServices.has(service)
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-background text-muted-foreground'}"
-                            onclick={() => toggleService(service)}
-                        >
-                            {service}
-                        </button>
+                        <option value={service}>{service}</option>
                     {/each}
-                </div>
+                </select>
             </div>
 
             <div class="flex flex-col gap-1">
@@ -191,53 +221,121 @@
                 <Input id="org-input" placeholder="uuid" bind:value={organizationId} class="font-mono text-xs" />
             </div>
         </div>
-
-        <div class="flex-1 overflow-y-auto">
-            <div class="px-4 py-2 border-b sticky top-0 bg-background">
-                <span class="text-xs font-semibold uppercase text-muted-foreground">Recent</span>
-            </div>
-            {#if loading}
-                <p class="p-4 text-xs text-muted-foreground">Loading...</p>
-            {:else if entries.length === 0}
-                <p class="p-4 text-xs text-muted-foreground">No log entries.</p>
-            {:else}
-                {#each entries as entry (entry.id)}
-                    <div class="px-4 py-1.5 border-b text-xs flex flex-col gap-0.5 hover:bg-muted/30">
-                        <div class="flex items-center gap-2 text-muted-foreground">
-                            <span>{formatTime(entry.created_at)}</span>
-                            <span class="font-medium text-foreground">{entry.service}</span>
-                            <span class="{levelClass(entry.level)} font-medium">{entry.level}</span>
-                        </div>
-                        <span class="truncate">{entry.message}</span>
-                    </div>
-                {/each}
-            {/if}
-        </div>
     </aside>
 
     <main class="flex-1 overflow-hidden flex flex-col">
         {#if error}
             <p class="p-4 text-sm text-destructive">{error}</p>
         {/if}
-        <div class="flex-1 flex overflow-x-auto">
-            {#each visibleServices() as service (service)}
-                {@const serviceEntries = entriesForService(service)}
-                <div class="flex-1 min-w-64 border-r flex flex-col overflow-hidden">
-                    <div class="px-3 py-2 border-b bg-muted/30 sticky top-0 flex items-center justify-between">
-                        <span class="text-xs font-semibold">{service}</span>
-                        <span class="text-xs text-muted-foreground">{serviceEntries.length}</span>
-                    </div>
-                    <div class="flex-1 overflow-y-auto font-mono">
-                        {#each serviceEntries as entry (entry.id)}
-                            <div class="px-3 py-0.5 border-b border-muted/50 text-[11px] leading-tight flex gap-1.5 hover:bg-muted/30">
-                                <span class="text-muted-foreground shrink-0">{formatTime(entry.created_at)}</span>
-                                <span class="{levelClass(entry.level)} shrink-0">{entry.level}</span>
-                                <span class="truncate">{entry.message}</span>
-                            </div>
+
+        <div class="flex-1 overflow-y-auto">
+            <table class="w-full text-xs border-collapse">
+                <thead class="sticky top-0 bg-background border-b z-10">
+                    <tr class="text-left text-[11px] text-muted-foreground uppercase">
+                        <th class="px-2 py-1.5 font-semibold">Severity</th>
+                        <th class="px-2 py-1.5 font-semibold">Service</th>
+                        <th class="px-2 py-1.5 font-semibold">Level</th>
+                        <th class="px-2 py-1.5 font-semibold">Classification</th>
+                        <th class="px-2 py-1.5 font-semibold">Message</th>
+                        <th class="px-2 py-1.5 font-semibold whitespace-nowrap">Date / Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#if loading}
+                        <tr><td class="px-2 py-3 text-muted-foreground" colspan="6">Loading...</td></tr>
+                    {:else if entries.length === 0}
+                        <tr><td class="px-2 py-3 text-muted-foreground" colspan="6">No log entries.</td></tr>
+                    {:else}
+                        {#each entries as entry (entry.id)}
+                            <tr
+                                class="border-b hover:bg-muted/30 cursor-pointer"
+                                onclick={() => openDetail(entry)}
+                            >
+                                <td class="px-2 py-1">
+                                    <div class="flex gap-0.5" title={entry.level}>
+                                        {#each [1, 2, 3] as bar (bar)}
+                                            <span
+                                                class="h-2.5 w-1.5 rounded-sm {bar <= severityBars(entry.level) ? severityBarClass(entry.level) : 'bg-muted'}"
+                                            ></span>
+                                        {/each}
+                                    </div>
+                                </td>
+                                <td class="px-2 py-1 font-medium whitespace-nowrap">{entry.service}</td>
+                                <td class="px-2 py-1 {levelClass(entry.level)} font-medium whitespace-nowrap">{entry.level}</td>
+                                <td class="px-2 py-1 whitespace-nowrap">{entry.classification}</td>
+                                <td class="px-2 py-1 truncate max-w-0">{entry.message}</td>
+                                <td class="px-2 py-1 whitespace-nowrap text-muted-foreground">{formatDateTime(entry.created_at)}</td>
+                            </tr>
                         {/each}
-                    </div>
-                </div>
-            {/each}
+                    {/if}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
+            <span>{entries.length === 0 ? 0 : offset + 1}-{offset + entries.length} of {total} logs</span>
+            <div class="flex gap-2">
+                <button
+                    class="px-2 py-1 rounded border disabled:opacity-40"
+                    onclick={prevPage}
+                    disabled={offset === 0}
+                >
+                    Prev
+                </button>
+                <button
+                    class="px-2 py-1 rounded border disabled:opacity-40"
+                    onclick={nextPage}
+                    disabled={!hasMore}
+                >
+                    Next
+                </button>
+            </div>
         </div>
     </main>
 </div>
+
+<Sheet.Root bind:open={detailOpen}>
+    <Sheet.Content side="right" class="w-full sm:max-w-md overflow-y-auto">
+        {#if selectedEntry}
+            <Sheet.Header>
+                <Sheet.Title>{formatDateTime(selectedEntry.created_at)}</Sheet.Title>
+            </Sheet.Header>
+            <div class="flex flex-col gap-3 px-4 pb-4 text-sm">
+                <div class="flex justify-between border-b pb-2">
+                    <span class="text-muted-foreground">Service</span>
+                    <span class="font-medium">{selectedEntry.service}</span>
+                </div>
+                <div class="flex justify-between border-b pb-2">
+                    <span class="text-muted-foreground">Level</span>
+                    <span class="font-medium {levelClass(selectedEntry.level)}">{selectedEntry.level}</span>
+                </div>
+                <div class="flex justify-between border-b pb-2">
+                    <span class="text-muted-foreground">Classification</span>
+                    <span class="font-medium">{selectedEntry.classification}</span>
+                </div>
+                {#if selectedEntry.agent_id}
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-muted-foreground">Agent ID</span>
+                        <span class="font-mono text-xs">{selectedEntry.agent_id}</span>
+                    </div>
+                {/if}
+                {#if selectedEntry.workload_id}
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-muted-foreground">Workload ID</span>
+                        <span class="font-mono text-xs">{selectedEntry.workload_id}</span>
+                    </div>
+                {/if}
+                {#if selectedEntry.organization_id}
+                    <div class="flex justify-between border-b pb-2">
+                        <span class="text-muted-foreground">Organization ID</span>
+                        <span class="font-mono text-xs">{selectedEntry.organization_id}</span>
+                    </div>
+                {/if}
+                <div class="flex flex-col gap-1 pt-2">
+                    <span class="text-xs font-semibold uppercase text-muted-foreground">Message</span>
+                    <p class="whitespace-pre-wrap break-words">{selectedEntry.message}</p>
+                </div>
+            </div>
+        {/if}
+    </Sheet.Content>
+</Sheet.Root>

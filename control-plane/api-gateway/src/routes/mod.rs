@@ -127,14 +127,33 @@ pub fn create_router() -> Router<AppState> {
                     )
                 })
                 .on_request(|_request: &Request<Body>, _span: &Span| {
-                    tracing::info!("started processing request")
+                    tracing::info!(target: "csfx::http_access", "started processing request")
                 })
                 .on_response(
-                    |_response: &Response<Body>, latency: std::time::Duration, _span: &Span| {
-                        tracing::info!(
-                            latency_ms = latency.as_millis(),
-                            "finished processing request"
-                        )
+                    |response: &Response<Body>, latency: std::time::Duration, _span: &Span| {
+                        let status = response.status();
+                        if status.is_server_error() {
+                            tracing::error!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "request failed"
+                            );
+                        } else if status.is_client_error() {
+                            tracing::warn!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "request rejected"
+                            );
+                        } else {
+                            tracing::info!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "finished processing request"
+                            );
+                        }
                     },
                 ),
         )

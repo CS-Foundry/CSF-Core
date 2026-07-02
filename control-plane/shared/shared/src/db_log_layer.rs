@@ -115,14 +115,49 @@ impl DbLogLayer {
     }
 }
 
+const NOISY_ACCESS_TARGET: &str = "csfx::http_access";
+const NOISY_TARGET_PREFIXES: [&str; 2] = ["sea_orm", "sqlx"];
+const NOISY_MESSAGE_SUBSTRINGS: [&str; 1] = ["heartbeat processed"];
+
+fn is_routine_access_event(event: &Event<'_>) -> bool {
+    event.metadata().target() == NOISY_ACCESS_TARGET
+        && *event.metadata().level() == Level::INFO
+}
+
+fn is_sql_trace_event(event: &Event<'_>) -> bool {
+    let target = event.metadata().target();
+    NOISY_TARGET_PREFIXES
+        .iter()
+        .any(|prefix| target.starts_with(prefix))
+}
+
+fn is_performance_event(event: &Event<'_>) -> bool {
+    *event.metadata().level() == Level::INFO
+        && LogClassification::from_target(event.metadata().target()) == LogClassification::Performance
+}
+
+fn is_noisy_message_event(visitor: &EventVisitor) -> bool {
+    NOISY_MESSAGE_SUBSTRINGS
+        .iter()
+        .any(|needle| visitor.message.contains(needle))
+}
+
 impl<S: Subscriber> Layer<S> for DbLogLayer {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         if *event.metadata().level() == Level::TRACE {
             return;
         }
 
+        if is_routine_access_event(event) || is_sql_trace_event(event) || is_performance_event(event) {
+            return;
+        }
+
         let mut visitor = EventVisitor::default();
         event.record(&mut visitor);
+
+        if is_noisy_message_event(&visitor) {
+            return;
+        }
 
         let record = LogRecord {
             service: self.service,
