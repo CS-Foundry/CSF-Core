@@ -5,6 +5,8 @@
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import * as Sheet from "$lib/components/ui/sheet/index.js";
     import { Input } from "$lib/components/ui/input/index.js";
+    import { Button } from "$lib/components/ui/button/index.js";
+    import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 
     const SERVICES = [
         "api-gateway",
@@ -24,6 +26,7 @@
     let hasMore = $state(false);
     let offset = $state(0);
     let loading = $state(true);
+    let refreshing = $state(false);
     let error = $state<string | null>(null);
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -68,7 +71,13 @@
             error = e instanceof Error ? e.message : "Failed to load logs";
         } finally {
             loading = false;
+            refreshing = false;
         }
+    }
+
+    function refreshNow() {
+        refreshing = true;
+        load();
     }
 
     function levelClass(level: string): string {
@@ -155,6 +164,16 @@
     <Sidebar.Trigger class="-ms-1" />
     <span class="text-sm text-muted-foreground">/</span>
     <span class="text-sm font-medium">Logs</span>
+    <Button
+        variant="outline"
+        size="sm"
+        class="ms-auto gap-1.5"
+        onclick={refreshNow}
+        disabled={refreshing}
+    >
+        <RefreshCwIcon class="size-3.5 {refreshing ? 'animate-spin' : ''}" />
+        Refresh
+    </Button>
 </header>
 
 <div class="flex h-[calc(100vh-4rem)]">

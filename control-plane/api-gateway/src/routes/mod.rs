@@ -1,4 +1,5 @@
 use super::AppState;
+use crate::auth::rate_limit::JwtOrIpKeyExtractor;
 use crate::metrics;
 use crate::utils::router_ext::RouterExt;
 use axum::body::Body;
@@ -8,7 +9,9 @@ use axum::http::{HeaderValue, Request, Response};
 use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::PeerIpKeyExtractor, GovernorLayer,
+};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
@@ -35,19 +38,39 @@ pub fn create_router() -> Router<AppState> {
     let rate_limit_per_second: u64 = std::env::var("RATE_LIMIT_PER_SECOND")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+        .unwrap_or(500);
 
     let burst_size: u32 = std::env::var("RATE_LIMIT_BURST")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(200);
+        .unwrap_or(1000);
 
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
+            .key_extractor(JwtOrIpKeyExtractor::new())
             .per_second(rate_limit_per_second)
             .burst_size(burst_size)
             .finish()
             .expect("invalid rate limit configuration"),
+    );
+
+    let login_rate_limit_per_second: u64 = std::env::var("LOGIN_RATE_LIMIT_PER_SECOND")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+
+    let login_burst_size: u32 = std::env::var("LOGIN_RATE_LIMIT_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+
+    let login_governor_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(PeerIpKeyExtractor)
+            .per_second(login_rate_limit_per_second)
+            .burst_size(login_burst_size)
+            .finish()
+            .expect("invalid login rate limit configuration"),
     );
 
     let frontend_url =
@@ -101,8 +124,13 @@ pub fn create_router() -> Router<AppState> {
         .merge(settings::settings_routes())
         .layer(GovernorLayer::new(governor_config));
 
+    let login_rate_limited_router = Router::new()
+        .merge(users::public_users_routes())
+        .layer(GovernorLayer::new(login_governor_config));
+
     let api_router = Router::new()
         .merge(rate_limited_router)
+        .merge(login_rate_limited_router)
         .merge(update::routes())
         .merge(releases::routes());
 
