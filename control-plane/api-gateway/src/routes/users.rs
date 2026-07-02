@@ -65,9 +65,9 @@ pub struct UserProfileResponse {
     pub force_password_change: bool,
 }
 
-// Define the routes for the users module
+// Define the authenticated routes for the users module
 pub fn users_routes() -> Router<AppState> {
-    let auth_routes = Router::new()
+    Router::new()
         .route("/profile", get(get_user_profile))
         .route("/validate-session", get(validate_session))
         .route("/logout", post(logout_user))
@@ -75,13 +75,15 @@ pub fn users_routes() -> Router<AppState> {
         .route("/2fa/enable", post(enable_2fa))
         .route("/2fa/disable", post(disable_2fa))
         .route("/change-password", post(change_password))
-        .route("/change-email", post(change_email));
+        .route("/change-email", post(change_email))
+}
 
+// Define the public, unauthenticated routes for the users module
+pub fn public_users_routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(register_user))
         .route("/login", post(login_user))
         .route("/public-key", get(get_public_key))
-        .merge(auth_routes)
 }
 
 /// Register a new user

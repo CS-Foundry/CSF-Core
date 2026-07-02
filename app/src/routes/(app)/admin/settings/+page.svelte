@@ -1,8 +1,9 @@
 <script lang="ts">
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import UpdateSettings from "$lib/components/settings/update-settings.svelte";
+    import LogsSettings from "$lib/components/settings/logs-settings.svelte";
 
-    type Tab = "general" | "update";
+    type Tab = "general" | "update" | "logs";
     let activeTab = $state<Tab>("general");
 </script>
 
@@ -31,6 +32,14 @@
         >
             Update
         </button>
+        <button
+            onclick={() => (activeTab = "logs")}
+            class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px {activeTab === 'logs'
+                ? 'border-foreground text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        >
+            Logs
+        </button>
     </div>
 
     <div class="mt-2">
@@ -38,6 +47,8 @@
             <p class="text-sm text-muted-foreground">No general settings configured.</p>
         {:else if activeTab === "update"}
             <UpdateSettings />
+        {:else if activeTab === "logs"}
+            <LogsSettings />
         {/if}
     </div>
 </div>

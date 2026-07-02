@@ -8,6 +8,7 @@ mod auth_service;
 mod db;
 mod init;
 mod metrics;
+mod prune;
 mod rbac_service;
 mod routes;
 mod self_monitor;
@@ -137,7 +138,7 @@ async fn main() {
         .expect("failed to install rustls crypto provider");
 
     metrics::init();
-    telemetry::init_tracing();
+    let log_receiver = telemetry::init_tracing();
 
     let db_conn = match db::establish_connection().await {
         Ok(conn) => {
@@ -149,6 +150,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    shared::spawn_log_writer(log_receiver, db_conn.clone());
 
     let default_org_id = match init::initialize_database(&db_conn).await {
         Ok(id) => id,
@@ -163,6 +165,9 @@ async fn main() {
         service_client: service_client::ServiceClient::new(),
         default_org_id: Some(default_org_id),
     };
+
+    tracing::info!("starting log prune job");
+    prune::spawn_log_prune_job(state.clone());
 
     tracing::info!("starting self-monitoring service");
     self_monitor::start_self_monitoring(std::sync::Arc::new(db_conn)).await;

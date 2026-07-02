@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 # Database
 sea-orm = { workspace = true }
+entity = { path = "../entity" }
 
 # Async
 tokio = { workspace = true }
@@ -20,6 +21,8 @@ tracing-subscriber = { workspace = true }
 dotenvy = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

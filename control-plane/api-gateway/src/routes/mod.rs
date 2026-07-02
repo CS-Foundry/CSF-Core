@@ -1,4 +1,5 @@
 use super::AppState;
+use crate::auth::rate_limit::JwtOrIpKeyExtractor;
 use crate::metrics;
 use crate::utils::router_ext::RouterExt;
 use axum::body::Body;
@@ -8,7 +9,9 @@ use axum::http::{HeaderValue, Request, Response};
 use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::PeerIpKeyExtractor, GovernorLayer,
+};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
@@ -16,11 +19,13 @@ use tracing::{info_span, Span};
 
 pub mod agents;
 pub mod events;
+pub mod logs;
 pub mod networks;
 pub mod organizations;
 pub mod registry;
 pub mod releases;
 pub mod resource_groups;
+pub mod settings;
 pub mod ssh_keys;
 pub mod system;
 pub mod update;
@@ -33,19 +38,39 @@ pub fn create_router() -> Router<AppState> {
     let rate_limit_per_second: u64 = std::env::var("RATE_LIMIT_PER_SECOND")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+        .unwrap_or(500);
 
     let burst_size: u32 = std::env::var("RATE_LIMIT_BURST")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(200);
+        .unwrap_or(1000);
 
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
+            .key_extractor(JwtOrIpKeyExtractor::new())
             .per_second(rate_limit_per_second)
             .burst_size(burst_size)
             .finish()
             .expect("invalid rate limit configuration"),
+    );
+
+    let login_rate_limit_per_second: u64 = std::env::var("LOGIN_RATE_LIMIT_PER_SECOND")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+
+    let login_burst_size: u32 = std::env::var("LOGIN_RATE_LIMIT_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+
+    let login_governor_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(PeerIpKeyExtractor)
+            .per_second(login_rate_limit_per_second)
+            .burst_size(login_burst_size)
+            .finish()
+            .expect("invalid login rate limit configuration"),
     );
 
     let frontend_url =
@@ -95,10 +120,17 @@ pub fn create_router() -> Router<AppState> {
         .merge(workloads::workloads_routes())
         .merge(events::events_routes())
         .merge(resource_groups::resource_groups_routes())
+        .merge(logs::logs_routes())
+        .merge(settings::settings_routes())
         .layer(GovernorLayer::new(governor_config));
+
+    let login_rate_limited_router = Router::new()
+        .merge(users::public_users_routes())
+        .layer(GovernorLayer::new(login_governor_config));
 
     let api_router = Router::new()
         .merge(rate_limited_router)
+        .merge(login_rate_limited_router)
         .merge(update::routes())
         .merge(releases::routes());
 
@@ -123,14 +155,33 @@ pub fn create_router() -> Router<AppState> {
                     )
                 })
                 .on_request(|_request: &Request<Body>, _span: &Span| {
-                    tracing::info!("started processing request")
+                    tracing::info!(target: "csfx::http_access", "started processing request")
                 })
                 .on_response(
-                    |_response: &Response<Body>, latency: std::time::Duration, _span: &Span| {
-                        tracing::info!(
-                            latency_ms = latency.as_millis(),
-                            "finished processing request"
-                        )
+                    |response: &Response<Body>, latency: std::time::Duration, _span: &Span| {
+                        let status = response.status();
+                        if status.is_server_error() {
+                            tracing::error!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "request failed"
+                            );
+                        } else if status.is_client_error() {
+                            tracing::warn!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "request rejected"
+                            );
+                        } else {
+                            tracing::info!(
+                                target: "csfx::http_access",
+                                status = status.as_u16(),
+                                latency_ms = latency.as_millis(),
+                                "finished processing request"
+                            );
+                        }
                     },
                 ),
         )
