@@ -8,6 +8,9 @@ use uuid::Uuid;
 pub enum WorkloadStatus {
     Pending,
     Scheduled,
+    Pulling,
+    Creating,
+    Starting,
     Running,
     Failed,
     Stopped,
@@ -18,6 +21,9 @@ impl WorkloadStatus {
         match self {
             WorkloadStatus::Pending => "pending",
             WorkloadStatus::Scheduled => "scheduled",
+            WorkloadStatus::Pulling => "pulling",
+            WorkloadStatus::Creating => "creating",
+            WorkloadStatus::Starting => "starting",
             WorkloadStatus::Running => "running",
             WorkloadStatus::Failed => "failed",
             WorkloadStatus::Stopped => "stopped",
@@ -27,6 +33,9 @@ impl WorkloadStatus {
     pub fn from_str(s: &str) -> Self {
         match s {
             "scheduled" => WorkloadStatus::Scheduled,
+            "pulling" => WorkloadStatus::Pulling,
+            "creating" => WorkloadStatus::Creating,
+            "starting" => WorkloadStatus::Starting,
             "running" => WorkloadStatus::Running,
             "failed" => WorkloadStatus::Failed,
             "stopped" => WorkloadStatus::Stopped,

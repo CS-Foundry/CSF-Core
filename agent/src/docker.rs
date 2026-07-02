@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
-use bollard::models::{ContainerCreateBody, HostConfig};
+use axum::body::Bytes;
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::models::{ContainerCreateBody, ContainerStateStatusEnum, HostConfig};
 use bollard::query_parameters::{
-    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, StartContainerOptionsBuilder,
+    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptionsBuilder,
+    LogsOptionsBuilder, StartContainerOptionsBuilder,
 };
 use bollard::Docker;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -162,6 +165,82 @@ impl DockerManager {
         );
 
         Ok(container.id)
+    }
+
+    pub async fn inspect_status(&self, container_id: &str) -> Result<String> {
+        let options = InspectContainerOptionsBuilder::default().build();
+
+        let inspect = self
+            .docker
+            .inspect_container(container_id, Some(options))
+            .await
+            .context("Failed to inspect container")?;
+
+        let state = inspect.state.unwrap_or_default();
+        let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
+        let exit_code = state.exit_code.unwrap_or(0);
+
+        Ok(match status {
+            ContainerStateStatusEnum::CREATED => "creating".to_string(),
+            ContainerStateStatusEnum::RUNNING => "running".to_string(),
+            ContainerStateStatusEnum::RESTARTING | ContainerStateStatusEnum::PAUSED => {
+                "running".to_string()
+            }
+            ContainerStateStatusEnum::EXITED if exit_code == 0 => "stopped".to_string(),
+            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD => {
+                "failed".to_string()
+            }
+            ContainerStateStatusEnum::REMOVING | ContainerStateStatusEnum::STOPPING => {
+                "stopped".to_string()
+            }
+            ContainerStateStatusEnum::EMPTY => "failed".to_string(),
+        })
+    }
+
+    pub fn logs(
+        &self,
+        container_id: &str,
+    ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static {
+        let options = LogsOptionsBuilder::default()
+            .stdout(true)
+            .stderr(true)
+            .follow(true)
+            .tail("200")
+            .build();
+
+        self.docker
+            .logs(container_id, Some(options))
+            .map(|item| match item {
+                Ok(log_output) => Ok(Bytes::from(log_output.into_bytes())),
+                Err(e) => Err(std::io::Error::other(e.to_string())),
+            })
+    }
+
+    pub async fn exec(&self, container_id: &str) -> Result<StartExecResults> {
+        let create_options = CreateExecOptions {
+            attach_stdin: Some(true),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(true),
+            cmd: Some(vec!["/bin/sh".to_string()]),
+            ..Default::default()
+        };
+
+        let created = self
+            .docker
+            .create_exec(container_id, create_options)
+            .await
+            .context("Failed to create exec session")?;
+
+        let start_options = StartExecOptions {
+            tty: true,
+            ..Default::default()
+        };
+
+        self.docker
+            .start_exec(&created.id, Some(start_options))
+            .await
+            .context("Failed to start exec session")
     }
 
     pub async fn stop_container(&self, container_id: &str) -> Result<()> {

@@ -52,6 +52,7 @@ struct HeartbeatRequest {
     uptime_seconds: Option<u64>,
     wg_public_key: Option<String>,
     wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -94,6 +95,7 @@ pub struct ApiClient {
     cert_pem: Option<String>,
     wg_public_key: String,
     wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
 }
 
 pub fn generate_wg_keypair() -> (String, String) {
@@ -109,7 +111,12 @@ pub fn generate_wg_keypair() -> (String, String) {
 }
 
 impl ApiClient {
-    pub fn new(gateway_url: String, wg_public_key: String, wg_endpoint: Option<String>) -> Result<Self> {
+    pub fn new(
+        gateway_url: String,
+        wg_public_key: String,
+        wg_endpoint: Option<String>,
+        wg_tunnel_ip: Option<String>,
+    ) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .danger_accept_invalid_certs(true)
@@ -122,6 +129,7 @@ impl ApiClient {
             cert_pem: None,
             wg_public_key,
             wg_endpoint,
+            wg_tunnel_ip,
         })
     }
 
@@ -243,6 +251,7 @@ impl ApiClient {
                 uptime_seconds,
                 wg_public_key: Some(self.wg_public_key.clone()),
                 wg_endpoint: self.wg_endpoint.clone(),
+                wg_tunnel_ip: self.wg_tunnel_ip.clone(),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {

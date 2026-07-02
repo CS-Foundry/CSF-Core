@@ -17,6 +17,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{info_span, Span};
 
+pub mod agent_proxy;
 pub mod agents;
 pub mod events;
 pub mod logs;
@@ -110,6 +111,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(ssh_keys::ssh_keys_internal_routes());
 
     let rate_limited_router = Router::new()
+        .merge(agent_proxy::agent_proxy_routes())
         .merge(agents::agents_routes())
         .merge(networks::networks_routes())
         .merge(organizations::routes())

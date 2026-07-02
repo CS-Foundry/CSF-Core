@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use rcgen::{
     BasicConstraints, CertificateParams, CertificateSigningRequestParams, DnType, IsCa, Issuer,
-    KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+    KeyPair, KeyUsagePurpose, SigningKey, PKCS_ECDSA_P256_SHA256,
 };
 use sea_orm::DatabaseConnection;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -14,6 +15,13 @@ pub struct IssuedCertificate {
     pub serial_number: i64,
     pub expires_at: DateTime<Utc>,
 }
+
+pub struct ProxyTicket {
+    pub payload: String,
+    pub signature: String,
+}
+
+const PROXY_TICKET_TTL_SECS: i64 = 60;
 
 struct CaState {
     ca_cert_pem: String,
@@ -207,5 +215,22 @@ impl PkiService {
         crate::db::certificates::get_revoked_serials(&self.db)
             .await
             .map_err(|e| anyhow!("Failed to build CRL: {}", e))
+    }
+
+    pub fn sign_proxy_ticket(&self, agent_id: Uuid, workload_id: Uuid) -> Result<ProxyTicket> {
+        let expires_at = Utc::now() + chrono::Duration::seconds(PROXY_TICKET_TTL_SECS);
+        let payload = format!("{}.{}.{}", agent_id, workload_id, expires_at.timestamp());
+
+        let key_pair = KeyPair::from_pem(&self.ca.ca_key_pem)
+            .map_err(|e| anyhow!("Failed to load CA key: {}", e))?;
+
+        let signature = key_pair
+            .sign(payload.as_bytes())
+            .map_err(|e| anyhow!("Failed to sign proxy ticket: {}", e))?;
+
+        Ok(ProxyTicket {
+            payload: URL_SAFE_NO_PAD.encode(payload.as_bytes()),
+            signature: URL_SAFE_NO_PAD.encode(signature),
+        })
     }
 }

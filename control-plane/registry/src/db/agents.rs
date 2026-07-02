@@ -80,6 +80,7 @@ pub async fn create(
         public_key_pem: Set(public_key_pem),
         wg_public_key: Set(None),
         wg_endpoint: Set(None),
+        wg_tunnel_ip: Set(None),
     };
 
     Ok(model.insert(db).await?)
@@ -99,6 +100,7 @@ pub async fn update_heartbeat(
     status: String,
     wg_public_key: Option<String>,
     wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
 ) -> Result<()> {
     let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
         .one(db)
@@ -114,6 +116,9 @@ pub async fn update_heartbeat(
     }
     if wg_endpoint.is_some() {
         agent.wg_endpoint = Set(wg_endpoint);
+    }
+    if wg_tunnel_ip.is_some() {
+        agent.wg_tunnel_ip = Set(wg_tunnel_ip);
     }
     agent.update(db).await?;
 

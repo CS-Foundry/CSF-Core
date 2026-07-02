@@ -1,9 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
     response::Json,
 };
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use uuid::Uuid;
 
 use crate::{
@@ -173,6 +175,62 @@ pub async fn get_crl(
     Ok(Json(CrlResponse {
         revoked_serials,
         generated_at: Utc::now(),
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct ProxyTicketRequest {
+    pub agent_id: Uuid,
+    pub workload_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct ProxyTicketResponse {
+    pub payload: String,
+    pub signature: String,
+}
+
+pub async fn issue_proxy_ticket(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<ProxyTicketRequest>,
+) -> Result<Json<ProxyTicketResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ip = addr.ip();
+    let allowed = ip.is_loopback()
+        || match ip {
+            std::net::IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                octets[0] == 10
+                    || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    || (octets[0] == 192 && octets[1] == 168)
+            }
+            std::net::IpAddr::V6(_) => false,
+        };
+
+    if !allowed {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "internal endpoint not accessible from this network".to_string(),
+            }),
+        ));
+    }
+
+    let ticket = state
+        .pki_service
+        .sign_proxy_ticket(request.agent_id, request.workload_id)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to sign proxy ticket: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(Json(ProxyTicketResponse {
+        payload: ticket.payload,
+        signature: ticket.signature,
     }))
 }
 

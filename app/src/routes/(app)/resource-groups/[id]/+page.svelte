@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
@@ -11,12 +11,17 @@
         deleteWorkload,
         createVolume,
         deleteVolume,
+        streamWorkloadLogs,
+        openWorkloadExecSocket,
         type ResourceGroup,
         type Workload,
         type Volume,
         type PortMapping,
         type VolumeMount,
     } from "$lib/api/resource-groups";
+    import { Terminal } from "@xterm/xterm";
+    import { FitAddon } from "@xterm/addon-fit";
+    import "@xterm/xterm/css/xterm.css";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
 
@@ -50,6 +55,20 @@
 
     let volFormName = $state("");
     let volFormSize = $state("10");
+
+    let logsDialog = $state<HTMLDialogElement | null>(null);
+    let logsWorkloadName = $state("");
+    let logsLines = $state<string[]>([]);
+    let logsError = $state<string | null>(null);
+    let logsAbort: AbortController | null = null;
+
+    let execDialog = $state<HTMLDialogElement | null>(null);
+    let execWorkloadName = $state("");
+    let execError = $state<string | null>(null);
+    let execTerminalEl = $state<HTMLDivElement | null>(null);
+    let execTerminal: Terminal | null = null;
+    let execFitAddon: FitAddon | null = null;
+    let execSocket: WebSocket | null = null;
 
     async function load() {
         if (!auth.token) return;
@@ -175,6 +194,96 @@
         }
     }
 
+    async function openLogs(workload: Workload) {
+        if (!auth.token) return;
+
+        logsWorkloadName = workload.name;
+        logsLines = [];
+        logsError = null;
+        logsDialog?.showModal();
+
+        logsAbort = new AbortController();
+        const decoder = new TextDecoder();
+
+        try {
+            const body = await streamWorkloadLogs(auth.token, workload.id, logsAbort.signal);
+            const reader = body.getReader();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                if (chunk) {
+                    logsLines = [...logsLines, ...chunk.split("\n").filter((l) => l.length > 0)];
+                }
+            }
+        } catch (e) {
+            if (e instanceof Error && e.name !== "AbortError") {
+                logsError = e.message;
+            }
+        }
+    }
+
+    function closeLogs() {
+        logsAbort?.abort();
+        logsAbort = null;
+        logsDialog?.close();
+    }
+
+    async function openExec(workload: Workload) {
+        if (!auth.token) return;
+
+        execWorkloadName = workload.name;
+        execError = null;
+        execDialog?.showModal();
+
+        await tick();
+
+        if (!execTerminalEl) return;
+
+        execTerminal = new Terminal({ convertEol: true, cursorBlink: true });
+        execFitAddon = new FitAddon();
+        execTerminal.loadAddon(execFitAddon);
+        execTerminal.open(execTerminalEl);
+        execFitAddon.fit();
+
+        try {
+            execSocket = await openWorkloadExecSocket(auth.token, workload.id);
+            execSocket.binaryType = "arraybuffer";
+
+            execSocket.onmessage = (event) => {
+                if (execTerminal) {
+                    const data =
+                        event.data instanceof ArrayBuffer
+                            ? new Uint8Array(event.data)
+                            : event.data;
+                    execTerminal.write(data);
+                }
+            };
+            execSocket.onerror = () => {
+                execError = "Exec socket error";
+            };
+            execSocket.onclose = () => {
+                execTerminal?.write("\r\n[session closed]\r\n");
+            };
+
+            execTerminal.onData((data) => {
+                execSocket?.send(data);
+            });
+        } catch (e) {
+            execError = e instanceof Error ? e.message : "Failed to start exec session";
+        }
+    }
+
+    function closeExec() {
+        execSocket?.close();
+        execSocket = null;
+        execTerminal?.dispose();
+        execTerminal = null;
+        execFitAddon = null;
+        execDialog?.close();
+    }
+
     async function handleDeleteVolume(id: string) {
         if (!auth.token) return;
         try {
@@ -255,9 +364,21 @@
             case "error": return "bg-red-500/15 text-red-600 dark:text-red-400";
             case "scheduled":
             case "attaching": return "bg-blue-500/15 text-blue-600 dark:text-blue-400";
+            case "pulling": return "bg-blue-500/15 text-blue-600 dark:text-blue-400 animate-pulse";
+            case "creating":
+            case "starting": return "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 animate-pulse";
             case "stopped":
             case "deleting": return "bg-muted text-muted-foreground";
             default: return "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400";
+        }
+    }
+
+    function statusLabel(status: string): string {
+        switch (status.toLowerCase()) {
+            case "pulling": return "Pulling image...";
+            case "creating": return "Creating container...";
+            case "starting": return "Starting...";
+            default: return status;
         }
     }
 
@@ -389,6 +510,56 @@
                 {creatingVolume ? "Creating..." : "Create"}
             </Button>
         </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={logsDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-3xl h-[70vh] rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => closeLogs()}
+>
+    <div class="flex flex-col h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
+            <h2 class="text-base font-semibold font-mono">{logsWorkloadName}</h2>
+            <button
+                class="text-muted-foreground hover:text-foreground"
+                onclick={() => logsDialog?.close()}
+                aria-label="Close"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto bg-black p-4 font-mono text-xs text-green-400">
+            {#if logsError}
+                <p class="text-red-400">{logsError}</p>
+            {/if}
+            {#each logsLines as line}
+                <p class="whitespace-pre-wrap">{line}</p>
+            {/each}
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={execDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-4xl h-[80vh] rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => closeExec()}
+>
+    <div class="flex flex-col h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
+            <h2 class="text-base font-semibold font-mono">{execWorkloadName}</h2>
+            <button
+                class="text-muted-foreground hover:text-foreground"
+                onclick={() => execDialog?.close()}
+                aria-label="Close"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        {#if execError}
+            <p class="px-6 py-2 text-xs text-destructive shrink-0">{execError}</p>
+        {/if}
+        <div class="flex-1 overflow-hidden bg-black p-2" bind:this={execTerminalEl}></div>
     </div>
 </dialog>
 
@@ -535,10 +706,27 @@
                                     </td>
                                     <td class="px-4 py-3">
                                         <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(w.status)}">
-                                            {w.status}
+                                            {statusLabel(w.status)}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3 text-right">
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            class="h-7 px-2 text-xs"
+                                            onclick={() => openLogs(w)}
+                                        >
+                                            Logs
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            class="h-7 px-2 text-xs"
+                                            onclick={() => openExec(w)}
+                                            disabled={w.status !== "running"}
+                                        >
+                                            Shell
+                                        </Button>
                                         <Button
                                             size="sm"
                                             variant="ghost"

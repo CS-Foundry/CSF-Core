@@ -23,6 +23,7 @@ pub struct Model {
     pub public_key_pem: Option<String>,
     pub wg_public_key: Option<String>,
     pub wg_endpoint: Option<String>,
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

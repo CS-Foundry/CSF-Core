@@ -1,0 +1,276 @@
+use anyhow::{anyhow, Context, Result};
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{ConnectInfo, Path, State},
+    http::{HeaderMap, StatusCode},
+    routing::get,
+    Router,
+};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use bollard::exec::StartExecResults;
+use futures_util::{SinkExt, StreamExt};
+use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_ASN1};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
+use tracing::{info, warn};
+
+use crate::docker::DockerManager;
+use crate::pki::AgentPki;
+
+const TICKET_HEADER: &str = "X-Csfx-Proxy-Ticket";
+
+#[derive(Clone)]
+pub struct ServerState {
+    pub docker: Arc<Mutex<Option<DockerManager>>>,
+    pub running_containers: Arc<Mutex<HashMap<String, String>>>,
+    pub agent_id: uuid::Uuid,
+}
+
+pub async fn run(state: ServerState, port: u16) -> Result<()> {
+    let app = Router::new()
+        .route("/logs/{workload_id}", get(logs_handler))
+        .route("/exec/{workload_id}", get(exec_handler))
+        .with_state(state);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .context("Failed to bind agent inbound server")?;
+
+    info!(port = port, "csfx-agent inbound server listening");
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("Agent inbound server stopped unexpectedly")
+}
+
+fn is_internal_source(addr: &SocketAddr) -> bool {
+    let ip = addr.ip();
+    ip.is_loopback()
+        || match ip {
+            IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                octets[0] == 10
+                    || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    || (octets[0] == 192 && octets[1] == 168)
+            }
+            IpAddr::V6(_) => false,
+        }
+}
+
+struct TicketClaims {
+    agent_id: String,
+    workload_id: String,
+    expires_at: i64,
+}
+
+fn verify_ticket(headers: &HeaderMap, workload_id: &str, expected_agent_id: &str) -> Result<()> {
+    let raw = headers
+        .get(TICKET_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| anyhow!("missing {} header", TICKET_HEADER))?;
+
+    let (payload_b64, signature_b64) = raw
+        .split_once('.')
+        .ok_or_else(|| anyhow!("malformed proxy ticket"))?;
+
+    let payload_bytes = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .context("invalid ticket payload encoding")?;
+    let signature = URL_SAFE_NO_PAD
+        .decode(signature_b64)
+        .context("invalid ticket signature encoding")?;
+
+    let ca_pem = AgentPki::load_ca_pem().context("failed to load trusted CA certificate")?;
+    let public_key_bytes = extract_ca_public_key(&ca_pem)?;
+
+    let verifier = UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, &public_key_bytes);
+    verifier
+        .verify(&payload_bytes, &signature)
+        .map_err(|_| anyhow!("proxy ticket signature verification failed"))?;
+
+    let claims = parse_claims(&payload_bytes)?;
+
+    if claims.workload_id != workload_id {
+        return Err(anyhow!("proxy ticket workload_id mismatch"));
+    }
+    if claims.agent_id != expected_agent_id {
+        return Err(anyhow!("proxy ticket agent_id mismatch"));
+    }
+    if claims.expires_at < chrono::Utc::now().timestamp() {
+        return Err(anyhow!("proxy ticket expired"));
+    }
+
+    Ok(())
+}
+
+fn parse_claims(payload_bytes: &[u8]) -> Result<TicketClaims> {
+    let payload = std::str::from_utf8(payload_bytes).context("proxy ticket payload not utf8")?;
+    let mut parts = payload.splitn(3, '.');
+
+    let agent_id = parts
+        .next()
+        .ok_or_else(|| anyhow!("proxy ticket missing agent_id"))?
+        .to_string();
+    let workload_id = parts
+        .next()
+        .ok_or_else(|| anyhow!("proxy ticket missing workload_id"))?
+        .to_string();
+    let expires_at = parts
+        .next()
+        .ok_or_else(|| anyhow!("proxy ticket missing expiry"))?
+        .parse::<i64>()
+        .context("proxy ticket expiry not a valid timestamp")?;
+
+    Ok(TicketClaims {
+        agent_id,
+        workload_id,
+        expires_at,
+    })
+}
+
+fn extract_ca_public_key(ca_pem: &str) -> Result<Vec<u8>> {
+    let (_, pem) =
+        x509_parser::pem::parse_x509_pem(ca_pem.as_bytes()).context("failed to parse CA PEM")?;
+    let cert = pem.parse_x509().context("failed to parse CA certificate")?;
+    Ok(cert
+        .tbs_certificate
+        .subject_pki
+        .subject_public_key
+        .data
+        .to_vec())
+}
+
+async fn logs_handler(
+    State(state): State<ServerState>,
+    Path(workload_id): Path<String>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Result<axum::body::Body, (StatusCode, String)> {
+    if !is_internal_source(&addr) {
+        warn!(source = %addr, "rejected agent inbound request from non-internal source");
+        return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
+    }
+
+    verify_ticket(&headers, &workload_id, &state.agent_id.to_string())
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+
+    let container_id = state
+        .running_containers
+        .lock()
+        .await
+        .get(&workload_id)
+        .cloned()
+        .ok_or((StatusCode::NOT_FOUND, "workload not running here".to_string()))?;
+
+    let docker_guard = state.docker.lock().await;
+    let docker = docker_guard
+        .as_ref()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "docker unavailable".to_string()))?;
+
+    let stream = docker.logs(&container_id);
+    Ok(axum::body::Body::from_stream(stream))
+}
+
+async fn exec_handler(
+    State(state): State<ServerState>,
+    Path(workload_id): Path<String>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    if !is_internal_source(&addr) {
+        warn!(source = %addr, "rejected agent inbound request from non-internal source");
+        return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
+    }
+
+    verify_ticket(&headers, &workload_id, &state.agent_id.to_string())
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+
+    let container_id = state
+        .running_containers
+        .lock()
+        .await
+        .get(&workload_id)
+        .cloned()
+        .ok_or((StatusCode::NOT_FOUND, "workload not running here".to_string()))?;
+
+    Ok(ws.on_upgrade(move |socket| handle_exec_socket(socket, state, container_id)))
+}
+
+async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id: String) {
+    let docker_guard = state.docker.lock().await;
+    let docker = match docker_guard.as_ref() {
+        Some(d) => d,
+        None => {
+            warn!("docker unavailable for exec session");
+            return;
+        }
+    };
+
+    let exec_result = match docker.exec(&container_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(container_id = %container_id, error = %e, "failed to start exec session");
+            return;
+        }
+    };
+    drop(docker_guard);
+
+    let StartExecResults::Attached {
+        mut output,
+        mut input,
+    } = exec_result
+    else {
+        warn!(container_id = %container_id, "exec session detached unexpectedly");
+        return;
+    };
+
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    let output_task = tokio::spawn(async move {
+        while let Some(item) = output.next().await {
+            match item {
+                Ok(log_output) => {
+                    let bytes = log_output.into_bytes();
+                    if ws_sink.send(Message::Binary(bytes)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let input_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            match msg {
+                Message::Binary(data) => {
+                    if input.write_all(&data).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Text(text) => {
+                    if input.write_all(text.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = output_task => {}
+        _ = input_task => {}
+    }
+
+    info!(container_id = %container_id, "exec session closed");
+}

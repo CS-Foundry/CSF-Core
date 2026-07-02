@@ -130,6 +130,7 @@ pub struct HeartbeatRequest {
     pub uptime_seconds: Option<u64>,
     pub wg_public_key: Option<String>,
     pub wg_endpoint: Option<String>,
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

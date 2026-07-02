@@ -80,7 +80,9 @@ pub async fn update_container_status(
         .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
 
     let mut active: workloads::ActiveModel = workload.into();
-    active.container_id = Set(Some(container_id.to_string()));
+    if !container_id.is_empty() {
+        active.container_id = Set(Some(container_id.to_string()));
+    }
     active.status = Set(status.to_string());
     active.updated_at = Set(Some(Utc::now().naive_utc()));
 

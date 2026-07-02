@@ -145,6 +145,38 @@ export async function deleteWorkload(token: string, id: string): Promise<void> {
     if (!res.ok) throw new Error(`Failed to delete workload: ${res.status}`);
 }
 
+export async function streamWorkloadLogs(
+    token: string,
+    id: string,
+    signal: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+    const res = await fetch(`${API_BASE}/workloads/${id}/logs`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+    });
+    if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to stream logs: ${res.status}`);
+    }
+    return res.body;
+}
+
+export async function openWorkloadExecSocket(token: string, id: string): Promise<WebSocket> {
+    const res = await fetch(`${API_BASE}/workloads/${id}/exec/ticket`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to issue exec ticket: ${res.status}`);
+    }
+    const { ticket } = await res.json();
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${wsProtocol}//${window.location.host}${API_BASE}/workloads/${id}/exec?ticket=${encodeURIComponent(ticket)}`;
+    return new WebSocket(url);
+}
+
 export async function listResourceGroupVolumes(token: string, rgId: string): Promise<Volume[]> {
     const res = await fetch(`${API_BASE}/resource-groups/${rgId}/volumes`, {
         headers: { Authorization: `Bearer ${token}` },

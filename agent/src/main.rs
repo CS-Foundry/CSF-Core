@@ -3,6 +3,7 @@ mod config;
 mod docker;
 mod pki;
 mod rbd;
+mod server;
 mod ssh_keys;
 mod system;
 mod update_watch;
@@ -52,9 +53,10 @@ async fn main() -> Result<()> {
         .unwrap_or(60);
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
+    let wg_tunnel_ip = std::env::var("CSFX_WG_TUNNEL_IP").ok();
     let (_wg_private_key, wg_public_key) = client::generate_wg_keypair();
 
-    let api_client = client::ApiClient::new(gateway_url.clone(), wg_public_key, wg_endpoint)
+    let api_client = client::ApiClient::new(gateway_url.clone(), wg_public_key, wg_endpoint, wg_tunnel_ip)
         .context("Failed to initialize API client")?;
 
     let agent_pki = pki::AgentPki::load_or_generate().context("Failed to initialize PKI")?;
@@ -97,7 +99,27 @@ async fn main() -> Result<()> {
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
+    let workload_phases: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+
     let mounted_volumes: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    if let Some(port) = std::env::var("CSFX_AGENT_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+    {
+        let server_state = server::ServerState {
+            docker: docker_manager.clone(),
+            running_containers: running_containers.clone(),
+            agent_id,
+        };
+        tokio::spawn(async move {
+            if let Err(e) = server::run(server_state, port).await {
+                error!(error = %e, "agent inbound server stopped");
+            }
+        });
+    } else {
+        info!("CSFX_AGENT_PORT not set, agent inbound server disabled");
+    }
 
     run_heartbeat_loop(
         &api_client,
@@ -106,6 +128,7 @@ async fn main() -> Result<()> {
         heartbeat_interval_secs,
         docker_manager,
         running_containers,
+        workload_phases,
         mounted_volumes,
     )
     .await;
@@ -183,6 +206,7 @@ async fn run_heartbeat_loop(
     interval_secs: u64,
     docker: Arc<Mutex<Option<docker::DockerManager>>>,
     running_containers: Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
@@ -193,9 +217,9 @@ async fn run_heartbeat_loop(
         tokio::select! {
             _ = interval.tick() => {
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
-                process_workloads(client, api_key, &docker, &running_containers, &mounted_volumes).await;
+                process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes).await;
 
-                let statuses = build_container_statuses(&running_containers).await;
+                let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
                 let metrics = system::collect_metrics();
 
                 match client.heartbeat(agent_id, api_key, Some(statuses), Some(metrics)).await {
@@ -315,6 +339,7 @@ async fn process_workloads(
     api_key: &str,
     docker: &Arc<Mutex<Option<docker::DockerManager>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
 ) {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
@@ -353,8 +378,14 @@ async fn process_workloads(
 
         info!(workload_id = %workload.id, image = %workload.image, "Starting workload");
 
+        workload_phases
+            .lock()
+            .await
+            .insert(workload.id.clone(), "pulling".to_string());
+
         if let Err(e) = docker.pull_image(&workload.image).await {
             warn!(workload_id = %workload.id, error = %e, "Failed to pull image");
+            workload_phases.lock().await.remove(&workload.id);
             continue;
         }
 
@@ -367,6 +398,11 @@ async fn process_workloads(
                 continue;
             }
         }
+
+        workload_phases
+            .lock()
+            .await
+            .insert(workload.id.clone(), "creating".to_string());
 
         let spec = docker::WorkloadSpec {
             workload_id: workload.id.clone(),
@@ -387,6 +423,10 @@ async fn process_workloads(
 
         match docker.start_container(&spec).await {
             Ok(container_id) => {
+                workload_phases
+                    .lock()
+                    .await
+                    .insert(workload.id.clone(), "starting".to_string());
                 running_containers
                     .lock()
                     .await
@@ -398,6 +438,7 @@ async fn process_workloads(
                 );
             }
             Err(e) => {
+                workload_phases.lock().await.remove(&workload.id);
                 warn!(workload_id = %workload.id, error = %e, "Failed to start container");
             }
         }
@@ -405,16 +446,48 @@ async fn process_workloads(
 }
 
 async fn build_container_statuses(
+    docker: &Arc<Mutex<Option<docker::DockerManager>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: &Arc<Mutex<HashMap<String, String>>>,
 ) -> Vec<client::ContainerStatus> {
-    running_containers
-        .lock()
-        .await
-        .iter()
-        .map(|(workload_id, container_id)| client::ContainerStatus {
+    let containers = running_containers.lock().await.clone();
+    let mut statuses = Vec::with_capacity(containers.len());
+
+    let docker_guard = docker.lock().await;
+    for (workload_id, container_id) in containers.iter() {
+        let status = match docker_guard.as_ref() {
+            Some(dm) => match dm.inspect_status(container_id).await {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to inspect container");
+                    "failed".to_string()
+                }
+            },
+            None => "failed".to_string(),
+        };
+
+        if status != "creating" {
+            workload_phases.lock().await.remove(workload_id);
+        }
+
+        statuses.push(client::ContainerStatus {
             workload_id: workload_id.clone(),
             container_id: container_id.clone(),
-            status: "running".to_string(),
-        })
-        .collect()
+            status,
+        });
+    }
+    drop(docker_guard);
+
+    let phases = workload_phases.lock().await;
+    for (workload_id, phase) in phases.iter() {
+        if !containers.contains_key(workload_id) {
+            statuses.push(client::ContainerStatus {
+                workload_id: workload_id.clone(),
+                container_id: String::new(),
+                status: phase.clone(),
+            });
+        }
+    }
+
+    statuses
 }
