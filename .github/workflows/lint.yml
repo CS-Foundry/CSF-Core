@@ -6,14 +6,47 @@ on:
   push:
     branches:
       - main
+  workflow_run:
+    workflows: ["Format"]
+    types: [completed]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  actions: read
+
 jobs:
+  wait-for-format:
+    name: Wait for auto-format
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Poll for in-flight format run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          REPO="${{ github.repository }}"
+          for _ in $(seq 1 30); do
+            STATUS=$(gh run list --repo "$REPO" --workflow Format --branch "$BRANCH" \
+              --limit 1 --json status -q '.[0].status' 2>/dev/null || echo "")
+            if [ "$STATUS" != "in_progress" ] && [ "$STATUS" != "queued" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    needs: wait-for-format
+    if: always() && (needs.wait-for-format.result == 'success' || needs.wait-for-format.result == 'skipped')
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,13 +65,28 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Clippy
+        if: github.event_name != 'pull_request'
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Clippy with PR annotations
+        if: github.event_name == 'pull_request'
+        uses: reviewdog/action-clippy@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          level: error
+          fail_level: error
+          clippy_flags: --workspace --all-targets -- -D warnings
 
   rustfmt:
     name: rustfmt
     runs-on: ubuntu-latest
+    needs: wait-for-format
+    if: always() && (needs.wait-for-format.result == 'success' || needs.wait-for-format.result == 'skipped')
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -59,4 +107,16 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Audit
-        run: cargo audit
+        id: audit
+        run: cargo audit --json > audit-report.json || echo "failed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Post audit findings to PR
+        if: github.event_name == 'pull_request' && steps.audit.outputs.failed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SUMMARY=$(jq -r '.vulnerabilities.list[] | "- **\(.advisory.id)** \(.package.name)@\(.package.version): \(.advisory.title)"' audit-report.json)
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$(printf 'cargo audit found vulnerabilities:\n\n%s' "$SUMMARY")"
+          exit 1
