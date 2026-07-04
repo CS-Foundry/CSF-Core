@@ -38,7 +38,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
           else
-            BASE=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+            BASE=$(grep -m1 '^version' Cargo.toml | sed 's/[^"]*"\([^"]*\)".*/\1/')
             COUNT=$(git rev-list --count HEAD)
             echo "version=${BASE}-alpha.${COUNT}" >> $GITHUB_OUTPUT
           fi
