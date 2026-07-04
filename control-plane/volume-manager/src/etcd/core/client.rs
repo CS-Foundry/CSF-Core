@@ -232,10 +232,7 @@ impl EtcdClient {
             .await
             .map_err(EtcdError::Client)?;
 
-        keeper
-            .keep_alive()
-            .await
-            .map_err(EtcdError::Client)?;
+        keeper.keep_alive().await.map_err(EtcdError::Client)?;
         Ok(())
     }
 
