@@ -8,6 +8,9 @@ use uuid::Uuid;
 pub enum WorkloadStatus {
     Pending,
     Scheduled,
+    Pulling,
+    Creating,
+    Starting,
     Running,
     Failed,
     Stopped,
@@ -18,6 +21,9 @@ impl WorkloadStatus {
         match self {
             WorkloadStatus::Pending => "pending",
             WorkloadStatus::Scheduled => "scheduled",
+            WorkloadStatus::Pulling => "pulling",
+            WorkloadStatus::Creating => "creating",
+            WorkloadStatus::Starting => "starting",
             WorkloadStatus::Running => "running",
             WorkloadStatus::Failed => "failed",
             WorkloadStatus::Stopped => "stopped",
@@ -27,6 +33,9 @@ impl WorkloadStatus {
     pub fn from_str(s: &str) -> Self {
         match s {
             "scheduled" => WorkloadStatus::Scheduled,
+            "pulling" => WorkloadStatus::Pulling,
+            "creating" => WorkloadStatus::Creating,
+            "starting" => WorkloadStatus::Starting,
             "running" => WorkloadStatus::Running,
             "failed" => WorkloadStatus::Failed,
             "stopped" => WorkloadStatus::Stopped,
@@ -52,6 +61,10 @@ pub struct CreateWorkloadRequest {
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub resource_group_id: Option<Uuid>,
+    #[serde(default)]
+    pub stack_id: Option<Uuid>,
+    #[serde(default)]
+    pub service_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +95,8 @@ pub struct WorkloadResponse {
     pub container_id: Option<String>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub resource_group_id: Option<Uuid>,
+    pub stack_id: Option<Uuid>,
+    pub service_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

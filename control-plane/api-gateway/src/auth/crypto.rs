@@ -1,6 +1,6 @@
 use base64::Engine;
 use bcrypt::{hash, verify, DEFAULT_COST};
-use rsa::rand_core::{OsRng, RngCore};
+use rsa::rand_core::OsRng;
 use rsa::{
     pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey},
     RsaPrivateKey, RsaPublicKey,

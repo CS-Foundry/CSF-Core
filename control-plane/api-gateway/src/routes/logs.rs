@@ -40,10 +40,7 @@ pub struct LogsResponse {
     pub has_more: bool,
 }
 
-fn apply_filters(
-    mut query: sea_orm::Select<Logs>,
-    params: &LogsQuery,
-) -> sea_orm::Select<Logs> {
+fn apply_filters(mut query: sea_orm::Select<Logs>, params: &LogsQuery) -> sea_orm::Select<Logs> {
     if let Some(service) = &params.service {
         query = query.filter(logs::Column::Service.eq(service));
     }

@@ -220,21 +220,38 @@ pub async fn initialize_database(
             created_at: ActiveValue::Set(now),
         };
         Role::insert(new_role).exec_without_returning(db).await?;
-
-        // Assign all permissions to Admin role
-        for perm_id in permission_map.values() {
-            let role_perm = role_permission::ActiveModel {
-                role_id: ActiveValue::Set(role_id),
-                permission_id: ActiveValue::Set(*perm_id),
-            };
-            RolePermission::insert(role_perm)
-                .exec_without_returning(db)
-                .await?;
-        }
-
-        tracing::info!("Admin role created with all permissions");
+        tracing::info!("Admin role created");
         role_id
     };
+
+    let admin_existing_perm_ids: std::collections::HashSet<Uuid> = RolePermission::find()
+        .filter(role_permission::Column::RoleId.eq(admin_role_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|rp| rp.permission_id)
+        .collect();
+
+    let mut admin_granted = 0;
+    for perm_id in permission_map.values() {
+        if admin_existing_perm_ids.contains(perm_id) {
+            continue;
+        }
+        let role_perm = role_permission::ActiveModel {
+            role_id: ActiveValue::Set(admin_role_id),
+            permission_id: ActiveValue::Set(*perm_id),
+        };
+        RolePermission::insert(role_perm)
+            .exec_without_returning(db)
+            .await?;
+        admin_granted += 1;
+    }
+    if admin_granted > 0 {
+        tracing::info!(
+            count = admin_granted,
+            "granted missing permissions to Admin role"
+        );
+    }
 
     // 4b. Create Operator role
     let operator_role_exists = Role::find()

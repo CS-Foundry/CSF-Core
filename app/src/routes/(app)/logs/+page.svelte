@@ -124,7 +124,6 @@
     }
 
     onMount(() => {
-        load();
         refreshTimer = setInterval(load, REFRESH_INTERVAL_MS);
     });
 
@@ -133,6 +132,7 @@
     });
 
     $effect(() => {
+        auth.token;
         selectedService;
         selectedLevel;
         selectedClassification;

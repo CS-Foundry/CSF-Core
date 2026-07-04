@@ -52,6 +52,8 @@ struct HeartbeatRequest {
     uptime_seconds: Option<u64>,
     wg_public_key: Option<String>,
     wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
+    agent_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -86,6 +88,8 @@ pub struct AssignedWorkload {
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub status: String,
     pub container_id: Option<String>,
+    pub stack_id: Option<String>,
+    pub service_name: Option<String>,
 }
 
 pub struct ApiClient {
@@ -94,12 +98,14 @@ pub struct ApiClient {
     cert_pem: Option<String>,
     wg_public_key: String,
     wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
 }
 
 pub fn generate_wg_keypair() -> (String, String) {
     let rng = SystemRandom::new();
     let mut private_bytes = [0u8; 32];
-    rng.fill(&mut private_bytes).expect("failed to generate WireGuard key");
+    rng.fill(&mut private_bytes)
+        .expect("failed to generate WireGuard key");
     private_bytes[0] &= 248;
     private_bytes[31] &= 127;
     private_bytes[31] |= 64;
@@ -109,7 +115,12 @@ pub fn generate_wg_keypair() -> (String, String) {
 }
 
 impl ApiClient {
-    pub fn new(gateway_url: String, wg_public_key: String, wg_endpoint: Option<String>) -> Result<Self> {
+    pub fn new(
+        gateway_url: String,
+        wg_public_key: String,
+        wg_endpoint: Option<String>,
+        wg_tunnel_ip: Option<String>,
+    ) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .danger_accept_invalid_certs(true)
@@ -122,6 +133,7 @@ impl ApiClient {
             cert_pem: None,
             wg_public_key,
             wg_endpoint,
+            wg_tunnel_ip,
         })
     }
 
@@ -243,6 +255,8 @@ impl ApiClient {
                 uptime_seconds,
                 wg_public_key: Some(self.wg_public_key.clone()),
                 wg_endpoint: self.wg_endpoint.clone(),
+                wg_tunnel_ip: self.wg_tunnel_ip.clone(),
+                agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {

@@ -18,6 +18,7 @@ const ETCD_DESIRED_FLAKE_REV_KEY: &str = "/csfx/config/desired_flake_rev";
 const ETCD_BUILD_STATUS_KEY: &str = "/csfx/config/cp_build_status";
 const ETCD_RESULT_KEY: &str = "/csfx/config/last_build_result";
 const ETCD_PAUSED_KEY: &str = "/csfx/config/update_paused";
+const ETCD_FORCE_UPDATE_KEY: &str = "/csfx/config/update_force";
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRequest {
@@ -76,6 +77,14 @@ async fn trigger_update(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "failed to write desired version to etcd");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    client
+        .put(ETCD_FORCE_UPDATE_KEY, b"true", None)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to write force update flag to etcd");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 

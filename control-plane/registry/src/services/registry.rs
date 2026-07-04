@@ -214,6 +214,8 @@ impl AgentRegistry {
         agent_id: Uuid,
         wg_public_key: Option<String>,
         wg_endpoint: Option<String>,
+        wg_tunnel_ip: Option<String>,
+        agent_version: Option<String>,
     ) -> Result<(), String> {
         crate::db::agents::update_heartbeat(
             &self.db,
@@ -221,6 +223,8 @@ impl AgentRegistry {
             "Online".to_string(),
             wg_public_key,
             wg_endpoint,
+            wg_tunnel_ip,
+            agent_version,
         )
         .await
         .map_err(|e| format!("Failed to update heartbeat: {}", e))?;

@@ -38,6 +38,8 @@ pub async fn create(
         created_by: Set(None),
         organization_id: Set(None),
         resource_group_id: Set(req.resource_group_id),
+        stack_id: Set(req.stack_id),
+        service_name: Set(req.service_name.clone()),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -80,7 +82,9 @@ pub async fn update_container_status(
         .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
 
     let mut active: workloads::ActiveModel = workload.into();
-    active.container_id = Set(Some(container_id.to_string()));
+    if !container_id.is_empty() {
+        active.container_id = Set(Some(container_id.to_string()));
+    }
     active.status = Set(status.to_string());
     active.updated_at = Set(Some(Utc::now().naive_utc()));
 
@@ -116,6 +120,8 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         container_id: m.container_id,
         volume_mounts,
         resource_group_id: m.resource_group_id,
+        stack_id: m.stack_id,
+        service_name: m.service_name,
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

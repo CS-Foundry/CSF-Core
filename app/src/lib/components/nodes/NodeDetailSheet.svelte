@@ -1,6 +1,6 @@
 <script lang="ts">
     import { auth } from '$lib/auth/store.svelte';
-    import { getNodeMetricsLatest, type Node, type NodeMetricsLatest } from '$lib/api/nodes';
+    import { getNodeMetricsLatest, openNodeMetricsSocket, type LiveNodeMetrics, type Node, type NodeMetricsLatest } from '$lib/api/nodes';
     import * as Sheet from '$lib/components/ui/sheet/index.js';
     import { Button } from '$lib/components/ui/button/index.js';
 
@@ -15,16 +15,24 @@
     let metrics = $state<NodeMetricsLatest | null>(null);
     let metricsError = $state<string | null>(null);
     let metricsLoading = $state(false);
+    let metricsLive = $state(false);
     let activeTab = $state<'summary' | 'hardware' | 'workloads' | 'network' | 'tasks'>('summary');
     let sshCopied = $state(false);
+    let liveSocket: WebSocket | null = null;
 
     $effect(() => {
         if (node && open) {
             activeTab = 'summary';
             metrics = null;
             metricsError = null;
-            loadMetrics(node.id);
+            metricsLive = false;
+            const agentId = node.id;
+            loadMetrics(agentId).then(() => openLiveMetrics(agentId));
+        } else {
+            closeLiveMetrics();
         }
+
+        return () => closeLiveMetrics();
     });
 
     async function loadMetrics(id: string) {
@@ -37,6 +45,60 @@
         } finally {
             metricsLoading = false;
         }
+    }
+
+    function applyLiveSample(sample: LiveNodeMetrics) {
+        const timestamp = new Date().toISOString();
+        metrics = {
+            id: metrics?.id ?? '',
+            agent_id: metrics?.agent_id ?? '',
+            timestamp,
+            cpu_model: metrics?.cpu_model ?? null,
+            cpu_cores: sample.cpu_cores,
+            cpu_threads: metrics?.cpu_threads ?? null,
+            cpu_usage_percent: sample.cpu_usage_percent,
+            memory_total_bytes: sample.memory_total_bytes,
+            memory_used_bytes: sample.memory_used_bytes,
+            memory_usage_percent: sample.memory_total_bytes > 0
+                ? (sample.memory_used_bytes / sample.memory_total_bytes) * 100
+                : null,
+            disk_total_bytes: sample.disk_total_bytes,
+            disk_used_bytes: sample.disk_used_bytes,
+            disk_usage_percent: sample.disk_total_bytes > 0
+                ? (sample.disk_used_bytes / sample.disk_total_bytes) * 100
+                : null,
+            network_rx_bytes: sample.network_rx_bytes,
+            network_tx_bytes: sample.network_tx_bytes,
+            os_name: metrics?.os_name ?? null,
+            os_version: metrics?.os_version ?? null,
+            kernel_version: metrics?.kernel_version ?? null,
+            hostname: metrics?.hostname ?? null,
+            uptime_seconds: sample.uptime_seconds,
+        };
+    }
+
+    async function openLiveMetrics(agentId: string) {
+        if (!auth.token) return;
+        try {
+            const socket = await openNodeMetricsSocket(auth.token, agentId);
+            liveSocket = socket;
+            socket.onmessage = (event) => {
+                try {
+                    applyLiveSample(JSON.parse(event.data) as LiveNodeMetrics);
+                    metricsLive = true;
+                } catch {}
+            };
+            socket.onclose = () => { metricsLive = false; };
+            socket.onerror = () => { metricsLive = false; };
+        } catch {
+            metricsLive = false;
+        }
+    }
+
+    function closeLiveMetrics() {
+        liveSocket?.close();
+        liveSocket = null;
+        metricsLive = false;
     }
 
     function bytesToGb(bytes: number | null): string {
@@ -249,6 +311,11 @@
                                 <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Live Load</span>
                                 {#if metricsLoading}
                                     <span class="text-xs text-muted-foreground">Loading...</span>
+                                {:else if metricsLive}
+                                    <span class="text-xs text-emerald-500 px-2 py-0.5 border border-emerald-500/30 rounded-md flex items-center gap-1.5">
+                                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        live
+                                    </span>
                                 {:else if metrics?.timestamp}
                                     <span class="text-xs text-muted-foreground px-2 py-0.5 border rounded-md">
                                         {refreshedLabel(metrics.timestamp)}

@@ -71,6 +71,10 @@ pub fn create_router(state: AppState) -> Router {
             get(pki::get_agent_endpoint),
         )
         .route("/pki/crl", get(pki::get_crl))
+        .route(
+            "/internal/agent-proxy-ticket",
+            post(pki::issue_proxy_ticket),
+        )
         .route("/agents/register", post(agent::register_agent))
         .route("/agents/{agent_id}/heartbeat", post(agent::heartbeat))
         .route(

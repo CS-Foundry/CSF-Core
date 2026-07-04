@@ -144,7 +144,7 @@ pub async fn get_keys_for_agent(
 
     let keys: Vec<String> = all_keys
         .into_iter()
-        .filter(|k| k.expires_at.map_or(true, |exp| exp > now))
+        .filter(|k| k.expires_at.is_none_or(|exp| exp > now))
         .map(|k| k.public_key)
         .collect();
 
@@ -161,5 +161,8 @@ pub fn ssh_keys_routes() -> Router<AppState> {
 }
 
 pub fn ssh_keys_internal_routes() -> Router<AppState> {
-    Router::new().route("/agents/{agent_id}/authorized-keys", get(get_keys_for_agent))
+    Router::new().route(
+        "/agents/{agent_id}/authorized-keys",
+        get(get_keys_for_agent),
+    )
 }

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use sysinfo::{Disks, Networks, System};
 
 pub struct SystemInfo {
@@ -7,6 +8,7 @@ pub struct SystemInfo {
     pub architecture: String,
 }
 
+#[derive(Serialize)]
 pub struct SystemMetrics {
     pub cpu_usage_percent: f32,
     pub cpu_cores: u32,
@@ -19,11 +21,60 @@ pub struct SystemMetrics {
     pub uptime_seconds: u64,
 }
 
+pub struct LiveMetricsCollector {
+    sys: System,
+}
+
+impl LiveMetricsCollector {
+    pub fn new() -> Self {
+        let mut sys = System::new_all();
+        sys.refresh_cpu_usage();
+        Self { sys }
+    }
+
+    pub fn sample(&mut self) -> SystemMetrics {
+        self.sys.refresh_cpu_usage();
+        self.sys.refresh_memory();
+
+        let cpu_usage_percent = self.sys.global_cpu_usage();
+        let cpu_cores = self.sys.cpus().len() as u32;
+        let memory_total_bytes = self.sys.total_memory();
+        let memory_used_bytes = self.sys.used_memory();
+
+        let disks = Disks::new_with_refreshed_list();
+        let (disk_total_bytes, disk_used_bytes) =
+            disks.iter().fold((0u64, 0u64), |(total, used), d| {
+                (
+                    total + d.total_space(),
+                    used + (d.total_space() - d.available_space()),
+                )
+            });
+
+        let networks = Networks::new_with_refreshed_list();
+        let (network_rx_bytes, network_tx_bytes) =
+            networks.iter().fold((0u64, 0u64), |(rx, tx), (_, data)| {
+                (rx + data.total_received(), tx + data.total_transmitted())
+            });
+
+        SystemMetrics {
+            cpu_usage_percent,
+            cpu_cores,
+            memory_total_bytes,
+            memory_used_bytes,
+            disk_total_bytes,
+            disk_used_bytes,
+            network_rx_bytes,
+            network_tx_bytes,
+            uptime_seconds: System::uptime(),
+        }
+    }
+}
+
 fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
     content
         .lines()
         .find(|l| l.starts_with(field))
-        .and_then(|l| l.splitn(2, '=').nth(1))
+        .and_then(|l| l.split_once('=').map(|x| x.1))
         .map(|v| v.trim_matches('"').to_string())
 }
 

@@ -1,10 +1,16 @@
 use anyhow::{Context, Result};
-use bollard::models::{ContainerCreateBody, HostConfig};
+use axum::body::Bytes;
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::models::{
+    ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig,
+    NetworkCreateRequest, NetworkingConfig,
+};
 use bollard::query_parameters::{
-    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, StartContainerOptionsBuilder,
+    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptionsBuilder,
+    ListNetworksOptionsBuilder, LogsOptionsBuilder, StartContainerOptionsBuilder,
 };
 use bollard::Docker;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -38,6 +44,8 @@ pub struct WorkloadSpec {
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
+    pub stack_id: Option<String>,
+    pub service_name: Option<String>,
 }
 
 pub struct DockerManager {
@@ -89,6 +97,44 @@ impl DockerManager {
         Ok(())
     }
 
+    pub async fn ensure_stack_network(&self, stack_id: &str) -> Result<String> {
+        let network_name = format!("csfx-stack-{}", stack_id);
+
+        let filters = HashMap::from([("name".to_string(), vec![network_name.clone()])]);
+        let list_options = ListNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+
+        let existing = self
+            .docker
+            .list_networks(Some(list_options))
+            .await
+            .context("Failed to list networks")?;
+
+        if let Some(network) = existing
+            .into_iter()
+            .find(|n| n.name.as_deref() == Some(&network_name))
+        {
+            return Ok(network.id.unwrap_or(network_name));
+        }
+
+        let config = NetworkCreateRequest {
+            name: network_name.clone(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
+
+        let response = self
+            .docker
+            .create_network(config)
+            .await
+            .context("Failed to create stack network")?;
+
+        info!(stack_id = %stack_id, network = %network_name, "Stack network ready");
+
+        Ok(response.id)
+    }
+
     pub async fn start_container(&self, spec: &WorkloadSpec) -> Result<String> {
         let container_name = format!("csfx-{}", spec.workload_id);
 
@@ -122,6 +168,23 @@ impl DockerManager {
             ..Default::default()
         };
 
+        let networking_config = match &spec.stack_id {
+            Some(stack_id) => {
+                let network_name = self.ensure_stack_network(stack_id).await?;
+                let aliases = spec.service_name.clone().map(|name| vec![name]);
+                Some(NetworkingConfig {
+                    endpoints_config: Some(HashMap::from([(
+                        network_name,
+                        EndpointSettings {
+                            aliases,
+                            ..Default::default()
+                        },
+                    )])),
+                })
+            }
+            None => None,
+        };
+
         let config = ContainerCreateBody {
             image: Some(spec.image.clone()),
             env,
@@ -131,6 +194,7 @@ impl DockerManager {
                 Some(exposed_ports)
             },
             host_config: Some(host_config),
+            networking_config,
             labels: Some(HashMap::from([
                 ("csfx.workload_id".to_string(), spec.workload_id.clone()),
                 ("csfx.managed".to_string(), "true".to_string()),
@@ -162,6 +226,82 @@ impl DockerManager {
         );
 
         Ok(container.id)
+    }
+
+    pub async fn inspect_status(&self, container_id: &str) -> Result<String> {
+        let options = InspectContainerOptionsBuilder::default().build();
+
+        let inspect = self
+            .docker
+            .inspect_container(container_id, Some(options))
+            .await
+            .context("Failed to inspect container")?;
+
+        let state = inspect.state.unwrap_or_default();
+        let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
+        let exit_code = state.exit_code.unwrap_or(0);
+
+        Ok(match status {
+            ContainerStateStatusEnum::CREATED => "creating".to_string(),
+            ContainerStateStatusEnum::RUNNING => "running".to_string(),
+            ContainerStateStatusEnum::RESTARTING | ContainerStateStatusEnum::PAUSED => {
+                "running".to_string()
+            }
+            ContainerStateStatusEnum::EXITED if exit_code == 0 => "stopped".to_string(),
+            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD => {
+                "failed".to_string()
+            }
+            ContainerStateStatusEnum::REMOVING | ContainerStateStatusEnum::STOPPING => {
+                "stopped".to_string()
+            }
+            ContainerStateStatusEnum::EMPTY => "failed".to_string(),
+        })
+    }
+
+    pub fn logs(
+        &self,
+        container_id: &str,
+    ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static {
+        let options = LogsOptionsBuilder::default()
+            .stdout(true)
+            .stderr(true)
+            .follow(true)
+            .tail("200")
+            .build();
+
+        self.docker
+            .logs(container_id, Some(options))
+            .map(|item| match item {
+                Ok(log_output) => Ok(log_output.into_bytes()),
+                Err(e) => Err(std::io::Error::other(e.to_string())),
+            })
+    }
+
+    pub async fn exec(&self, container_id: &str) -> Result<StartExecResults> {
+        let create_options = CreateExecOptions {
+            attach_stdin: Some(true),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(true),
+            cmd: Some(vec!["/bin/sh".to_string()]),
+            ..Default::default()
+        };
+
+        let created = self
+            .docker
+            .create_exec(container_id, create_options)
+            .await
+            .context("Failed to create exec session")?;
+
+        let start_options = StartExecOptions {
+            tty: true,
+            ..Default::default()
+        };
+
+        self.docker
+            .start_exec(&created.id, Some(start_options))
+            .await
+            .context("Failed to start exec session")
     }
 
     pub async fn stop_container(&self, container_id: &str) -> Result<()> {

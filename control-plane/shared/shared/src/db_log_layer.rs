@@ -38,7 +38,10 @@ impl LogClassification {
             Self::Security
         } else if target.contains("scheduler") || target.contains("metrics") {
             Self::Performance
-        } else if target.contains("network") || target.contains("sdn") || target.contains("wireguard") {
+        } else if target.contains("network")
+            || target.contains("sdn")
+            || target.contains("wireguard")
+        {
             Self::Network
         } else if target.contains("volume") || target.contains("storage") {
             Self::Storage
@@ -120,8 +123,7 @@ const NOISY_TARGET_PREFIXES: [&str; 2] = ["sea_orm", "sqlx"];
 const NOISY_MESSAGE_SUBSTRINGS: [&str; 1] = ["heartbeat processed"];
 
 fn is_routine_access_event(event: &Event<'_>) -> bool {
-    event.metadata().target() == NOISY_ACCESS_TARGET
-        && *event.metadata().level() == Level::INFO
+    event.metadata().target() == NOISY_ACCESS_TARGET && *event.metadata().level() == Level::INFO
 }
 
 fn is_sql_trace_event(event: &Event<'_>) -> bool {
@@ -133,7 +135,8 @@ fn is_sql_trace_event(event: &Event<'_>) -> bool {
 
 fn is_performance_event(event: &Event<'_>) -> bool {
     *event.metadata().level() == Level::INFO
-        && LogClassification::from_target(event.metadata().target()) == LogClassification::Performance
+        && LogClassification::from_target(event.metadata().target())
+            == LogClassification::Performance
 }
 
 fn is_noisy_message_event(visitor: &EventVisitor) -> bool {
@@ -148,7 +151,10 @@ impl<S: Subscriber> Layer<S> for DbLogLayer {
             return;
         }
 
-        if is_routine_access_event(event) || is_sql_trace_event(event) || is_performance_event(event) {
+        if is_routine_access_event(event)
+            || is_sql_trace_event(event)
+            || is_performance_event(event)
+        {
             return;
         }
 

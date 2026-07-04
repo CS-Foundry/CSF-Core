@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
     import {
@@ -74,7 +73,14 @@
         }
     }
 
-    onMount(load);
+    let loadStarted = false;
+
+    $effect(() => {
+        if (auth.token && !loadStarted) {
+            loadStarted = true;
+            load();
+        }
+    });
 </script>
 
 <dialog

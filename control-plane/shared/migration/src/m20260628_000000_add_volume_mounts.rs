@@ -11,9 +11,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Alias::new("workloads"))
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("volume_mounts"))
-                            .json()
-                            .null(),
+                        ColumnDef::new(Alias::new("volume_mounts")).json().null(),
                     )
                     .to_owned(),
             )

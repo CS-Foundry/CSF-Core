@@ -8,6 +8,7 @@ pub const DESIRED_FLAKE_REV_KEY: &str = "/csfx/config/desired_flake_rev";
 pub const BUILD_STATUS_KEY: &str = "/csfx/config/cp_build_status";
 pub const RESULT_KEY: &str = "/csfx/config/last_build_result";
 pub const PAUSED_KEY: &str = "/csfx/config/update_paused";
+pub const FORCE_UPDATE_KEY: &str = "/csfx/config/update_force";
 pub const NODE_HEARTBEAT_PREFIX: &str = "/csfx/nodes/";
 
 pub struct Client {
@@ -32,6 +33,11 @@ impl Client {
 
     pub async fn put(&mut self, key: &str, value: &str) -> Result<()> {
         self.inner.put(key, value.as_bytes(), None).await?;
+        Ok(())
+    }
+
+    pub async fn delete(&mut self, key: &str) -> Result<()> {
+        self.inner.delete(key, None).await?;
         Ok(())
     }
 

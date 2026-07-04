@@ -81,11 +81,12 @@
         }
     }
 
-    onMount(async () => {
-        if (!auth.token) return;
+    let loadStarted = false;
+
+    async function loadInitial() {
         try {
             [nodes] = await Promise.all([
-                listNodes(auth.token),
+                listNodes(auth.token!),
                 fetchStats(),
             ]);
         } catch (e) {
@@ -93,6 +94,16 @@
         } finally {
             loading = false;
         }
+    }
+
+    $effect(() => {
+        if (auth.token && !loadStarted) {
+            loadStarted = true;
+            loadInitial();
+        }
+    });
+
+    onMount(() => {
         pollInterval = setInterval(fetchStats, 10_000);
     });
 

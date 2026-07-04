@@ -22,14 +22,10 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Alias::new("agents"))
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("wg_public_key"))
-                            .text()
-                            .null(),
+                        ColumnDef::new(Alias::new("wg_public_key")).text().null(),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("wg_endpoint"))
-                            .string()
-                            .null(),
+                        ColumnDef::new(Alias::new("wg_endpoint")).string().null(),
                     )
                     .to_owned(),
             )

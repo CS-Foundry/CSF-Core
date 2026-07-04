@@ -4,6 +4,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	optimizeDeps: {
+		include: ['@xterm/xterm', '@xterm/addon-fit'],
+	},
 	server: {
 		watch: {
 			usePolling: true,
