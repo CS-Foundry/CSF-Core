@@ -136,4 +136,7 @@
     html {
         @apply font-sans;
     }
+    dialog {
+        @apply bg-background text-foreground;
+    }
 }

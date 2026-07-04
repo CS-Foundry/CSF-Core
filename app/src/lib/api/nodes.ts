@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+const API_BASE = '/api';
 
 export interface Node {
     id: string;
@@ -90,6 +90,34 @@ export async function getNodeMetricsLatest(token: string, id: string): Promise<N
     });
     if (!res.ok) throw new Error(`metrics fetch failed: ${res.status}`);
     return res.json();
+}
+
+export interface LiveNodeMetrics {
+    cpu_usage_percent: number;
+    cpu_cores: number;
+    memory_total_bytes: number;
+    memory_used_bytes: number;
+    disk_total_bytes: number;
+    disk_used_bytes: number;
+    network_rx_bytes: number;
+    network_tx_bytes: number;
+    uptime_seconds: number;
+}
+
+export async function openNodeMetricsSocket(token: string, agentId: string): Promise<WebSocket> {
+    const res = await fetch(`${API_BASE}/agents/${agentId}/metrics/ticket`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to issue metrics ticket: ${res.status}`);
+    }
+    const { ticket } = await res.json();
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${wsProtocol}//${window.location.host}${API_BASE}/agents/${agentId}/metrics/stream?ticket=${encodeURIComponent(ticket)}`;
+    return new WebSocket(url);
 }
 
 export interface HealthHistoryPoint {

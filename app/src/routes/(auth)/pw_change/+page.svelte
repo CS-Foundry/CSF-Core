@@ -2,30 +2,34 @@
     import { Button } from "$lib/components/ui/button/index.js";
     import { Input } from "$lib/components/ui/input/index.js";
     import { Label } from "$lib/components/ui/label/index.js";
-    import { Lock } from "@lucide/svelte";
+    import { Lock, CircleCheck } from "@lucide/svelte";
     import { goto } from "$app/navigation";
     import { changePassword } from "$lib/auth/api";
     import { auth } from "$lib/auth/store.svelte";
+    import Spinner from "$lib/components/ui/spinner/spinner.svelte";
+    import { toast } from "svelte-sonner";
+
+    type Status = "idle" | "loading" | "success";
 
     let newPassword = $state("");
     let confirmPassword = $state("");
-    let loading = $state(false);
-    let error = $state<string | null>(null);
+    let status = $state<Status>("idle");
 
     const mismatch = $derived(confirmPassword.length > 0 && newPassword !== confirmPassword);
-    const canSubmit = $derived(newPassword.length >= 8 && newPassword === confirmPassword && !loading);
+    const canSubmit = $derived(newPassword.length >= 8 && newPassword === confirmPassword && status === "idle");
 
     async function handleSubmit() {
         if (!canSubmit || !auth.token) return;
-        error = null;
-        loading = true;
+        status = "loading";
         try {
             await changePassword(auth.token, "", newPassword);
-            goto("/");
+            status = "success";
+            setTimeout(() => goto("/"), 600);
         } catch {
-            error = "Failed to change password";
-        } finally {
-            loading = false;
+            status = "idle";
+            toast.error("Failed to change password", {
+                description: "Please try again",
+            });
         }
     }
 </script>
@@ -72,11 +76,13 @@
         {/if}
     </div>
 
-    {#if error}
-        <div class="mb-4 text-sm text-destructive">{error}</div>
-    {/if}
-
     <Button class="w-full" type="submit" disabled={!canSubmit}>
-        {loading ? "Changing Password..." : "Change Password"}
+        {#if status === "loading"}
+            <Spinner />
+        {:else if status === "success"}
+            <CircleCheck class="size-4 animate-in zoom-in-50 duration-300" />
+        {:else}
+            Change Password
+        {/if}
     </Button>
 </form>

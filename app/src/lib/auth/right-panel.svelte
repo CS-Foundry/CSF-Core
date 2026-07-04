@@ -7,12 +7,12 @@
         class="relative w-full rounded-3xl overflow-hidden flex flex-col justify-between p-10"
     >
         <img
-            src="/gradients/Gradient-dark.svg"
+            src="/gradients/Gradient-dark.webp"
             alt=""
             class="absolute inset-0 w-full h-full object-cover dark:hidden"
         />
         <img
-            src="/gradients/Gradient-light.svg"
+            src="/gradients/Gradient-light.webp"
             alt=""
             class="absolute inset-0 w-full h-full object-cover hidden dark:block"
         />

@@ -28,11 +28,15 @@ fn build_otlp_provider() -> Option<SdkTracerProvider> {
     Some(provider)
 }
 
-pub fn init_tracing() {
+pub fn init_tracing() -> tokio::sync::mpsc::UnboundedReceiver<shared::db_log_layer::LogRecord> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let fmt_layer = fmt::layer().with_target(false);
+    let (db_layer, db_receiver) = shared::db_log_layer::DbLogLayer::new("api-gateway");
 
-    let registry = tracing_subscriber::registry().with(filter).with(fmt_layer);
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(db_layer);
 
     match build_otlp_provider() {
         Some(provider) => {
@@ -45,4 +49,6 @@ pub fn init_tracing() {
             registry.init();
         }
     }
+
+    db_receiver
 }

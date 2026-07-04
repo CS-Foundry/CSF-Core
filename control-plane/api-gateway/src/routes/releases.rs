@@ -116,16 +116,26 @@ fn semver_is_newer(candidate: &str, current: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_semver(v: &str) -> Option<(u32, u32, u32)> {
+fn parse_semver(v: &str) -> Option<(u32, u32, u32, u32)> {
     let v = v.trim_start_matches('v');
-    let base = v.split('-').next().unwrap_or(v);
+    let mut segments = v.splitn(2, '-');
+    let base = segments.next().unwrap_or(v);
+    let pre_release = segments.next();
+
     let parts: Vec<&str> = base.split('.').collect();
     if parts.len() != 3 {
         return None;
     }
+
+    let pre_release_number = pre_release
+        .and_then(|p| p.rsplit('.').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(u32::MAX);
+
     Some((
         parts[0].parse().ok()?,
         parts[1].parse().ok()?,
         parts[2].parse().ok()?,
+        pre_release_number,
     ))
 }

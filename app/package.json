@@ -14,7 +14,7 @@
 	"devDependencies": {
 		"@fontsource-variable/inter": "^5.2.8",
 		"@internationalized/date": "^3.12.1",
-		"@lucide/svelte": "^1.17.0",
+		"@lucide/svelte": "^1.23.0",
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.57.0",
@@ -22,9 +22,11 @@
 		"@tailwindcss/vite": "^4.2.2",
 		"bits-ui": "^2.18.0",
 		"clsx": "^2.1.1",
+		"mode-watcher": "^1.1.0",
 		"shadcn-svelte": "^1.2.7",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
+		"svelte-sonner": "^1.1.1",
 		"tailwind-merge": "^3.5.0",
 		"tailwind-variants": "^3.2.2",
 		"tailwindcss": "^4.2.2",
@@ -35,6 +37,8 @@
 	"dependencies": {
 		"@iconify/svelte": "^5.2.1",
 		"@jis3r/icons": "^2.7.0",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
 		"geist": "^1.7.0"
 	}
 }

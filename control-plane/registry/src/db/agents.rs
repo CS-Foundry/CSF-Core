@@ -78,6 +78,9 @@ pub async fn create(
         tags: Set(tags),
         capabilities: Set(capabilities),
         public_key_pem: Set(public_key_pem),
+        wg_public_key: Set(None),
+        wg_endpoint: Set(None),
+        wg_tunnel_ip: Set(None),
     };
 
     Ok(model.insert(db).await?)
@@ -95,6 +98,10 @@ pub async fn update_heartbeat(
     db: &DatabaseConnection,
     agent_id: Uuid,
     status: String,
+    wg_public_key: Option<String>,
+    wg_endpoint: Option<String>,
+    wg_tunnel_ip: Option<String>,
+    agent_version: Option<String>,
 ) -> Result<()> {
     let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
         .one(db)
@@ -105,6 +112,18 @@ pub async fn update_heartbeat(
     agent.last_heartbeat = Set(Some(chrono::Utc::now().naive_utc()));
     agent.status = Set(status);
     agent.updated_at = Set(Some(chrono::Utc::now().naive_utc()));
+    if wg_public_key.is_some() {
+        agent.wg_public_key = Set(wg_public_key);
+    }
+    if wg_endpoint.is_some() {
+        agent.wg_endpoint = Set(wg_endpoint);
+    }
+    if wg_tunnel_ip.is_some() {
+        agent.wg_tunnel_ip = Set(wg_tunnel_ip);
+    }
+    if let Some(agent_version) = agent_version {
+        agent.agent_version = Set(agent_version);
+    }
     agent.update(db).await?;
 
     Ok(())

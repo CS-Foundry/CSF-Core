@@ -13,11 +13,15 @@ pub struct Model {
     pub disk_bytes: i64,
     pub env_vars: Option<Json>,
     pub ports: Option<Json>,
+    pub volume_mounts: Option<Json>,
     pub status: String,
     pub assigned_agent_id: Option<Uuid>,
     pub container_id: Option<String>,
     pub created_by: Option<Uuid>,
     pub organization_id: Option<Uuid>,
+    pub resource_group_id: Option<Uuid>,
+    pub stack_id: Option<Uuid>,
+    pub service_name: Option<String>,
     pub created_at: DateTime,
     pub updated_at: Option<DateTime>,
 }
@@ -32,11 +36,39 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Agent,
+    #[sea_orm(
+        belongs_to = "super::resource_groups::Entity",
+        from = "Column::ResourceGroupId",
+        to = "super::resource_groups::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    ResourceGroup,
+    #[sea_orm(
+        belongs_to = "super::workload_stacks::Entity",
+        from = "Column::StackId",
+        to = "super::workload_stacks::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Stack,
 }
 
 impl Related<super::agents::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Agent.def()
+    }
+}
+
+impl Related<super::resource_groups::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceGroup.def()
+    }
+}
+
+impl Related<super::workload_stacks::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Stack.def()
     }
 }
 

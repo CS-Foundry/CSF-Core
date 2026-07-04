@@ -96,6 +96,24 @@ pub async fn delete_workload(
     .await
 }
 
+pub async fn create_stack(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: String,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::POST,
+        "/workload-stacks",
+        body_json,
+        Some(header_map),
+    )
+    .await
+}
+
 fn header_vec(headers: &HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
@@ -108,4 +126,5 @@ pub fn workloads_routes() -> Router<AppState> {
         .route("/workloads", post(create_workload))
         .route("/workloads", get(list_workloads))
         .route("/workloads/{id}", delete(delete_workload))
+        .route("/workload-stacks", post(create_stack))
 }

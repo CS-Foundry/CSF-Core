@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use reqwest::{Client, StatusCode};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// HTTP Client for internal service-to-service communication
@@ -334,30 +333,4 @@ impl ServiceClient {
 
         Ok((status, json_body))
     }
-}
-
-// Response types for common registry operations
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateTokenRequest {
-    pub description: Option<String>,
-    pub created_by: String,
-    pub ttl_hours: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateTokenResponse {
-    pub token_id: String,
-    pub token: String,
-    pub expires_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ValidateTokenRequest {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ValidateTokenResponse {
-    pub valid: bool,
-    pub agent_id: Option<String>,
 }

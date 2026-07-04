@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
 
     dotenvy::dotenv().ok();
 
-    logger::init_logger();
+    let log_receiver = logger::init_logger();
 
     metrics::init();
     log_info!("main", "CSFX Registry Service starting...");
@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Failed to connect to database");
     log_info!("main", "Database connection established");
+    shared::spawn_log_writer(log_receiver, db_conn.clone());
 
     let cert_ttl_hours: i64 = std::env::var("CSFX_CERT_TTL_HOURS")
         .ok()
@@ -112,7 +113,12 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let server_handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     tokio::select! {

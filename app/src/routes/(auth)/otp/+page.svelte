@@ -1,36 +1,38 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button/index.js";
     import { Label } from "$lib/components/ui/label/index.js";
+    import { CircleCheck } from "@lucide/svelte";
     import { goto } from "$app/navigation";
     import { page } from "$app/stores";
     import * as InputOTP from "$lib/components/ui/input-otp/index.js";
     import { login } from "$lib/auth/api";
     import { auth } from "$lib/auth/store.svelte";
+    import Spinner from "$lib/components/ui/spinner/spinner.svelte";
+    import { toast } from "svelte-sonner";
+
+    type Status = "idle" | "loading" | "success";
 
     const username = $derived($page.url.searchParams.get("username") ?? "");
     const password = $derived($page.url.searchParams.get("password") ?? "");
 
     let otpValue = $state("");
-    let loading = $state(false);
-    let error = $state<string | null>(null);
+    let status = $state<Status>("idle");
 
     async function handleVerify() {
         if (otpValue.length !== 6) return;
-        error = null;
-        loading = true;
+        status = "loading";
         try {
             const response = await login(username, password, otpValue);
             auth.setSession(response);
-            if (response.force_password_change) {
-                goto("/pw_change");
-            } else {
-                goto("/");
-            }
+            status = "success";
+            const target = response.force_password_change ? "/pw_change" : "/";
+            setTimeout(() => goto(target), 600);
         } catch {
-            error = "Invalid code";
+            status = "idle";
             otpValue = "";
-        } finally {
-            loading = false;
+            toast.error("Invalid code", {
+                description: "Check the code and try again",
+            });
         }
     }
 
@@ -67,11 +69,13 @@
         </InputOTP.Root>
     </div>
 
-    {#if error}
-        <div class="mb-4 text-sm text-destructive">{error}</div>
-    {/if}
-
-    <Button class="w-full" type="submit" disabled={loading || otpValue.length !== 6}>
-        {loading ? "Verifying..." : "Verify"}
+    <Button class="w-full" type="submit" disabled={status !== "idle" || otpValue.length !== 6}>
+        {#if status === "loading"}
+            <Spinner />
+        {:else if status === "success"}
+            <CircleCheck class="size-4 animate-in zoom-in-50 duration-300" />
+        {:else}
+            Verify
+        {/if}
     </Button>
 </form>
