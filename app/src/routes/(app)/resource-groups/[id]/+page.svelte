@@ -620,8 +620,8 @@
                     class="flex items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted/40 transition-colors"
                     onclick={() => openResourceType(type.key)}
                 >
-                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded border bg-muted/50">
-                        <Icon icon={type.icon} width={18} height={18} />
+                    <div class="flex w-9 shrink-0 items-center justify-center">
+                        <Icon icon={type.icon} width={20} height={20} />
                     </div>
                     <div>
                         <p class="text-sm font-medium leading-tight">{type.label}</p>
@@ -912,8 +912,8 @@
                             <tr class="border-t hover:bg-muted/20 transition-colors">
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2.5" class:ps-6={indented}>
-                                        <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted/50">
-                                            <Icon icon={resolveImageIcon(w.image)} width={14} height={14} />
+                                        <div class="flex w-5 shrink-0 items-center justify-center">
+                                            <Icon icon={resolveImageIcon(w.image)} width={20} height={20} />
                                         </div>
                                         <div>
                                             <p class="font-medium leading-tight">{w.service_name ?? w.name}</p>
@@ -957,8 +957,8 @@
                                             class="flex items-center gap-2.5 text-left"
                                             onclick={() => toggleStack(stack.stack_id)}
                                         >
-                                            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted/50">
-                                                <Icon icon="mdi:layers-outline" width={14} height={14} />
+                                            <div class="flex w-5 shrink-0 items-center justify-center">
+                                                <Icon icon="mdi:layers-outline" width={20} height={20} />
                                             </div>
                                             <div>
                                                 <p class="font-medium leading-tight">{stack.stack_name}</p>
