@@ -30,6 +30,8 @@ pub enum Relation {
     Volumes,
     #[sea_orm(has_many = "super::networks::Entity")]
     Networks,
+    #[sea_orm(has_many = "super::workload_stacks::Entity")]
+    WorkloadStacks,
 }
 
 impl Related<super::organization::Entity> for Entity {
@@ -53,6 +55,12 @@ impl Related<super::volumes::Entity> for Entity {
 impl Related<super::networks::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Networks.def()
+    }
+}
+
+impl Related<super::workload_stacks::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::WorkloadStacks.def()
     }
 }
 

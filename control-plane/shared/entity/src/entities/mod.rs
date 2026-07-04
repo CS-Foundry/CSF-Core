@@ -23,6 +23,7 @@ pub mod user_organization;
 pub mod user_ssh_keys;
 pub mod volume_snapshots;
 pub mod volumes;
+pub mod workload_stacks;
 pub mod workloads;
 
 pub use agent_api_keys::Entity as AgentApiKeys;
@@ -50,4 +51,5 @@ pub use user_organization::Entity as UserOrganization;
 pub use user_ssh_keys::Entity as UserSshKeys;
 pub use volume_snapshots::Entity as VolumeSnapshots;
 pub use volumes::Entity as Volumes;
+pub use workload_stacks::Entity as WorkloadStacks;
 pub use workloads::Entity as Workloads;

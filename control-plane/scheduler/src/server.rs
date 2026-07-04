@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    handlers::{internal, workloads},
+    handlers::{internal, stacks, workloads},
     metrics,
     services::scheduler::SchedulerService,
 };
@@ -33,6 +33,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/workloads/{id}",
             axum::routing::delete(workloads::delete_workload),
+        )
+        .route(
+            "/workload-stacks",
+            axum::routing::post(stacks::create_stack),
         )
         .route(
             "/internal/workloads/status",

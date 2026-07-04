@@ -61,6 +61,10 @@ pub struct CreateWorkloadRequest {
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub resource_group_id: Option<Uuid>,
+    #[serde(default)]
+    pub stack_id: Option<Uuid>,
+    #[serde(default)]
+    pub service_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +95,8 @@ pub struct WorkloadResponse {
     pub container_id: Option<String>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub resource_group_id: Option<Uuid>,
+    pub stack_id: Option<Uuid>,
+    pub service_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

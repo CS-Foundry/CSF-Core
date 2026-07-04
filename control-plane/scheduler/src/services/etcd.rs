@@ -13,6 +13,10 @@ pub struct PlacementRecord {
     pub memory_bytes: i64,
     pub disk_bytes: i64,
     pub scheduled_at: String,
+    #[serde(default)]
+    pub stack_id: Option<Uuid>,
+    #[serde(default)]
+    pub service_name: Option<String>,
 }
 
 pub async fn put_placement(

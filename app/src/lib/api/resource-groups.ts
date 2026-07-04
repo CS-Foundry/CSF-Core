@@ -51,6 +51,8 @@ export interface Workload {
     container_id: string | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string | null;
+    stack_id: string | null;
+    service_name: string | null;
     created_at: string;
     updated_at: string | null;
 }
@@ -71,6 +73,24 @@ export interface CreateVolumeRequest {
     name: string;
     size_gb: number;
     resource_group_id: string;
+}
+
+export interface CreateStackRequest {
+    name: string;
+    resource_group_id: string;
+    compose_yaml: string;
+}
+
+export interface CreateStackWorkloadResult {
+    workload_id: string;
+    status: string;
+    assigned_agent_id: string | null;
+    message: string;
+}
+
+export interface CreateStackResponse {
+    stack_id: string;
+    workloads: CreateStackWorkloadResult[];
 }
 
 export async function listResourceGroups(token: string): Promise<ResourceGroup[]> {
@@ -133,6 +153,25 @@ export async function createWorkload(token: string, req: CreateWorkloadRequest):
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.status }));
         throw new Error(err.error ?? `Failed to create workload: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function createWorkloadStack(
+    token: string,
+    req: CreateStackRequest,
+): Promise<CreateStackResponse> {
+    const res = await fetch(`${API_BASE}/workload-stacks`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to create stack: ${res.status}`);
     }
     return res.json();
 }

@@ -87,6 +87,8 @@ pub struct AssignedWorkload {
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub status: String,
     pub container_id: Option<String>,
+    pub stack_id: Option<String>,
+    pub service_name: Option<String>,
 }
 
 pub struct ApiClient {

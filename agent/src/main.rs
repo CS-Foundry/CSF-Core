@@ -419,6 +419,8 @@ async fn process_workloads(
                     })
                     .collect()
             }),
+            stack_id: workload.stack_id,
+            service_name: workload.service_name,
         };
 
         match docker.start_container(&spec).await {

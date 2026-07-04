@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
 use axum::body::Bytes;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::models::{ContainerCreateBody, ContainerStateStatusEnum, HostConfig};
+use bollard::models::{
+    ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig,
+    NetworkCreateRequest, NetworkingConfig,
+};
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptionsBuilder,
-    LogsOptionsBuilder, StartContainerOptionsBuilder,
+    ListNetworksOptionsBuilder, LogsOptionsBuilder, StartContainerOptionsBuilder,
 };
 use bollard::Docker;
 use futures_util::{Stream, StreamExt};
@@ -41,6 +44,8 @@ pub struct WorkloadSpec {
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
+    pub stack_id: Option<String>,
+    pub service_name: Option<String>,
 }
 
 pub struct DockerManager {
@@ -92,6 +97,41 @@ impl DockerManager {
         Ok(())
     }
 
+    pub async fn ensure_stack_network(&self, stack_id: &str) -> Result<String> {
+        let network_name = format!("csfx-stack-{}", stack_id);
+
+        let filters = HashMap::from([("name".to_string(), vec![network_name.clone()])]);
+        let list_options = ListNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+
+        let existing = self
+            .docker
+            .list_networks(Some(list_options))
+            .await
+            .context("Failed to list networks")?;
+
+        if let Some(network) = existing.into_iter().find(|n| n.name.as_deref() == Some(&network_name)) {
+            return Ok(network.id.unwrap_or(network_name));
+        }
+
+        let config = NetworkCreateRequest {
+            name: network_name.clone(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
+
+        let response = self
+            .docker
+            .create_network(config)
+            .await
+            .context("Failed to create stack network")?;
+
+        info!(stack_id = %stack_id, network = %network_name, "Stack network ready");
+
+        Ok(response.id)
+    }
+
     pub async fn start_container(&self, spec: &WorkloadSpec) -> Result<String> {
         let container_name = format!("csfx-{}", spec.workload_id);
 
@@ -125,6 +165,23 @@ impl DockerManager {
             ..Default::default()
         };
 
+        let networking_config = match &spec.stack_id {
+            Some(stack_id) => {
+                let network_name = self.ensure_stack_network(stack_id).await?;
+                let aliases = spec.service_name.clone().map(|name| vec![name]);
+                Some(NetworkingConfig {
+                    endpoints_config: Some(HashMap::from([(
+                        network_name,
+                        EndpointSettings {
+                            aliases,
+                            ..Default::default()
+                        },
+                    )])),
+                })
+            }
+            None => None,
+        };
+
         let config = ContainerCreateBody {
             image: Some(spec.image.clone()),
             env,
@@ -134,6 +191,7 @@ impl DockerManager {
                 Some(exposed_ports)
             },
             host_config: Some(host_config),
+            networking_config,
             labels: Some(HashMap::from([
                 ("csfx.workload_id".to_string(), spec.workload_id.clone()),
                 ("csfx.managed".to_string(), "true".to_string()),
