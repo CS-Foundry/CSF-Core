@@ -102,8 +102,10 @@ async fn run_executor_loop(cfg: &config::Config) {
 async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Result<Option<String>> {
     let mut etcd = etcd::Client::connect(cfg).await?;
 
-    if etcd.get(etcd::PAUSED_KEY).await?.as_deref() == Some("true") {
-        tracing::debug!("updater paused, skipping cycle");
+    let forced = etcd.get(etcd::FORCE_UPDATE_KEY).await?.as_deref() == Some("true");
+
+    if !forced && etcd.get(etcd::PAUSED_KEY).await?.as_deref() == Some("true") {
+        tracing::warn!("updater paused, skipping cycle");
         return Ok(None);
     }
 
@@ -123,6 +125,11 @@ async fn execute_once(cfg: &config::Config, last_applied: &str) -> anyhow::Resul
     if desired == last_applied {
         tracing::debug!(flake_rev = %desired, "already on desired rev, nothing to do");
         return Ok(None);
+    }
+
+    if forced {
+        etcd.delete(etcd::FORCE_UPDATE_KEY).await?;
+        info!(flake_rev = %desired, "forced update requested, bypassing pause");
     }
 
     if !is_valid_sha(&desired) {

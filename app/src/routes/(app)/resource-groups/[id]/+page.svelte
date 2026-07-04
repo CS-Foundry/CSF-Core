@@ -21,6 +21,8 @@
         type VolumeMount,
     } from "$lib/api/resource-groups";
     import { resolveImageIcon } from "$lib/utils/image-icon";
+    import { parseComposePreview } from "$lib/utils/compose-preview";
+    import { highlightYaml } from "$lib/utils/yaml-highlight";
     import type { Terminal } from "@xterm/xterm";
     import type { FitAddon } from "@xterm/addon-fit";
     import "@xterm/xterm/css/xterm.css";
@@ -53,8 +55,8 @@
     let expandedStacks = $state<Set<string>>(new Set());
 
     const RESOURCE_TYPES = [
-        { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "mdi:docker" },
-        { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "mdi:file-code-outline" },
+        { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "logos:docker-icon" },
+        { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "logos:docker-icon" },
     ] as const;
 
     let formImage = $state("");
@@ -68,6 +70,21 @@
 
     let composeStackName = $state("");
     let composeYaml = $state("");
+    let composePreview = $derived(parseComposePreview(composeYaml));
+    let composeLineCount = $derived(Math.max(composeYaml.split("\n").length, 1));
+    let composeGutter = $state<HTMLDivElement | null>(null);
+    let composeTextarea = $state<HTMLTextAreaElement | null>(null);
+    let composeHighlightLayer = $state<HTMLPreElement | null>(null);
+    let composeHighlighted = $derived(highlightYaml(composeYaml));
+    function syncComposeScroll() {
+        if (composeGutter && composeTextarea) {
+            composeGutter.scrollTop = composeTextarea.scrollTop;
+        }
+        if (composeHighlightLayer && composeTextarea) {
+            composeHighlightLayer.scrollTop = composeTextarea.scrollTop;
+            composeHighlightLayer.scrollLeft = composeTextarea.scrollLeft;
+        }
+    }
 
     let volFormName = $state("");
     let volFormSize = $state("10");
@@ -635,10 +652,10 @@
 
 <dialog
     bind:this={composeDialog}
-    class="fixed inset-0 z-50 m-auto w-full max-w-lg rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    class="fixed inset-0 z-50 m-auto w-full max-w-6xl rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
     onclose={() => resetComposeForm()}
 >
-    <div class="flex flex-col gap-5 p-6">
+    <div class="flex flex-col gap-4 p-6">
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Deploy Docker Compose Stack</h2>
             <button
@@ -653,21 +670,69 @@
             <label class="text-xs text-muted-foreground" for="c-name">Stack Name</label>
             <input id="c-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-stack" bind:value={composeStackName} />
         </div>
-        <div class="flex flex-col gap-1">
-            <div class="flex items-center justify-between">
-                <label class="text-xs text-muted-foreground" for="c-yaml">docker-compose.yml</label>
-                <label class="text-xs text-primary cursor-pointer hover:underline">
-                    Upload file
-                    <input type="file" accept=".yml,.yaml" class="hidden" onchange={handleComposeFileUpload} />
-                </label>
+        <div class="grid grid-cols-5 gap-4">
+            <div class="col-span-2 flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground">Preview</label>
+                <div class="border rounded flex flex-col gap-2 p-3 h-[32rem] overflow-y-auto bg-muted/20">
+                    {#if composePreview.services.length === 0 && composePreview.volumes.length === 0}
+                        <p class="text-xs text-muted-foreground">No services detected yet.</p>
+                    {:else}
+                        {#each composePreview.services as service (service.serviceName)}
+                            <div class="flex items-center gap-2.5 rounded border bg-background p-2">
+                                <Icon icon={resolveImageIcon(service.image ?? "")} width={20} height={20} class="shrink-0" />
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium leading-tight truncate">{service.serviceName}</p>
+                                    <p class="text-xs text-muted-foreground font-mono truncate">{service.image ?? "no image"}</p>
+                                    {#if service.ports.length > 0}
+                                        <p class="text-xs text-muted-foreground font-mono truncate">{service.ports.join(", ")}</p>
+                                    {/if}
+                                </div>
+                            </div>
+                        {/each}
+                        {#if composePreview.volumes.length > 0}
+                            <p class="text-xs text-muted-foreground mt-1">Volumes</p>
+                            {#each composePreview.volumes as volumeName (volumeName)}
+                                <div class="flex items-center gap-2.5 rounded border bg-background p-2">
+                                    <Icon icon="mdi:database-outline" width={20} height={20} class="shrink-0 text-muted-foreground" />
+                                    <p class="text-sm font-medium leading-tight truncate">{volumeName}</p>
+                                </div>
+                            {/each}
+                        {/if}
+                    {/if}
+                </div>
             </div>
-            <textarea
-                id="c-yaml"
-                class="border rounded px-3 py-1.5 text-sm bg-background font-mono resize-none"
-                rows={10}
-                placeholder={"services:\n  redis:\n    image: redis:7\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\""}
-                bind:value={composeYaml}
-            ></textarea>
+            <div class="col-span-3 flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs text-muted-foreground" for="c-yaml">docker-compose.yml</label>
+                    <label class="text-xs text-primary cursor-pointer hover:underline">
+                        Upload file
+                        <input type="file" accept=".yml,.yaml" class="hidden" onchange={handleComposeFileUpload} />
+                    </label>
+                </div>
+                <div class="relative border rounded h-[32rem] overflow-hidden bg-background">
+                    <div
+                        bind:this={composeGutter}
+                        class="absolute left-0 top-0 bottom-0 w-9 overflow-hidden py-1.5 text-right text-xs leading-relaxed font-mono text-muted-foreground select-none bg-muted/30 border-r"
+                    >
+                        {#each Array(composeLineCount) as _, i}
+                            <div class="px-1.5">{i + 1}</div>
+                        {/each}
+                    </div>
+                    <pre
+                        bind:this={composeHighlightLayer}
+                        class="absolute inset-0 left-9 overflow-hidden pl-2 pr-3 py-1.5 text-xs leading-relaxed font-mono whitespace-pre-wrap break-words m-0 pointer-events-none"
+                    >{@html composeHighlighted}</pre>
+                    <textarea
+                        id="c-yaml"
+                        bind:this={composeTextarea}
+                        onscroll={syncComposeScroll}
+                        spellcheck="false"
+                        class="absolute inset-0 pl-11 pr-3 py-1.5 text-xs leading-relaxed bg-transparent font-mono resize-none outline-none w-full h-full text-transparent caret-foreground placeholder:text-muted-foreground"
+                        placeholder={"services:\n  redis:\n    image: redis:7\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\""}
+                        bind:value={composeYaml}
+                    ></textarea>
+                </div>
+            </div>
         </div>
         {#if composeError}
             <p class="text-xs text-destructive">{composeError}</p>
