@@ -101,6 +101,7 @@ pub async fn update_heartbeat(
     wg_public_key: Option<String>,
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
+    agent_version: Option<String>,
 ) -> Result<()> {
     let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
         .one(db)
@@ -119,6 +120,9 @@ pub async fn update_heartbeat(
     }
     if wg_tunnel_ip.is_some() {
         agent.wg_tunnel_ip = Set(wg_tunnel_ip);
+    }
+    if let Some(agent_version) = agent_version {
+        agent.agent_version = Set(agent_version);
     }
     agent.update(db).await?;
 

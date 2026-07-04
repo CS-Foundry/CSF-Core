@@ -181,7 +181,7 @@ pub async fn get_crl(
 #[derive(Deserialize)]
 pub struct ProxyTicketRequest {
     pub agent_id: Uuid,
-    pub workload_id: Uuid,
+    pub workload_id: String,
 }
 
 #[derive(Serialize)]
@@ -218,7 +218,7 @@ pub async fn issue_proxy_ticket(
 
     let ticket = state
         .pki_service
-        .sign_proxy_ticket(request.agent_id, request.workload_id)
+        .sign_proxy_ticket(request.agent_id, &request.workload_id)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

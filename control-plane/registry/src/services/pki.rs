@@ -217,7 +217,7 @@ impl PkiService {
             .map_err(|e| anyhow!("Failed to build CRL: {}", e))
     }
 
-    pub fn sign_proxy_ticket(&self, agent_id: Uuid, workload_id: Uuid) -> Result<ProxyTicket> {
+    pub fn sign_proxy_ticket(&self, agent_id: Uuid, workload_id: &str) -> Result<ProxyTicket> {
         let expires_at = Utc::now() + chrono::Duration::seconds(PROXY_TICKET_TTL_SECS);
         let payload = format!("{}.{}.{}", agent_id, workload_id, expires_at.timestamp());
 

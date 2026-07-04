@@ -53,6 +53,7 @@ struct HeartbeatRequest {
     wg_public_key: Option<String>,
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
+    agent_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -254,6 +255,7 @@ impl ApiClient {
                 wg_public_key: Some(self.wg_public_key.clone()),
                 wg_endpoint: self.wg_endpoint.clone(),
                 wg_tunnel_ip: self.wg_tunnel_ip.clone(),
+                agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {

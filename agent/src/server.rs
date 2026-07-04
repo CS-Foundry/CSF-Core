@@ -19,8 +19,10 @@ use tracing::{info, warn};
 
 use crate::docker::DockerManager;
 use crate::pki::AgentPki;
+use crate::system::LiveMetricsCollector;
 
 const TICKET_HEADER: &str = "X-Csfx-Proxy-Ticket";
+pub const METRICS_TICKET_SCOPE: &str = "__node_metrics__";
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -33,6 +35,7 @@ pub async fn run(state: ServerState, port: u16) -> Result<()> {
     let app = Router::new()
         .route("/logs/{workload_id}", get(logs_handler))
         .route("/exec/{workload_id}", get(exec_handler))
+        .route("/metrics/stream", get(metrics_stream_handler))
         .with_state(state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
@@ -273,4 +276,52 @@ async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id:
     }
 
     info!(container_id = %container_id, "exec session closed");
+}
+
+async fn metrics_stream_handler(
+    State(state): State<ServerState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    if !is_internal_source(&addr) {
+        warn!(source = %addr, "rejected agent inbound request from non-internal source");
+        return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
+    }
+
+    verify_ticket(&headers, METRICS_TICKET_SCOPE, &state.agent_id.to_string())
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+
+    Ok(ws.on_upgrade(handle_metrics_socket))
+}
+
+async fn handle_metrics_socket(socket: WebSocket) {
+    let (mut sink, mut stream) = socket.split();
+    let mut collector = LiveMetricsCollector::new();
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let metrics = collector.sample();
+                let payload = match serde_json::to_string(&metrics) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(error = %e, "failed to serialize live metrics");
+                        continue;
+                    }
+                };
+                if sink.send(Message::Text(payload.into())).await.is_err() {
+                    break;
+                }
+            }
+            msg = stream.next() => match msg {
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Err(_)) => break,
+                _ => {}
+            }
+        }
+    }
+
+    info!("live metrics session closed");
 }

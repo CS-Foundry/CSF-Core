@@ -215,6 +215,7 @@ pub async fn heartbeat(
             request.wg_public_key.clone(),
             request.wg_endpoint.clone(),
             request.wg_tunnel_ip.clone(),
+            request.agent_version.clone(),
         )
         .await
     {
