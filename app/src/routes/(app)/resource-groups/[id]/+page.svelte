@@ -19,8 +19,8 @@
         type PortMapping,
         type VolumeMount,
     } from "$lib/api/resource-groups";
-    import { Terminal } from "@xterm/xterm";
-    import { FitAddon } from "@xterm/addon-fit";
+    import type { Terminal } from "@xterm/xterm";
+    import type { FitAddon } from "@xterm/addon-fit";
     import "@xterm/xterm/css/xterm.css";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
@@ -240,6 +240,9 @@
         await tick();
 
         if (!execTerminalEl) return;
+
+        const { Terminal } = await import("@xterm/xterm");
+        const { FitAddon } = await import("@xterm/addon-fit");
 
         execTerminal = new Terminal({ convertEol: true, cursorBlink: true });
         execFitAddon = new FitAddon();
