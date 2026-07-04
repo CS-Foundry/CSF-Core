@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, tick } from "svelte";
+    import { tick } from "svelte";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
@@ -399,7 +399,14 @@
     let totalMem = $derived(workloads.reduce((s, w) => s + w.memory_bytes, 0));
     let totalDisk = $derived(volumes.reduce((s, v) => s + v.size_gb, 0));
 
-    onMount(load);
+    let loadStarted = false;
+
+    $effect(() => {
+        if (auth.token && !loadStarted) {
+            loadStarted = true;
+            load();
+        }
+    });
 </script>
 
 <dialog
