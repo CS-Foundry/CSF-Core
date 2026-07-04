@@ -259,12 +259,14 @@ pub async fn exec_workload(
         })?,
     );
 
-    let (agent_socket, _) = tokio_tungstenite::connect_async(request).await.map_err(|e| {
-        (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": format!("failed to connect to agent exec socket: {}", e) })),
-        )
-    })?;
+    let (agent_socket, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": format!("failed to connect to agent exec socket: {}", e) })),
+            )
+        })?;
 
     Ok(ws.on_upgrade(move |browser_socket| bridge_exec_sockets(browser_socket, agent_socket)))
 }
@@ -370,12 +372,16 @@ pub async fn stream_node_metrics(
         })?,
     );
 
-    let (agent_socket, _) = tokio_tungstenite::connect_async(request).await.map_err(|e| {
-        (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": format!("failed to connect to agent metrics socket: {}", e) })),
-        )
-    })?;
+    let (agent_socket, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(
+                    json!({ "error": format!("failed to connect to agent metrics socket: {}", e) }),
+                ),
+            )
+        })?;
 
     Ok(ws.on_upgrade(move |browser_socket| bridge_metrics_socket(browser_socket, agent_socket)))
 }
@@ -404,8 +410,14 @@ async fn bridge_metrics_socket(
 pub fn agent_proxy_routes() -> Router<AppState> {
     Router::new()
         .route("/workloads/{id}/logs", get(stream_workload_logs))
-        .route("/workloads/{id}/exec/ticket", axum::routing::post(issue_exec_ticket))
+        .route(
+            "/workloads/{id}/exec/ticket",
+            axum::routing::post(issue_exec_ticket),
+        )
         .route("/workloads/{id}/exec", get(exec_workload))
-        .route("/agents/{id}/metrics/ticket", axum::routing::post(issue_node_metrics_ticket))
+        .route(
+            "/agents/{id}/metrics/ticket",
+            axum::routing::post(issue_node_metrics_ticket),
+        )
         .route("/agents/{id}/metrics/stream", get(stream_node_metrics))
 }

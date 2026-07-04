@@ -16,7 +16,7 @@ pub struct LeaderElection {
 
 impl LeaderElection {
     pub fn new(client: Arc<EtcdClient>, node_id: String) -> Self {
-        let election_key = format!("election/leader");
+        let election_key = "election/leader".to_string();
         Self {
             client,
             node_id,
@@ -184,7 +184,7 @@ impl LeaderElection {
     }
 
     /// Wartet auf Leadership Changes (Watch)
-    pub async fn watch_leadership<F>(&self, callback: F) -> Result<(), EtcdError>
+    pub async fn watch_leadership<F>(&self, _callback: F) -> Result<(), EtcdError>
     where
         F: FnMut(Option<String>) + Send + 'static,
     {

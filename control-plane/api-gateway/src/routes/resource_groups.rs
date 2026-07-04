@@ -109,7 +109,9 @@ pub async fn create_resource_group(
     if existing.is_some() {
         return Err((
             StatusCode::CONFLICT,
-            Json(json!({ "error": format!("CIDR {} is already in use by another resource group", req.internal_cidr) })),
+            Json(
+                json!({ "error": format!("CIDR {} is already in use by another resource group", req.internal_cidr) }),
+            ),
         ));
     }
 
@@ -133,7 +135,10 @@ pub async fn create_resource_group(
         )
     })?;
 
-    Ok((StatusCode::CREATED, Json(json!(ResourceGroupResponse::from(inserted)))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!(ResourceGroupResponse::from(inserted))),
+    ))
 }
 
 pub async fn get_resource_group(
@@ -161,7 +166,10 @@ pub async fn get_resource_group(
             )
         })?;
 
-    Ok((StatusCode::OK, Json(json!(ResourceGroupResponse::from(group)))))
+    Ok((
+        StatusCode::OK,
+        Json(json!(ResourceGroupResponse::from(group))),
+    ))
 }
 
 pub async fn delete_resource_group(
@@ -452,10 +460,7 @@ fn first_host_ip(cidr: &str) -> Option<String> {
     if parts.len() != 2 {
         return None;
     }
-    let octets: Vec<u8> = parts[0]
-        .split('.')
-        .filter_map(|o| o.parse().ok())
-        .collect();
+    let octets: Vec<u8> = parts[0].split('.').filter_map(|o| o.parse().ok()).collect();
     if octets.len() != 4 {
         return None;
     }

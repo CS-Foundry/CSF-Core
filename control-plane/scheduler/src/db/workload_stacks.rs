@@ -1,6 +1,6 @@
 use chrono::Utc;
 use entity::entities::workload_stacks;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait};
 use uuid::Uuid;
 
 pub async fn create(

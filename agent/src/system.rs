@@ -74,7 +74,7 @@ fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
     content
         .lines()
         .find(|l| l.starts_with(field))
-        .and_then(|l| l.splitn(2, '=').nth(1))
+        .and_then(|l| l.split_once('=').map(|x| x.1))
         .map(|v| v.trim_matches('"').to_string())
 }
 

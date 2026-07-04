@@ -111,7 +111,10 @@ impl DockerManager {
             .await
             .context("Failed to list networks")?;
 
-        if let Some(network) = existing.into_iter().find(|n| n.name.as_deref() == Some(&network_name)) {
+        if let Some(network) = existing
+            .into_iter()
+            .find(|n| n.name.as_deref() == Some(&network_name))
+        {
             return Ok(network.id.unwrap_or(network_name));
         }
 
@@ -269,7 +272,7 @@ impl DockerManager {
         self.docker
             .logs(container_id, Some(options))
             .map(|item| match item {
-                Ok(log_output) => Ok(Bytes::from(log_output.into_bytes())),
+                Ok(log_output) => Ok(log_output.into_bytes()),
                 Err(e) => Err(std::io::Error::other(e.to_string())),
             })
     }

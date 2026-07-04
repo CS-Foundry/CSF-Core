@@ -56,8 +56,13 @@ async fn main() -> Result<()> {
     let wg_tunnel_ip = std::env::var("CSFX_WG_TUNNEL_IP").ok();
     let (_wg_private_key, wg_public_key) = client::generate_wg_keypair();
 
-    let api_client = client::ApiClient::new(gateway_url.clone(), wg_public_key, wg_endpoint, wg_tunnel_ip)
-        .context("Failed to initialize API client")?;
+    let api_client = client::ApiClient::new(
+        gateway_url.clone(),
+        wg_public_key,
+        wg_endpoint,
+        wg_tunnel_ip,
+    )
+    .context("Failed to initialize API client")?;
 
     let agent_pki = pki::AgentPki::load_or_generate().context("Failed to initialize PKI")?;
 
@@ -367,7 +372,9 @@ async fn process_workloads(
             }
         }
     }
-    let docker = docker_guard.as_ref().expect("docker manager initialized above");
+    let docker = docker_guard
+        .as_ref()
+        .expect("docker manager initialized above");
 
     for workload in workloads {
         let already_running = running_containers.lock().await.contains_key(&workload.id);

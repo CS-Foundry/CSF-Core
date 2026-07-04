@@ -11,13 +11,35 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(ResourceGroups::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(ResourceGroups::Id).uuid().not_null().primary_key())
-                    .col(ColumnDef::new(ResourceGroups::OrganizationId).uuid().not_null())
+                    .col(
+                        ColumnDef::new(ResourceGroups::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(ResourceGroups::OrganizationId)
+                            .uuid()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(ResourceGroups::Name).string().not_null())
                     .col(ColumnDef::new(ResourceGroups::Description).string().null())
-                    .col(ColumnDef::new(ResourceGroups::InternalCidr).string().not_null())
-                    .col(ColumnDef::new(ResourceGroups::Status).string().not_null().default("active"))
-                    .col(ColumnDef::new(ResourceGroups::CreatedAt).date_time().not_null())
+                    .col(
+                        ColumnDef::new(ResourceGroups::InternalCidr)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(ResourceGroups::Status)
+                            .string()
+                            .not_null()
+                            .default("active"),
+                    )
+                    .col(
+                        ColumnDef::new(ResourceGroups::CreatedAt)
+                            .date_time()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(ResourceGroups::UpdatedAt).date_time().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -101,13 +123,25 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_index(Index::drop().name("idx_networks_resource_group_id").to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_networks_resource_group_id")
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_index(Index::drop().name("idx_volumes_resource_group_id").to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_volumes_resource_group_id")
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_index(Index::drop().name("idx_workloads_resource_group_id").to_owned())
+            .drop_index(
+                Index::drop()
+                    .name("idx_workloads_resource_group_id")
+                    .to_owned(),
+            )
             .await?;
         manager
             .drop_index(

@@ -99,9 +99,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute_unprepared(
-                "CREATE INDEX idx_logs_created_at ON logs (created_at DESC)",
-            )
+            .execute_unprepared("CREATE INDEX idx_logs_created_at ON logs (created_at DESC)")
             .await?;
 
         Ok(())

@@ -170,12 +170,16 @@ async fn logs_handler(
         .await
         .get(&workload_id)
         .cloned()
-        .ok_or((StatusCode::NOT_FOUND, "workload not running here".to_string()))?;
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "workload not running here".to_string(),
+        ))?;
 
     let docker_guard = state.docker.lock().await;
-    let docker = docker_guard
-        .as_ref()
-        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "docker unavailable".to_string()))?;
+    let docker = docker_guard.as_ref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "docker unavailable".to_string(),
+    ))?;
 
     let stream = docker.logs(&container_id);
     Ok(axum::body::Body::from_stream(stream))
@@ -202,7 +206,10 @@ async fn exec_handler(
         .await
         .get(&workload_id)
         .cloned()
-        .ok_or((StatusCode::NOT_FOUND, "workload not running here".to_string()))?;
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "workload not running here".to_string(),
+        ))?;
 
     Ok(ws.on_upgrade(move |socket| handle_exec_socket(socket, state, container_id)))
 }

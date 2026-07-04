@@ -215,5 +215,8 @@ pub fn networks_routes() -> Router<AppState> {
             get(list_policies).post(create_policy),
         )
         .route("/networks/{id}/members", get(list_members).post(add_member))
-        .route("/networks/{id}/members/{workload_id}", delete(remove_member))
+        .route(
+            "/networks/{id}/members/{workload_id}",
+            delete(remove_member),
+        )
 }

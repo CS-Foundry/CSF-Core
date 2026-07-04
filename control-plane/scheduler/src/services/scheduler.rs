@@ -247,10 +247,9 @@ impl SchedulerService {
         let mut pinned: Option<Uuid> = None;
 
         for mount in mounts {
-            let agent_id =
-                crate::db::agents::get_volume_agent(&self.db, mount.volume_id)
-                    .await
-                    .map_err(|e| format!("Failed to check volume affinity: {}", e))?;
+            let agent_id = crate::db::agents::get_volume_agent(&self.db, mount.volume_id)
+                .await
+                .map_err(|e| format!("Failed to check volume affinity: {}", e))?;
 
             if let Some(aid) = agent_id {
                 match pinned {
@@ -270,12 +269,7 @@ impl SchedulerService {
     }
 
     fn first_fit(&self, req: &CreateWorkloadRequest, agents: &[AgentResources]) -> Option<Uuid> {
-        self.first_fit_resources(
-            req.cpu_millicores,
-            req.memory_bytes,
-            req.disk_bytes,
-            agents,
-        )
+        self.first_fit_resources(req.cpu_millicores, req.memory_bytes, req.disk_bytes, agents)
     }
 
     fn first_fit_resources(
@@ -330,10 +324,9 @@ fn format_compose_error(error: &ComposeParseError) -> String {
     match error {
         ComposeParseError::InvalidYaml(detail) => format!("invalid compose yaml: {}", detail),
         ComposeParseError::NoServicesDefined => "compose file defines no services".to_string(),
-        ComposeParseError::UnsupportedBuildDirective(service) => format!(
-            "service '{}' uses build, only image is supported",
-            service
-        ),
+        ComposeParseError::UnsupportedBuildDirective(service) => {
+            format!("service '{}' uses build, only image is supported", service)
+        }
         ComposeParseError::MissingImage(service) => {
             format!("service '{}' has no image", service)
         }

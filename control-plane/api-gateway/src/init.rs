@@ -247,7 +247,10 @@ pub async fn initialize_database(
         admin_granted += 1;
     }
     if admin_granted > 0 {
-        tracing::info!(count = admin_granted, "granted missing permissions to Admin role");
+        tracing::info!(
+            count = admin_granted,
+            "granted missing permissions to Admin role"
+        );
     }
 
     // 4b. Create Operator role

@@ -11,12 +11,30 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(WorkloadStacks::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(WorkloadStacks::Id).uuid().not_null().primary_key())
-                    .col(ColumnDef::new(WorkloadStacks::ResourceGroupId).uuid().not_null())
+                    .col(
+                        ColumnDef::new(WorkloadStacks::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkloadStacks::ResourceGroupId)
+                            .uuid()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(WorkloadStacks::Name).string().not_null())
                     .col(ColumnDef::new(WorkloadStacks::ComposeSource).text().null())
-                    .col(ColumnDef::new(WorkloadStacks::Status).string().not_null().default("pending"))
-                    .col(ColumnDef::new(WorkloadStacks::CreatedAt).date_time().not_null())
+                    .col(
+                        ColumnDef::new(WorkloadStacks::Status)
+                            .string()
+                            .not_null()
+                            .default("pending"),
+                    )
+                    .col(
+                        ColumnDef::new(WorkloadStacks::CreatedAt)
+                            .date_time()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(WorkloadStacks::UpdatedAt).date_time().null())
                     .foreign_key(
                         ForeignKey::create()

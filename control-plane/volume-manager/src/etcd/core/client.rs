@@ -180,7 +180,7 @@ impl EtcdClient {
 
         let txn = Txn::new().when([compare]).and_then([put]).or_else([get]);
 
-        let txn_resp = client.txn(txn).await.map_err(|e| EtcdError::Client(e))?;
+        let txn_resp = client.txn(txn).await.map_err(EtcdError::Client)?;
 
         // Wenn succeeded = true, war die Transaction erfolgreich (Key nicht vorhanden)
         Ok(txn_resp.succeeded())
@@ -219,7 +219,7 @@ impl EtcdClient {
         let resp = client
             .lease_grant(ttl, None)
             .await
-            .map_err(|e| EtcdError::Client(e))?;
+            .map_err(EtcdError::Client)?;
 
         Ok(resp.id())
     }
@@ -230,12 +230,12 @@ impl EtcdClient {
         let (mut keeper, _stream) = client
             .lease_keep_alive(lease_id)
             .await
-            .map_err(|e| EtcdError::Client(e))?;
+            .map_err(EtcdError::Client)?;
 
         keeper
             .keep_alive()
             .await
-            .map_err(|e| EtcdError::Client(e))?;
+            .map_err(EtcdError::Client)?;
         Ok(())
     }
 
@@ -245,7 +245,7 @@ impl EtcdClient {
         client
             .lease_revoke(lease_id)
             .await
-            .map_err(|e| EtcdError::Client(e))?;
+            .map_err(EtcdError::Client)?;
 
         Ok(())
     }

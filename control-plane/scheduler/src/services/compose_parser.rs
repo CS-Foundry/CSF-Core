@@ -90,7 +90,9 @@ fn normalize_environment(raw: Option<RawEnvironment>) -> Option<HashMap<String, 
 }
 
 fn parse_compose_ports(raw: &[String]) -> Vec<PortMapping> {
-    raw.iter().filter_map(|entry| parse_compose_port(entry)).collect()
+    raw.iter()
+        .filter_map(|entry| parse_compose_port(entry))
+        .collect()
 }
 
 fn parse_compose_port(entry: &str) -> Option<PortMapping> {

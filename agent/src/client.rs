@@ -104,7 +104,8 @@ pub struct ApiClient {
 pub fn generate_wg_keypair() -> (String, String) {
     let rng = SystemRandom::new();
     let mut private_bytes = [0u8; 32];
-    rng.fill(&mut private_bytes).expect("failed to generate WireGuard key");
+    rng.fill(&mut private_bytes)
+        .expect("failed to generate WireGuard key");
     private_bytes[0] &= 248;
     private_bytes[31] &= 127;
     private_bytes[31] |= 64;
