@@ -38,15 +38,12 @@ jobs:
             sleep 5
           done
 
-  clippy:
+  clippy-push:
     name: Clippy
     runs-on: ubuntu-latest
-    needs: wait-for-format
-    if: always() && (needs.wait-for-format.result == 'success' || needs.wait-for-format.result == 'skipped')
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -65,11 +62,35 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Clippy
-        if: github.event_name != 'pull_request'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  clippy-pr:
+    name: Clippy
+    runs-on: ubuntu-latest
+    needs: wait-for-format
+    if: github.event_name == 'pull_request' && always() && (needs.wait-for-format.result == 'success' || needs.wait-for-format.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libpq-dev protobuf-compiler
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Clippy with PR annotations
-        if: github.event_name == 'pull_request'
         uses: giraffate/clippy-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
