@@ -370,16 +370,17 @@ pub async fn get_self_volumes(
 
 pub fn agents_routes() -> Router<AppState> {
     Router::new()
-        // Public endpoints (for agents)
-        .route("/agents/register", post(register_agent))
-        .route("/agents/heartbeat", post(heartbeat))
-        .route("/agents/metrics", post(receive_metrics))
-        // Agent-authenticated endpoints (X-API-Key)
-        .route("/agents/self/workloads", get(get_self_workloads))
-        .route("/agents/self/volumes", get(get_self_volumes))
-        // Protected endpoints (for frontend)
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
         .route("/agents/{id}/metrics", get(get_agent_metrics))
         .route("/agents/{id}/metrics/latest", get(get_agent_metrics_latest))
+}
+
+pub fn agents_unmetered_routes() -> Router<AppState> {
+    Router::new()
+        .route("/agents/register", post(register_agent))
+        .route("/agents/heartbeat", post(heartbeat))
+        .route("/agents/metrics", post(receive_metrics))
+        .route("/agents/self/workloads", get(get_self_workloads))
+        .route("/agents/self/volumes", get(get_self_volumes))
 }
