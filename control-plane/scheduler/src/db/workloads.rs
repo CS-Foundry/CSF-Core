@@ -3,7 +3,9 @@ use entity::entities::workloads;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait};
 use uuid::Uuid;
 
-use crate::models::workload::{CreateWorkloadRequest, WorkloadResponse, WorkloadStatus};
+use crate::models::workload::{
+    CreateWorkloadRequest, RestartPolicy, WorkloadResponse, WorkloadStatus,
+};
 
 pub async fn create(
     db: &DatabaseConnection,
@@ -40,6 +42,9 @@ pub async fn create(
         resource_group_id: Set(req.resource_group_id),
         stack_id: Set(req.stack_id),
         service_name: Set(req.service_name.clone()),
+        restart_policy: Set(req.restart_policy.as_str().to_string()),
+        max_restarts: Set(req.max_restarts),
+        restart_count: Set(0),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -68,6 +73,13 @@ pub async fn assign(
 pub async fn get_all(db: &DatabaseConnection) -> Result<Vec<WorkloadResponse>, sea_orm::DbErr> {
     let rows = workloads::Entity::find().all(db).await?;
     Ok(rows.into_iter().map(into_response).collect())
+}
+
+pub async fn get_by_id(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+) -> Result<Option<workloads::Model>, sea_orm::DbErr> {
+    workloads::Entity::find_by_id(workload_id).one(db).await
 }
 
 pub async fn update_container_status(
@@ -122,6 +134,9 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         resource_group_id: m.resource_group_id,
         stack_id: m.stack_id,
         service_name: m.service_name,
+        restart_policy: RestartPolicy::from_str(&m.restart_policy),
+        max_restarts: m.max_restarts,
+        restart_count: m.restart_count,
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

@@ -50,6 +50,36 @@ pub struct VolumeMount {
     pub mount_path: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RestartPolicy {
+    Always,
+    OnFailure,
+    Never,
+}
+
+impl RestartPolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RestartPolicy::Always => "always",
+            RestartPolicy::OnFailure => "on-failure",
+            RestartPolicy::Never => "never",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "on-failure" => RestartPolicy::OnFailure,
+            "never" => RestartPolicy::Never,
+            _ => RestartPolicy::Always,
+        }
+    }
+}
+
+fn default_restart_policy() -> RestartPolicy {
+    RestartPolicy::Always
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkloadRequest {
     pub name: String,
@@ -65,6 +95,10 @@ pub struct CreateWorkloadRequest {
     pub stack_id: Option<Uuid>,
     #[serde(default)]
     pub service_name: Option<String>,
+    #[serde(default = "default_restart_policy")]
+    pub restart_policy: RestartPolicy,
+    #[serde(default)]
+    pub max_restarts: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +131,9 @@ pub struct WorkloadResponse {
     pub resource_group_id: Option<Uuid>,
     pub stack_id: Option<Uuid>,
     pub service_name: Option<String>,
+    pub restart_policy: RestartPolicy,
+    pub max_restarts: Option<i32>,
+    pub restart_count: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

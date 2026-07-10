@@ -75,21 +75,19 @@ pub struct VolumeMount {
     pub mount_path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AssignedWorkload {
     pub id: String,
-    pub name: String,
     pub image: String,
     pub cpu_millicores: i32,
     pub memory_bytes: i64,
-    pub disk_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<crate::docker::PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
-    pub status: String,
-    pub container_id: Option<String>,
     pub stack_id: Option<String>,
     pub service_name: Option<String>,
+    pub restart_policy: String,
+    pub max_restarts: Option<i32>,
 }
 
 pub struct ApiClient {
@@ -296,15 +294,9 @@ impl ApiClient {
             );
         }
 
-        let all: Vec<AssignedWorkload> = resp
-            .json()
+        resp.json::<Vec<AssignedWorkload>>()
             .await
-            .context("Failed to parse workloads response")?;
-
-        Ok(all
-            .into_iter()
-            .filter(|w| w.status == "scheduled" && w.container_id.is_none())
-            .collect())
+            .context("Failed to parse workloads response")
     }
 
     pub async fn fetch_bootstrap_token(&self) -> Result<String> {

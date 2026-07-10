@@ -22,6 +22,9 @@ pub struct Model {
     pub resource_group_id: Option<Uuid>,
     pub stack_id: Option<Uuid>,
     pub service_name: Option<String>,
+    pub restart_policy: String,
+    pub max_restarts: Option<i32>,
+    pub restart_count: i32,
     pub created_at: DateTime,
     pub updated_at: Option<DateTime>,
 }

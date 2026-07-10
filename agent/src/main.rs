@@ -108,6 +108,8 @@ async fn main() -> Result<()> {
 
     let mounted_volumes: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
+    let restart_counts: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
+
     if let Some(port) = std::env::var("CSFX_AGENT_PORT")
         .ok()
         .and_then(|v| v.parse::<u16>().ok())
@@ -135,6 +137,7 @@ async fn main() -> Result<()> {
         running_containers,
         workload_phases,
         mounted_volumes,
+        restart_counts,
     )
     .await;
 
@@ -213,6 +216,7 @@ async fn run_heartbeat_loop(
     running_containers: Arc<Mutex<HashMap<String, String>>>,
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
+    restart_counts: Arc<Mutex<HashMap<String, u32>>>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
     let mut failure_count: u32 = 0;
@@ -222,7 +226,7 @@ async fn run_heartbeat_loop(
         tokio::select! {
             _ = interval.tick() => {
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
-                process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes).await;
+                process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts).await;
 
                 let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
                 let metrics = system::collect_metrics();
@@ -339,6 +343,75 @@ async fn process_volumes(
     }
 }
 
+async fn reap_stale_containers(
+    docker: &docker::DockerManager,
+    running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: &Arc<Mutex<HashMap<String, String>>>,
+    restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    desired: &[client::AssignedWorkload],
+) {
+    let desired_ids: std::collections::HashSet<&str> =
+        desired.iter().map(|w| w.id.as_str()).collect();
+
+    let stale: Vec<(String, String)> = running_containers
+        .lock()
+        .await
+        .iter()
+        .filter(|(workload_id, _)| !desired_ids.contains(workload_id.as_str()))
+        .map(|(workload_id, container_id)| (workload_id.clone(), container_id.clone()))
+        .collect();
+
+    for (workload_id, container_id) in stale {
+        info!(workload_id = %workload_id, container_id = %container_id, "Tearing down removed workload");
+
+        if let Err(e) = docker.stop_container(&container_id).await {
+            warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to tear down container");
+            continue;
+        }
+
+        running_containers.lock().await.remove(&workload_id);
+        workload_phases.lock().await.remove(&workload_id);
+        restart_counts.lock().await.remove(&workload_id);
+    }
+}
+
+async fn should_restart_after_crash(
+    docker: &docker::DockerManager,
+    workload: &client::AssignedWorkload,
+    container_id: &str,
+    restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+) -> bool {
+    let status = match docker.inspect_status(container_id).await {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(workload_id = %workload.id, container_id = %container_id, error = %e, "Failed to inspect container");
+            return false;
+        }
+    };
+
+    if status != "failed" {
+        return false;
+    }
+
+    if workload.restart_policy == "never" {
+        return false;
+    }
+
+    let mut counts = restart_counts.lock().await;
+    let count = counts.entry(workload.id.clone()).or_insert(0);
+
+    if let Some(max) = workload.max_restarts {
+        if *count as i32 >= max {
+            warn!(workload_id = %workload.id, restart_count = *count, max_restarts = max, "Crash-loop limit reached, not restarting");
+            return false;
+        }
+    }
+
+    *count += 1;
+    info!(workload_id = %workload.id, restart_count = *count, "Container crashed, scheduling restart");
+    true
+}
+
 async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
@@ -346,6 +419,7 @@ async fn process_workloads(
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
+    restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
 ) {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
         Ok(w) => w,
@@ -354,10 +428,6 @@ async fn process_workloads(
             return;
         }
     };
-
-    if workloads.is_empty() {
-        return;
-    }
 
     let mut docker_guard = docker.lock().await;
     if docker_guard.is_none() {
@@ -376,11 +446,16 @@ async fn process_workloads(
         .as_ref()
         .expect("docker manager initialized above");
 
-    for workload in workloads {
-        let already_running = running_containers.lock().await.contains_key(&workload.id);
+    reap_stale_containers(docker, running_containers, workload_phases, restart_counts, &workloads).await;
 
-        if already_running {
-            continue;
+    for workload in workloads {
+        let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();
+
+        if let Some(container_id) = existing_container_id {
+            if !should_restart_after_crash(docker, &workload, &container_id, restart_counts).await {
+                continue;
+            }
+            running_containers.lock().await.remove(&workload.id);
         }
 
         info!(workload_id = %workload.id, image = %workload.image, "Starting workload");
@@ -413,8 +488,9 @@ async fn process_workloads(
 
         let spec = docker::WorkloadSpec {
             workload_id: workload.id.clone(),
-            name: workload.name.clone(),
             image: workload.image.clone(),
+            cpu_millicores: workload.cpu_millicores,
+            memory_bytes: workload.memory_bytes,
             env_vars: workload.env_vars,
             ports: workload.ports,
             volume_mounts: workload.volume_mounts.map(|mounts| {

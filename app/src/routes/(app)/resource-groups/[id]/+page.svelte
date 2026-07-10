@@ -1001,9 +1001,19 @@
                                     </div>
                                 </td>
                                 <td class="px-4 py-3">
-                                    <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(w.status)}">
-                                        {statusLabel(w.status)}
-                                    </span>
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(w.status)}">
+                                            {statusLabel(w.status)}
+                                        </span>
+                                        {#if w.restart_count > 0}
+                                            <span
+                                                class="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-600"
+                                                title="Restarted {w.restart_count} time{w.restart_count === 1 ? '' : 's'}{w.max_restarts !== null ? ` (max ${w.max_restarts})` : ''}"
+                                            >
+                                                ↻ {w.restart_count}
+                                            </span>
+                                        {/if}
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     {@render workloadActions(w)}

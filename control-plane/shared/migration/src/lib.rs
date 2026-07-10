@@ -24,6 +24,7 @@ mod m20260628_100000_rg_cidr_unique_agent_wg;
 mod m20260701_000000_add_logs_and_settings;
 mod m20260702_000000_add_agent_wg_tunnel_ip;
 mod m20260704_000000_add_workload_stacks;
+mod m20260710_000000_add_workload_restart_policy;
 
 pub struct Migrator;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260701_000000_add_logs_and_settings::Migration),
             Box::new(m20260702_000000_add_agent_wg_tunnel_ip::Migration),
             Box::new(m20260704_000000_add_workload_stacks::Migration),
+            Box::new(m20260710_000000_add_workload_restart_policy::Migration),
         ]
     }
 }

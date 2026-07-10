@@ -92,6 +92,16 @@ pub async fn detach(
     active.update(db).await
 }
 
+pub async fn get_attached_to_agent(
+    db: &DatabaseConnection,
+    agent_id: Uuid,
+) -> Result<Vec<volumes::Model>, sea_orm::DbErr> {
+    volumes::Entity::find()
+        .filter(volumes::Column::AttachedToAgent.eq(agent_id))
+        .all(db)
+        .await
+}
+
 pub async fn delete(db: &DatabaseConnection, volume_id: Uuid) -> Result<(), sea_orm::DbErr> {
     let volume = volumes::Entity::find_by_id(volume_id)
         .one(db)

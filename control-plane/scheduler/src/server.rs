@@ -42,5 +42,9 @@ pub fn create_router(state: AppState) -> Router {
             "/internal/workloads/status",
             axum::routing::post(internal::update_container_statuses),
         )
+        .route(
+            "/internal/agents/{id}/reschedule",
+            axum::routing::post(internal::reschedule_agent_workloads),
+        )
         .with_state(state)
 }

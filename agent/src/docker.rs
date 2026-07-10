@@ -39,8 +39,9 @@ pub struct VolumeMount {
 #[derive(Debug, Clone)]
 pub struct WorkloadSpec {
     pub workload_id: String,
-    pub name: String,
     pub image: String,
+    pub cpu_millicores: i32,
+    pub memory_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
@@ -165,6 +166,16 @@ impl DockerManager {
                 Some(port_bindings)
             },
             binds,
+            nano_cpus: if spec.cpu_millicores > 0 {
+                Some(spec.cpu_millicores as i64 * 1_000_000)
+            } else {
+                None
+            },
+            memory: if spec.memory_bytes > 0 {
+                Some(spec.memory_bytes)
+            } else {
+                None
+            },
             ..Default::default()
         };
 

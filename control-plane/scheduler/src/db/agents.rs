@@ -4,9 +4,7 @@ use uuid::Uuid;
 
 use crate::models::workload::AgentResources;
 
-const TOTAL_CPU_MILLICORES: i32 = 4000;
-const TOTAL_MEMORY_BYTES: i64 = 8 * 1024 * 1024 * 1024;
-const TOTAL_DISK_BYTES: i64 = 100 * 1024 * 1024 * 1024;
+const MILLICORES_PER_CORE: i32 = 1000;
 
 pub async fn get_online_agents_with_resources(
     db: &DatabaseConnection,
@@ -25,22 +23,30 @@ pub async fn get_online_agents_with_resources(
             .one(db)
             .await?;
 
-        let (used_cpu, used_mem, used_disk) = match latest_metrics {
-            Some(m) => {
-                let cpu = m.cpu_usage_percent.unwrap_or(0.0);
-                let used_cpu = ((cpu / 100.0) * TOTAL_CPU_MILLICORES as f32) as i32;
-                let used_mem = m.memory_used_bytes.unwrap_or(0);
-                let used_disk = m.disk_used_bytes.unwrap_or(0);
-                (used_cpu, used_mem, used_disk)
-            }
-            None => (0, 0, 0),
+        let Some(m) = latest_metrics else {
+            result.push(AgentResources {
+                agent_id: agent.id,
+                free_cpu_millicores: 0,
+                free_memory_bytes: 0,
+                free_disk_bytes: 0,
+            });
+            continue;
         };
+
+        let total_cpu_millicores = m.cpu_cores.unwrap_or(0) * MILLICORES_PER_CORE;
+        let total_memory_bytes = m.memory_total_bytes.unwrap_or(0);
+        let total_disk_bytes = m.disk_total_bytes.unwrap_or(0);
+
+        let cpu_usage = m.cpu_usage_percent.unwrap_or(0.0);
+        let used_cpu = ((cpu_usage / 100.0) * total_cpu_millicores as f32) as i32;
+        let used_mem = m.memory_used_bytes.unwrap_or(0);
+        let used_disk = m.disk_used_bytes.unwrap_or(0);
 
         result.push(AgentResources {
             agent_id: agent.id,
-            free_cpu_millicores: TOTAL_CPU_MILLICORES - used_cpu,
-            free_memory_bytes: TOTAL_MEMORY_BYTES - used_mem,
-            free_disk_bytes: TOTAL_DISK_BYTES - used_disk,
+            free_cpu_millicores: total_cpu_millicores - used_cpu,
+            free_memory_bytes: total_memory_bytes - used_mem,
+            free_disk_bytes: total_disk_bytes - used_disk,
         });
     }
 
