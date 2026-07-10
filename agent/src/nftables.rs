@@ -18,7 +18,11 @@ pub async fn ensure_table_and_chain() -> Result<()> {
     ])
     .await?;
 
-    info!(table = TABLE_NAME, chain = CHAIN_NAME, "nftables RG isolation chain ready");
+    info!(
+        table = TABLE_NAME,
+        chain = CHAIN_NAME,
+        "nftables RG isolation chain ready"
+    );
     Ok(())
 }
 

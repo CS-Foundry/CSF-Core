@@ -183,7 +183,10 @@ impl DockerManager {
         Ok(response.id)
     }
 
-    pub async fn list_rg_bridge_ifaces(&self, exclude_network_name: Option<&str>) -> Result<Vec<String>> {
+    pub async fn list_rg_bridge_ifaces(
+        &self,
+        exclude_network_name: Option<&str>,
+    ) -> Result<Vec<String>> {
         let filters = HashMap::from([("name".to_string(), vec!["csfx-rg-".to_string()])]);
         let list_options = ListNetworksOptionsBuilder::default()
             .filters(&filters)
