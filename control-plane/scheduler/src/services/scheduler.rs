@@ -47,11 +47,20 @@ impl SchedulerService {
 
         let volume_pinned_agent = self.resolve_volume_affinity(&req).await?;
 
-        if let Some(required_agent) = volume_pinned_agent {
+        let placement = if let Some(required_agent) = volume_pinned_agent {
             agents.retain(|a| a.agent_id == required_agent);
-        }
+            self.first_fit(&req, &agents)
+        } else if let Some(resource_group_id) = req.resource_group_id {
+            let preferred = self
+                .preferred_resource_group_agents(resource_group_id, &agents)
+                .await?;
+            self.first_fit(&req, &preferred)
+                .or_else(|| self.first_fit(&req, &agents))
+        } else {
+            self.first_fit(&req, &agents)
+        };
 
-        match self.first_fit(&req, &agents) {
+        match placement {
             Some(agent_id) => {
                 crate::db::workloads::assign(&self.db, workload.id, agent_id)
                     .await
@@ -235,6 +244,23 @@ impl SchedulerService {
         );
 
         Ok(responses)
+    }
+
+    async fn preferred_resource_group_agents(
+        &self,
+        resource_group_id: Uuid,
+        agents: &[AgentResources],
+    ) -> Result<Vec<AgentResources>, String> {
+        let hosting_agents =
+            crate::db::agents::get_agents_hosting_resource_group(&self.db, resource_group_id)
+                .await
+                .map_err(|e| format!("Failed to resolve resource group affinity: {}", e))?;
+
+        Ok(agents
+            .iter()
+            .filter(|a| hosting_agents.contains(&a.agent_id))
+            .cloned()
+            .collect())
     }
 
     async fn resolve_volume_affinity(

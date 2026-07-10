@@ -1,6 +1,7 @@
 mod client;
 mod config;
 mod docker;
+mod nftables;
 mod pki;
 mod rbd;
 mod server;
@@ -98,6 +99,10 @@ async fn main() -> Result<()> {
     };
 
     info!(agent_id = %agent_id, "Agent registered, starting heartbeat loop");
+
+    if let Err(e) = nftables::ensure_table_and_chain().await {
+        warn!(error = %e, "Failed to initialize nftables resource group isolation");
+    }
 
     let docker_manager: Arc<Mutex<Option<docker::DockerManager>>> = Arc::new(Mutex::new(None));
 
@@ -509,8 +514,9 @@ async fn process_workloads(
                     })
                     .collect()
             }),
-            stack_id: workload.stack_id,
             service_name: workload.service_name,
+            resource_group_id: workload.resource_group_id,
+            resource_group_cidr: workload.resource_group_cidr,
         };
 
         match docker.start_container(&spec).await {

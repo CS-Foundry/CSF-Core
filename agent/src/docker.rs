@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use axum::body::Bytes;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
-    ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig,
+    ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig, Ipam, IpamConfig,
     NetworkCreateRequest, NetworkingConfig,
 };
 use bollard::query_parameters::{
@@ -45,8 +45,26 @@ pub struct WorkloadSpec {
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
-    pub stack_id: Option<String>,
     pub service_name: Option<String>,
+    pub resource_group_id: Option<String>,
+    pub resource_group_cidr: Option<String>,
+}
+
+pub fn rg_network_name(resource_group_id: &str) -> String {
+    format!("csfx-rg-{}", resource_group_id)
+}
+
+pub fn rg_bridge_iface_name(resource_group_id: &str) -> String {
+    const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
+    const FNV_PRIME: u32 = 0x01000193;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in resource_group_id.as_bytes() {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    format!("csfxrg{:08x}", hash)
 }
 
 pub struct DockerManager {
@@ -98,8 +116,12 @@ impl DockerManager {
         Ok(())
     }
 
-    pub async fn ensure_stack_network(&self, stack_id: &str) -> Result<String> {
-        let network_name = format!("csfx-stack-{}", stack_id);
+    pub async fn ensure_rg_network(
+        &self,
+        resource_group_id: &str,
+        resource_group_cidr: Option<&str>,
+    ) -> Result<String> {
+        let network_name = rg_network_name(resource_group_id);
 
         let filters = HashMap::from([("name".to_string(), vec![network_name.clone()])]);
         let list_options = ListNetworksOptionsBuilder::default()
@@ -119,9 +141,29 @@ impl DockerManager {
             return Ok(network.id.unwrap_or(network_name));
         }
 
+        let ipam = resource_group_cidr.map(|cidr| Ipam {
+            driver: Some("default".to_string()),
+            config: Some(vec![IpamConfig {
+                subnet: Some(cidr.to_string()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        });
+
+        let iface_name = rg_bridge_iface_name(resource_group_id);
+
         let config = NetworkCreateRequest {
             name: network_name.clone(),
             driver: Some("bridge".to_string()),
+            ipam,
+            options: Some(HashMap::from([(
+                "com.docker.network.bridge.name".to_string(),
+                iface_name.clone(),
+            )])),
+            labels: Some(HashMap::from([(
+                "csfx.resource_group_id".to_string(),
+                resource_group_id.to_string(),
+            )])),
             ..Default::default()
         };
 
@@ -129,11 +171,36 @@ impl DockerManager {
             .docker
             .create_network(config)
             .await
-            .context("Failed to create stack network")?;
+            .context("Failed to create resource group network")?;
 
-        info!(stack_id = %stack_id, network = %network_name, "Stack network ready");
+        info!(resource_group_id = %resource_group_id, network = %network_name, iface = %iface_name, "Resource group network ready");
+
+        let other_bridges = self.list_rg_bridge_ifaces(Some(&network_name)).await?;
+        crate::nftables::isolate_bridge(&iface_name, &other_bridges)
+            .await
+            .context("Failed to apply nftables isolation for resource group network")?;
 
         Ok(response.id)
+    }
+
+    pub async fn list_rg_bridge_ifaces(&self, exclude_network_name: Option<&str>) -> Result<Vec<String>> {
+        let filters = HashMap::from([("name".to_string(), vec!["csfx-rg-".to_string()])]);
+        let list_options = ListNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+
+        let networks = self
+            .docker
+            .list_networks(Some(list_options))
+            .await
+            .context("Failed to list resource group networks")?;
+
+        Ok(networks
+            .into_iter()
+            .filter(|n| exclude_network_name != n.name.as_deref())
+            .filter_map(|n| n.name)
+            .filter_map(|name| name.strip_prefix("csfx-rg-").map(rg_bridge_iface_name))
+            .collect())
     }
 
     pub async fn start_container(&self, spec: &WorkloadSpec) -> Result<String> {
@@ -179,9 +246,11 @@ impl DockerManager {
             ..Default::default()
         };
 
-        let networking_config = match &spec.stack_id {
-            Some(stack_id) => {
-                let network_name = self.ensure_stack_network(stack_id).await?;
+        let networking_config = match &spec.resource_group_id {
+            Some(resource_group_id) => {
+                let network_name = self
+                    .ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
+                    .await?;
                 let aliases = spec.service_name.clone().map(|name| vec![name]);
                 Some(NetworkingConfig {
                     endpoints_config: Some(HashMap::from([(

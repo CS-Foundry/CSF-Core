@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use entity::entities::{agent_metrics, agents, volumes, workloads};
+use entity::entities::{agent_metrics, agents, resource_groups, volumes, workloads};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -336,6 +336,13 @@ pub async fn get_agent_metrics_latest(
     Ok(Json(metric))
 }
 
+#[derive(Debug, Serialize)]
+pub struct AssignedWorkloadResponse {
+    #[serde(flatten)]
+    pub workload: workloads::Model,
+    pub resource_group_cidr: Option<String>,
+}
+
 pub async fn get_self_workloads(
     agent: AgentApiKey,
     State(state): State<AppState>,
@@ -349,7 +356,27 @@ pub async fn get_self_workloads(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(rows))
+    let mut response = Vec::with_capacity(rows.len());
+    for workload in rows {
+        let resource_group_cidr = match workload.resource_group_id {
+            Some(rg_id) => resource_groups::Entity::find_by_id(rg_id)
+                .one(&state.db_conn)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "failed to fetch resource group for workload");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .map(|rg| rg.internal_cidr),
+            None => None,
+        };
+
+        response.push(AssignedWorkloadResponse {
+            workload,
+            resource_group_cidr,
+        });
+    }
+
+    Ok(Json(response))
 }
 
 pub async fn get_self_volumes(

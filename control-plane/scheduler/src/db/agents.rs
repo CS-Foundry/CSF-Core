@@ -76,6 +76,29 @@ pub async fn get_assigned_workload_resources(
     Ok((cpu, mem, disk))
 }
 
+pub async fn get_agents_hosting_resource_group(
+    db: &DatabaseConnection,
+    resource_group_id: Uuid,
+) -> Result<std::collections::HashSet<Uuid>, sea_orm::DbErr> {
+    use entity::entities::workloads;
+
+    let rows = workloads::Entity::find()
+        .filter(workloads::Column::ResourceGroupId.eq(resource_group_id))
+        .filter(workloads::Column::AssignedAgentId.is_not_null())
+        .filter(
+            workloads::Column::Status
+                .eq("scheduled")
+                .or(workloads::Column::Status.eq("running")),
+        )
+        .all(db)
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|w| w.assigned_agent_id)
+        .collect())
+}
+
 pub async fn get_volume_agent(
     db: &DatabaseConnection,
     volume_id: Uuid,

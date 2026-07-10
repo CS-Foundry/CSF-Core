@@ -94,25 +94,38 @@ pub async fn create_resource_group(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let org_id = get_org_id(&state);
 
-    let existing = ResourceGroups::find()
-        .filter(resource_groups::Column::InternalCidr.eq(&req.internal_cidr))
-        .one(&state.db_conn)
+    let requested = parse_cidr(&req.internal_cidr).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("invalid CIDR: {}", req.internal_cidr) })),
+        )
+    })?;
+
+    let existing_groups = ResourceGroups::find()
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .all(&state.db_conn)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "failed to check cidr uniqueness");
+            tracing::error!(error = %e, "failed to check cidr overlap");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "database error" })),
             )
         })?;
 
-    if existing.is_some() {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(
-                json!({ "error": format!("CIDR {} is already in use by another resource group", req.internal_cidr) }),
-            ),
-        ));
+    for group in &existing_groups {
+        let Some(other) = parse_cidr(&group.internal_cidr) else {
+            continue;
+        };
+
+        if requested.overlaps(&other) {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(
+                    json!({ "error": format!("CIDR {} overlaps with existing resource group {} ({})", req.internal_cidr, group.name, group.internal_cidr) }),
+                ),
+            ));
+        }
     }
 
     let now = Utc::now().naive_utc();
@@ -453,6 +466,53 @@ fn generate_wg_key() -> Result<String, ring::error::Unspecified> {
     key_bytes[31] &= 127;
     key_bytes[31] |= 64;
     Ok(B64.encode(key_bytes))
+}
+
+struct Cidr {
+    network: u32,
+    prefix_len: u8,
+}
+
+impl Cidr {
+    fn mask(&self) -> u32 {
+        if self.prefix_len == 0 {
+            0
+        } else {
+            u32::MAX << (32 - self.prefix_len)
+        }
+    }
+
+    fn overlaps(&self, other: &Cidr) -> bool {
+        let shared_prefix = self.prefix_len.min(other.prefix_len);
+        let shared_mask = if shared_prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - shared_prefix)
+        };
+        (self.network & shared_mask) == (other.network & shared_mask)
+    }
+}
+
+fn parse_cidr(cidr: &str) -> Option<Cidr> {
+    let (addr, prefix) = cidr.split_once('/')?;
+    let octets: Vec<u8> = addr.split('.').filter_map(|o| o.parse().ok()).collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let prefix_len: u8 = prefix.parse().ok()?;
+    if prefix_len > 32 {
+        return None;
+    }
+    let network = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]);
+    let cidr = Cidr {
+        network,
+        prefix_len,
+    };
+    let masked = network & cidr.mask();
+    if masked != network {
+        return None;
+    }
+    Some(cidr)
 }
 
 fn first_host_ip(cidr: &str) -> Option<String> {
