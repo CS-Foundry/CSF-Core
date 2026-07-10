@@ -57,7 +57,8 @@ async fn main() -> Result<()> {
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
     let wg_tunnel_ip = std::env::var("CSFX_WG_TUNNEL_IP").ok();
-    let wg_identity = wg_identity::load_or_generate().context("Failed to initialize WireGuard identity")?;
+    let wg_identity =
+        wg_identity::load_or_generate().context("Failed to initialize WireGuard identity")?;
 
     let api_client = client::ApiClient::new(
         gateway_url.clone(),

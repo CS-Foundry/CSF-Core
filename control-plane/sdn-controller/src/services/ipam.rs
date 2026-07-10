@@ -55,7 +55,6 @@ impl IpamService {
             .context("etcd delete failed")?;
         Ok(())
     }
-
 }
 
 fn parse_cidr(cidr: &str) -> Result<(Ipv4Addr, u32)> {

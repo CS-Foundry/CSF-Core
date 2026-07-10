@@ -55,7 +55,12 @@ pub async fn set_route(iface: &str, cidr: &str) -> Result<()> {
         if stderr.contains("File exists") {
             return Ok(());
         }
-        anyhow::bail!("ip route add failed cidr={} iface={} stderr={}", cidr, iface, stderr);
+        anyhow::bail!(
+            "ip route add failed cidr={} iface={} stderr={}",
+            cidr,
+            iface,
+            stderr
+        );
     }
 
     Ok(())

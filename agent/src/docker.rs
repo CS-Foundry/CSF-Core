@@ -204,7 +204,11 @@ impl DockerManager {
         Ok(response.id)
     }
 
-    async fn ensure_rg_wireguard(&self, resource_group_id: &str, resource_group_cidr: &str) -> Result<()> {
+    async fn ensure_rg_wireguard(
+        &self,
+        resource_group_id: &str,
+        resource_group_cidr: &str,
+    ) -> Result<()> {
         let listen_port = rg_wireguard_port(resource_group_id);
 
         let wg_iface = crate::wireguard::ensure_interface(
