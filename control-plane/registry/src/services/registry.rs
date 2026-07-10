@@ -216,6 +216,7 @@ impl AgentRegistry {
         wg_endpoint: Option<String>,
         wg_tunnel_ip: Option<String>,
         agent_version: Option<String>,
+        kvm_capable: bool,
     ) -> Result<(), String> {
         crate::db::agents::update_heartbeat(
             &self.db,
@@ -225,6 +226,7 @@ impl AgentRegistry {
             wg_endpoint,
             wg_tunnel_ip,
             agent_version,
+            kvm_capable,
         )
         .await
         .map_err(|e| format!("Failed to update heartbeat: {}", e))?;

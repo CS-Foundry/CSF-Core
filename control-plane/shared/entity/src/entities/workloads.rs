@@ -25,6 +25,7 @@ pub struct Model {
     pub restart_policy: String,
     pub max_restarts: Option<i32>,
     pub restart_count: i32,
+    pub runtime_class: String,
     pub created_at: DateTime,
     pub updated_at: Option<DateTime>,
 }

@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrai
 use uuid::Uuid;
 
 use crate::models::workload::{
-    CreateWorkloadRequest, RestartPolicy, WorkloadResponse, WorkloadStatus,
+    CreateWorkloadRequest, RestartPolicy, RuntimeClass, WorkloadResponse, WorkloadStatus,
 };
 
 pub async fn create(
@@ -45,6 +45,7 @@ pub async fn create(
         restart_policy: Set(req.restart_policy.as_str().to_string()),
         max_restarts: Set(req.max_restarts),
         restart_count: Set(0),
+        runtime_class: Set(req.runtime_class.as_str().to_string()),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -137,6 +138,7 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         restart_policy: RestartPolicy::from_str(&m.restart_policy),
         max_restarts: m.max_restarts,
         restart_count: m.restart_count,
+        runtime_class: RuntimeClass::from_str(&m.runtime_class),
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

@@ -1,0 +1,16 @@
+[package]
+name = "csfx-guest-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "csfx-guest-init"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "process", "io-util", "net", "sync"] }
+tokio-vsock = "0.7"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

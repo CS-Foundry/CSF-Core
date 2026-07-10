@@ -29,6 +29,7 @@ pub async fn get_online_agents_with_resources(
                 free_cpu_millicores: 0,
                 free_memory_bytes: 0,
                 free_disk_bytes: 0,
+                kvm_capable: agent.kvm_capable,
             });
             continue;
         };
@@ -47,6 +48,7 @@ pub async fn get_online_agents_with_resources(
             free_cpu_millicores: total_cpu_millicores - used_cpu,
             free_memory_bytes: total_memory_bytes - used_mem,
             free_disk_bytes: total_disk_bytes - used_disk,
+            kvm_capable: agent.kvm_capable,
         });
     }
 

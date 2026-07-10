@@ -24,6 +24,7 @@ pub struct Model {
     pub wg_public_key: Option<String>,
     pub wg_endpoint: Option<String>,
     pub wg_tunnel_ip: Option<String>,
+    pub kvm_capable: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

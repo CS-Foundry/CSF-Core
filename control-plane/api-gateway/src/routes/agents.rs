@@ -169,6 +169,7 @@ pub async fn register_agent(
             wg_public_key: ActiveValue::Set(None),
             wg_endpoint: ActiveValue::Set(None),
             wg_tunnel_ip: ActiveValue::Set(None),
+            kvm_capable: ActiveValue::Set(false),
         };
 
         new_agent.insert(&state.db_conn).await.map_err(|e| {

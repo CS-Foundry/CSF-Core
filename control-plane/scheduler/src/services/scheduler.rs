@@ -76,6 +76,7 @@ impl SchedulerService {
                     scheduled_at: Utc::now().to_rfc3339(),
                     stack_id: req.stack_id,
                     service_name: req.service_name.clone(),
+                    runtime_class: req.runtime_class.as_str().to_string(),
                 };
 
                 put_placement(&self.etcd, &record).await?;
@@ -174,7 +175,7 @@ impl SchedulerService {
         let total_memory: i64 = services.iter().map(|s| s.memory_bytes).sum();
         let total_disk: i64 = services.iter().map(|s| s.disk_bytes).sum();
 
-        let agent_id = self.first_fit_resources(total_cpu, total_memory, total_disk, &agents);
+        let agent_id = self.first_fit_resources(total_cpu, total_memory, total_disk, false, &agents);
 
         let mut responses = Vec::with_capacity(services.len());
         for service in services {
@@ -192,6 +193,7 @@ impl SchedulerService {
                 service_name: Some(service.service_name.clone()),
                 restart_policy: crate::models::workload::RestartPolicy::Always,
                 max_restarts: None,
+                runtime_class: crate::models::workload::RuntimeClass::Docker,
             };
 
             let workload = crate::db::workloads::create(&self.db, &req)
@@ -214,6 +216,7 @@ impl SchedulerService {
                         scheduled_at: Utc::now().to_rfc3339(),
                         stack_id: Some(stack_id),
                         service_name: Some(service.service_name.clone()),
+                        runtime_class: req.runtime_class.as_str().to_string(),
                     };
                     put_placement(&self.etcd, &record).await?;
 
@@ -297,7 +300,13 @@ impl SchedulerService {
     }
 
     fn first_fit(&self, req: &CreateWorkloadRequest, agents: &[AgentResources]) -> Option<Uuid> {
-        self.first_fit_resources(req.cpu_millicores, req.memory_bytes, req.disk_bytes, agents)
+        self.first_fit_resources(
+            req.cpu_millicores,
+            req.memory_bytes,
+            req.disk_bytes,
+            req.runtime_class.requires_kvm(),
+            agents,
+        )
     }
 
     fn first_fit_resources(
@@ -305,6 +314,7 @@ impl SchedulerService {
         cpu_millicores: i32,
         memory_bytes: i64,
         disk_bytes: i64,
+        requires_kvm: bool,
         agents: &[AgentResources],
     ) -> Option<Uuid> {
         let mut sorted: Vec<&AgentResources> = agents.iter().collect();
@@ -320,6 +330,7 @@ impl SchedulerService {
                 a.free_cpu_millicores >= cpu_millicores
                     && a.free_memory_bytes >= memory_bytes
                     && a.free_disk_bytes >= disk_bytes
+                    && (!requires_kvm || a.kvm_capable)
             })
             .map(|a| a.agent_id)
     }
@@ -362,10 +373,13 @@ impl SchedulerService {
                 .map_err(|e| format!("Failed to fetch workload: {}", e))?
                 .ok_or_else(|| format!("Workload {} not found", workload_id))?;
 
+            let runtime_class = crate::models::workload::RuntimeClass::from_str(&workload.runtime_class);
+
             let placed = self.first_fit_resources(
                 workload.cpu_millicores,
                 workload.memory_bytes,
                 workload.disk_bytes,
+                runtime_class.requires_kvm(),
                 &agents,
             );
 
@@ -385,6 +399,7 @@ impl SchedulerService {
                         scheduled_at: Utc::now().to_rfc3339(),
                         stack_id: workload.stack_id,
                         service_name: workload.service_name.clone(),
+                        runtime_class: workload.runtime_class.clone(),
                     };
                     put_placement(&self.etcd, &record).await?;
 

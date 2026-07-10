@@ -80,6 +80,40 @@ fn default_restart_policy() -> RestartPolicy {
     RestartPolicy::Always
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeClass {
+    Docker,
+    Firecracker,
+    Vm,
+}
+
+impl RuntimeClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RuntimeClass::Docker => "docker",
+            RuntimeClass::Firecracker => "firecracker",
+            RuntimeClass::Vm => "vm",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "firecracker" => RuntimeClass::Firecracker,
+            "vm" => RuntimeClass::Vm,
+            _ => RuntimeClass::Docker,
+        }
+    }
+
+    pub fn requires_kvm(&self) -> bool {
+        matches!(self, RuntimeClass::Firecracker | RuntimeClass::Vm)
+    }
+}
+
+fn default_runtime_class() -> RuntimeClass {
+    RuntimeClass::Docker
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkloadRequest {
     pub name: String,
@@ -99,6 +133,8 @@ pub struct CreateWorkloadRequest {
     pub restart_policy: RestartPolicy,
     #[serde(default)]
     pub max_restarts: Option<i32>,
+    #[serde(default = "default_runtime_class")]
+    pub runtime_class: RuntimeClass,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +170,7 @@ pub struct WorkloadResponse {
     pub restart_policy: RestartPolicy,
     pub max_restarts: Option<i32>,
     pub restart_count: i32,
+    pub runtime_class: RuntimeClass,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -144,4 +181,5 @@ pub struct AgentResources {
     pub free_cpu_millicores: i32,
     pub free_memory_bytes: i64,
     pub free_disk_bytes: i64,
+    pub kvm_capable: bool,
 }

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use axum::body::Bytes;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig, Ipam, IpamConfig,
@@ -10,7 +9,7 @@ use bollard::query_parameters::{
     ListNetworksOptionsBuilder, LogsOptionsBuilder, StartContainerOptionsBuilder,
 };
 use bollard::Docker;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -80,12 +79,16 @@ pub fn rg_bridge_iface_name(resource_group_id: &str) -> String {
     format!("csfxrg{:08x}", hash)
 }
 
-pub struct DockerManager {
+pub struct DockerRuntime {
     docker: Docker,
     wg_private_key_b64: String,
 }
 
-impl DockerManager {
+impl DockerRuntime {
+    pub fn into_docker_handle(self) -> Docker {
+        self.docker
+    }
+
     pub async fn ensure_running(wg_private_key_b64: String) -> Result<Self> {
         if !Path::new(DOCKER_SOCKET_PATH).exists() {
             start_docker_unit().await?;
@@ -384,10 +387,7 @@ impl DockerManager {
         })
     }
 
-    pub fn logs(
-        &self,
-        container_id: &str,
-    ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static {
+    fn logs_stream(&self, container_id: &str) -> crate::runtime::LogStream {
         let options = LogsOptionsBuilder::default()
             .stdout(true)
             .stderr(true)
@@ -395,15 +395,15 @@ impl DockerManager {
             .tail("200")
             .build();
 
-        self.docker
-            .logs(container_id, Some(options))
-            .map(|item| match item {
+        Box::pin(self.docker.logs(container_id, Some(options)).map(|item| {
+            match item {
                 Ok(log_output) => Ok(log_output.into_bytes()),
                 Err(e) => Err(std::io::Error::other(e.to_string())),
-            })
+            }
+        }))
     }
 
-    pub async fn exec(&self, container_id: &str) -> Result<StartExecResults> {
+    async fn exec_session(&self, container_id: &str) -> Result<crate::runtime::ExecSession> {
         let create_options = CreateExecOptions {
             attach_stdin: Some(true),
             attach_stdout: Some(true),
@@ -424,10 +424,25 @@ impl DockerManager {
             ..Default::default()
         };
 
-        self.docker
+        let result = self
+            .docker
             .start_exec(&created.id, Some(start_options))
             .await
-            .context("Failed to start exec session")
+            .context("Failed to start exec session")?;
+
+        let StartExecResults::Attached { output, input } = result else {
+            anyhow::bail!("exec session detached unexpectedly");
+        };
+
+        let output = output.map(|item| match item {
+            Ok(log_output) => Ok(log_output.into_bytes()),
+            Err(e) => Err(std::io::Error::other(e.to_string())),
+        });
+
+        Ok(crate::runtime::ExecSession {
+            input: Box::pin(input),
+            output: Box::pin(crate::runtime::StreamAsyncRead::new(output)),
+        })
     }
 
     pub async fn stop_container(&self, container_id: &str) -> Result<()> {
@@ -443,6 +458,33 @@ impl DockerManager {
 
         info!(container_id = %container_id, "Container stopped and removed");
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::runtime::Runtime for DockerRuntime {
+    async fn pull_image(&self, image: &str) -> Result<()> {
+        self.pull_image(image).await
+    }
+
+    async fn start_workload(&self, spec: &WorkloadSpec) -> Result<String> {
+        self.start_container(spec).await
+    }
+
+    async fn inspect_status(&self, workload_handle: &str) -> Result<String> {
+        self.inspect_status(workload_handle).await
+    }
+
+    fn logs(&self, workload_handle: &str) -> crate::runtime::LogStream {
+        self.logs_stream(workload_handle)
+    }
+
+    async fn exec(&self, workload_handle: &str) -> Result<crate::runtime::ExecSession> {
+        self.exec_session(workload_handle).await
+    }
+
+    async fn stop_workload(&self, workload_handle: &str) -> Result<()> {
+        self.stop_container(workload_handle).await
     }
 }
 

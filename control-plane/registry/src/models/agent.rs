@@ -132,6 +132,8 @@ pub struct HeartbeatRequest {
     pub wg_endpoint: Option<String>,
     pub wg_tunnel_ip: Option<String>,
     pub agent_version: Option<String>,
+    #[serde(default)]
+    pub kvm_capable: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

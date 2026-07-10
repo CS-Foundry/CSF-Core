@@ -52,6 +52,7 @@ struct HeartbeatRequest {
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
     agent_version: Option<String>,
+    kvm_capable: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -87,6 +88,7 @@ pub struct AssignedWorkload {
     pub max_restarts: Option<i32>,
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
+    pub runtime_class: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -249,6 +251,7 @@ impl ApiClient {
                 wg_endpoint: self.wg_endpoint.clone(),
                 wg_tunnel_ip: self.wg_tunnel_ip.clone(),
                 agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+                kvm_capable: crate::system::is_kvm_capable(),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {

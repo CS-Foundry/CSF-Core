@@ -1,9 +1,11 @@
 mod client;
 mod config;
 mod docker;
+mod firecracker;
 mod nftables;
 mod pki;
 mod rbd;
+mod runtime;
 mod server;
 mod ssh_keys;
 mod system;
@@ -107,7 +109,7 @@ async fn main() -> Result<()> {
         warn!(error = %e, "Failed to initialize nftables resource group isolation");
     }
 
-    let docker_manager: Arc<Mutex<Option<docker::DockerManager>>> = Arc::new(Mutex::new(None));
+    let docker_manager: Arc<Mutex<Option<Box<dyn runtime::Runtime>>>> = Arc::new(Mutex::new(None));
 
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -221,7 +223,7 @@ async fn run_heartbeat_loop(
     agent_id: uuid::Uuid,
     api_key: &str,
     interval_secs: u64,
-    docker: Arc<Mutex<Option<docker::DockerManager>>>,
+    docker: Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     running_containers: Arc<Mutex<HashMap<String, String>>>,
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
@@ -355,7 +357,7 @@ async fn process_volumes(
 }
 
 async fn reap_stale_containers(
-    docker: &docker::DockerManager,
+    docker: &dyn runtime::Runtime,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
@@ -375,7 +377,7 @@ async fn reap_stale_containers(
     for (workload_id, container_id) in stale {
         info!(workload_id = %workload_id, container_id = %container_id, "Tearing down removed workload");
 
-        if let Err(e) = docker.stop_container(&container_id).await {
+        if let Err(e) = docker.stop_workload(&container_id).await {
             warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to tear down container");
             continue;
         }
@@ -387,7 +389,7 @@ async fn reap_stale_containers(
 }
 
 async fn should_restart_after_crash(
-    docker: &docker::DockerManager,
+    docker: &dyn runtime::Runtime,
     workload: &client::AssignedWorkload,
     container_id: &str,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
@@ -426,7 +428,7 @@ async fn should_restart_after_crash(
 async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
-    docker: &Arc<Mutex<Option<docker::DockerManager>>>,
+    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
@@ -453,10 +455,10 @@ async fn process_workloads(
 
     let mut docker_guard = docker.lock().await;
     if docker_guard.is_none() {
-        match docker::DockerManager::ensure_running(wg_private_key_b64.to_string()).await {
+        match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
             Ok(dm) => {
                 info!("Docker ready");
-                *docker_guard = Some(dm);
+                *docker_guard = Some(Box::new(dm));
             }
             Err(e) => {
                 warn!(error = %e, "Docker unavailable, deferring workloads");
@@ -464,12 +466,12 @@ async fn process_workloads(
             }
         }
     }
-    let docker = docker_guard
-        .as_ref()
+    let docker_runtime: &dyn runtime::Runtime = docker_guard
+        .as_deref()
         .expect("docker manager initialized above");
 
     reap_stale_containers(
-        docker,
+        docker_runtime,
         running_containers,
         workload_phases,
         restart_counts,
@@ -477,89 +479,137 @@ async fn process_workloads(
     )
     .await;
 
+    let mut firecracker_runtime: Option<firecracker::runtime::FirecrackerRuntime> = None;
+
     for workload in workloads {
-        let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();
-
-        if let Some(container_id) = existing_container_id {
-            if !should_restart_after_crash(docker, &workload, &container_id, restart_counts).await {
+        let selected_runtime: &dyn runtime::Runtime = match workload.runtime_class.as_str() {
+            "docker" => docker_runtime,
+            "firecracker" => {
+                if firecracker_runtime.is_none() {
+                    match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string())
+                        .await
+                    {
+                        Ok(dm) => {
+                            firecracker_runtime =
+                                Some(firecracker::runtime::FirecrackerRuntime::new(
+                                    dm.into_docker_handle(),
+                                ));
+                        }
+                        Err(e) => {
+                            warn!(workload_id = %workload.id, error = %e, "Docker unavailable for rootfs build, deferring firecracker workload");
+                            continue;
+                        }
+                    }
+                }
+                firecracker_runtime.as_ref().expect("initialized above")
+            }
+            other => {
+                warn!(workload_id = %workload.id, runtime_class = %other, "Unsupported runtime class, skipping");
                 continue;
             }
-            running_containers.lock().await.remove(&workload.id);
-        }
-
-        info!(workload_id = %workload.id, image = %workload.image, "Starting workload");
-
-        workload_phases
-            .lock()
-            .await
-            .insert(workload.id.clone(), "pulling".to_string());
-
-        if let Err(e) = docker.pull_image(&workload.image).await {
-            warn!(workload_id = %workload.id, error = %e, "Failed to pull image");
-            workload_phases.lock().await.remove(&workload.id);
-            continue;
-        }
-
-        if let Some(ref mounts) = workload.volume_mounts {
-            let locked = mounted_volumes.lock().await;
-            let all_ready = mounts.iter().all(|m| locked.contains_key(&m.volume_id));
-            drop(locked);
-            if !all_ready {
-                info!(workload_id = %workload.id, "Waiting for volumes to be mounted, deferring workload");
-                continue;
-            }
-        }
-
-        workload_phases
-            .lock()
-            .await
-            .insert(workload.id.clone(), "creating".to_string());
-
-        let spec = docker::WorkloadSpec {
-            workload_id: workload.id.clone(),
-            image: workload.image.clone(),
-            cpu_millicores: workload.cpu_millicores,
-            memory_bytes: workload.memory_bytes,
-            env_vars: workload.env_vars,
-            ports: workload.ports,
-            volume_mounts: workload.volume_mounts.map(|mounts| {
-                mounts
-                    .into_iter()
-                    .map(|m| docker::VolumeMount {
-                        volume_id: m.volume_id,
-                        mount_path: m.mount_path,
-                    })
-                    .collect()
-            }),
-            service_name: workload.service_name,
-            resource_group_id: workload.resource_group_id,
-            resource_group_cidr: workload.resource_group_cidr,
         };
 
-        match docker.start_container(&spec).await {
-            Ok(container_id) => {
-                workload_phases
-                    .lock()
-                    .await
-                    .insert(workload.id.clone(), "starting".to_string());
-                running_containers
-                    .lock()
-                    .await
-                    .insert(workload.id.clone(), container_id.clone());
-                info!(
-                    workload_id = %workload.id,
-                    container_id = %container_id,
-                    "Workload started"
-                );
-            }
-            Err(e) => {
-                workload_phases.lock().await.remove(&workload.id);
-                warn!(workload_id = %workload.id, error = %e, "Failed to start container");
-            }
-        }
+        start_or_restart_workload(
+            selected_runtime,
+            workload,
+            running_containers,
+            workload_phases,
+            mounted_volumes,
+            restart_counts,
+        )
+        .await;
     }
 
     resource_group_ids
+}
+
+async fn start_or_restart_workload(
+    runtime: &dyn runtime::Runtime,
+    workload: client::AssignedWorkload,
+    running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: &Arc<Mutex<HashMap<String, String>>>,
+    mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
+    restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+) {
+    let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();
+
+    if let Some(container_id) = existing_container_id {
+        if !should_restart_after_crash(runtime, &workload, &container_id, restart_counts).await {
+            return;
+        }
+        running_containers.lock().await.remove(&workload.id);
+    }
+
+    info!(workload_id = %workload.id, image = %workload.image, "Starting workload");
+
+    workload_phases
+        .lock()
+        .await
+        .insert(workload.id.clone(), "pulling".to_string());
+
+    if let Err(e) = runtime.pull_image(&workload.image).await {
+        warn!(workload_id = %workload.id, error = %e, "Failed to pull image");
+        workload_phases.lock().await.remove(&workload.id);
+        return;
+    }
+
+    if let Some(ref mounts) = workload.volume_mounts {
+        let locked = mounted_volumes.lock().await;
+        let all_ready = mounts.iter().all(|m| locked.contains_key(&m.volume_id));
+        drop(locked);
+        if !all_ready {
+            info!(workload_id = %workload.id, "Waiting for volumes to be mounted, deferring workload");
+            return;
+        }
+    }
+
+    workload_phases
+        .lock()
+        .await
+        .insert(workload.id.clone(), "creating".to_string());
+
+    let spec = docker::WorkloadSpec {
+        workload_id: workload.id.clone(),
+        image: workload.image.clone(),
+        cpu_millicores: workload.cpu_millicores,
+        memory_bytes: workload.memory_bytes,
+        env_vars: workload.env_vars,
+        ports: workload.ports,
+        volume_mounts: workload.volume_mounts.map(|mounts| {
+            mounts
+                .into_iter()
+                .map(|m| docker::VolumeMount {
+                    volume_id: m.volume_id,
+                    mount_path: m.mount_path,
+                })
+                .collect()
+        }),
+        service_name: workload.service_name,
+        resource_group_id: workload.resource_group_id,
+        resource_group_cidr: workload.resource_group_cidr,
+    };
+
+    match runtime.start_workload(&spec).await {
+        Ok(container_id) => {
+            workload_phases
+                .lock()
+                .await
+                .insert(workload.id.clone(), "starting".to_string());
+            running_containers
+                .lock()
+                .await
+                .insert(workload.id.clone(), container_id.clone());
+            info!(
+                workload_id = %workload.id,
+                container_id = %container_id,
+                "Workload started"
+            );
+        }
+        Err(e) => {
+            workload_phases.lock().await.remove(&workload.id);
+            warn!(workload_id = %workload.id, error = %e, "Failed to start workload");
+        }
+    }
 }
 
 async fn sync_wireguard_peers(
@@ -603,7 +653,7 @@ async fn sync_wireguard_peers(
 }
 
 async fn build_container_statuses(
-    docker: &Arc<Mutex<Option<docker::DockerManager>>>,
+    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
 ) -> Vec<client::ContainerStatus> {
