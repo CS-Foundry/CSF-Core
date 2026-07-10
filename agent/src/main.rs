@@ -543,8 +543,7 @@ async fn start_or_restart_workload(
 
     if let Some(container_id) = existing_container_id {
         let should_restart = restart_requested
-            || should_restart_after_crash(runtime, &workload, &container_id, restart_counts)
-                .await;
+            || should_restart_after_crash(runtime, &workload, &container_id, restart_counts).await;
         if !should_restart {
             return false;
         }
@@ -682,8 +681,7 @@ async fn cleanup_stale_resource_groups(
         }
     };
 
-    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await
-    {
+    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
         Ok(d) => d,
         Err(e) => {
             warn!(error = %e, "Docker unavailable, deferring resource group cleanup");

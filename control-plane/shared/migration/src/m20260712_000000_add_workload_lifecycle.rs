@@ -23,19 +23,29 @@ impl MigrationTrait for Migration {
                             .default(false),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("cpu_usage_percent")).double().null(),
+                        ColumnDef::new(Alias::new("cpu_usage_percent"))
+                            .double()
+                            .null(),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("memory_usage_bytes")).big_integer().null(),
+                        ColumnDef::new(Alias::new("memory_usage_bytes"))
+                            .big_integer()
+                            .null(),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("network_rx_bytes")).big_integer().null(),
+                        ColumnDef::new(Alias::new("network_rx_bytes"))
+                            .big_integer()
+                            .null(),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("network_tx_bytes")).big_integer().null(),
+                        ColumnDef::new(Alias::new("network_tx_bytes"))
+                            .big_integer()
+                            .null(),
                     )
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("stats_updated_at")).timestamp().null(),
+                        ColumnDef::new(Alias::new("stats_updated_at"))
+                            .timestamp()
+                            .null(),
                     )
                     .to_owned(),
             )

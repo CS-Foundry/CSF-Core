@@ -505,7 +505,10 @@ impl DockerRuntime {
         Ok(())
     }
 
-    pub async fn collect_stats(&self, container_id: &str) -> Result<crate::runtime::ContainerStats> {
+    pub async fn collect_stats(
+        &self,
+        container_id: &str,
+    ) -> Result<crate::runtime::ContainerStats> {
         let options = StatsOptionsBuilder::default().stream(false).build();
         let mut stream = self.docker.stats(container_id, Some(options)).take(1);
 
