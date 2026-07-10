@@ -383,6 +383,28 @@ pub struct ResourceGroupPeer {
     pub wg_tunnel_ip: String,
 }
 
+pub async fn list_active_resource_group_ids(
+    _agent: crate::auth::agent::AgentApiKey,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let ids: Vec<Uuid> = ResourceGroups::find()
+        .filter(resource_groups::Column::Status.eq("active"))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list active resource groups");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .into_iter()
+        .map(|rg| rg.id)
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!(ids))))
+}
+
 pub async fn list_resource_group_peers(
     _agent: crate::auth::agent::AgentApiKey,
     State(state): State<AppState>,
@@ -624,6 +646,10 @@ pub fn resource_groups_routes() -> Router<AppState> {
         .route(
             "/resource-groups",
             get(list_resource_groups).post(create_resource_group),
+        )
+        .route(
+            "/resource-groups/agent/active-ids",
+            get(list_active_resource_group_ids),
         )
         .route(
             "/resource-groups/{id}",

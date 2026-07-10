@@ -55,6 +55,45 @@ async fn add_drop_rule(from_bridge: &str, to_bridge: &str) -> Result<()> {
     .await
 }
 
+pub async fn remove_bridge_rules(bridge_name: &str) -> Result<()> {
+    let output = Command::new("nft")
+        .args(["-a", "list", "chain", "inet", TABLE_NAME, CHAIN_NAME])
+        .output()
+        .await
+        .context("failed to list nftables rules")?;
+
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let mut handles = Vec::new();
+
+    for line in listing.lines() {
+        if !line.contains(bridge_name) {
+            continue;
+        }
+        if let Some(handle) = line
+            .rsplit("handle ")
+            .next()
+            .and_then(|h| h.trim().parse::<u32>().ok())
+        {
+            handles.push(handle);
+        }
+    }
+
+    for handle in handles {
+        run_nft(&[
+            "delete",
+            "rule",
+            "inet",
+            TABLE_NAME,
+            CHAIN_NAME,
+            "handle",
+            &handle.to_string(),
+        ])
+        .await?;
+    }
+
+    Ok(())
+}
+
 async fn run_nft(args: &[&str]) -> Result<()> {
     let output = Command::new("nft")
         .args(args)

@@ -85,8 +85,8 @@ pub struct DockerRuntime {
 }
 
 impl DockerRuntime {
-    pub fn into_docker_handle(self) -> Docker {
-        self.docker
+    pub fn docker_handle(&self) -> &Docker {
+        &self.docker
     }
 
     pub async fn ensure_running(wg_private_key_b64: String) -> Result<Self> {
@@ -250,6 +250,48 @@ impl DockerRuntime {
             .filter_map(|n| n.name)
             .filter_map(|name| name.strip_prefix("csfx-rg-").map(rg_bridge_iface_name))
             .collect())
+    }
+
+    pub async fn list_rg_ids(&self) -> Result<Vec<String>> {
+        let filters = HashMap::from([("name".to_string(), vec!["csfx-rg-".to_string()])]);
+        let list_options = ListNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+
+        let networks = self
+            .docker
+            .list_networks(Some(list_options))
+            .await
+            .context("Failed to list resource group networks")?;
+
+        Ok(networks
+            .into_iter()
+            .filter_map(|n| n.name)
+            .filter_map(|name| name.strip_prefix("csfx-rg-").map(str::to_string))
+            .collect())
+    }
+
+    pub async fn teardown_rg_network(&self, resource_group_id: &str) -> Result<()> {
+        let network_name = rg_network_name(resource_group_id);
+        let iface_name = rg_bridge_iface_name(resource_group_id);
+
+        self.docker
+            .remove_network(&network_name)
+            .await
+            .context("Failed to remove resource group network")?;
+
+        crate::nftables::remove_bridge_rules(&iface_name)
+            .await
+            .context("Failed to remove nftables rules for resource group")?;
+
+        let wg_iface = crate::wireguard::rg_interface_name(resource_group_id);
+        crate::wireguard::remove_interface(&wg_iface)
+            .await
+            .context("Failed to remove resource group WireGuard interface")?;
+
+        info!(resource_group_id = %resource_group_id, "Resource group network torn down");
+
+        Ok(())
     }
 
     pub async fn start_container(&self, spec: &WorkloadSpec) -> Result<String> {

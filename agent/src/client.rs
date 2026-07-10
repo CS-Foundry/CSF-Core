@@ -303,6 +303,31 @@ impl ApiClient {
             .context("Failed to parse resource group peers response")
     }
 
+    pub async fn fetch_active_resource_group_ids(&self, api_key: &str) -> Result<Vec<String>> {
+        let url = format!("{}/api/resource-groups/agent/active-ids", self.gateway_url);
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to fetch active resource group ids")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to fetch active resource group ids status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        resp.json::<Vec<String>>()
+            .await
+            .context("Failed to parse active resource group ids response")
+    }
+
     pub async fn fetch_assigned_workloads(&self, api_key: &str) -> Result<Vec<AssignedWorkload>> {
         let url = format!("{}/api/agents/self/workloads", self.gateway_url);
 

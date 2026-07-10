@@ -66,6 +66,26 @@ pub async fn set_route(iface: &str, cidr: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn remove_interface(iface: &str) -> Result<()> {
+    let output = Command::new("ip")
+        .args(["link", "delete", "dev", iface])
+        .output()
+        .await
+        .context("failed to execute ip link delete")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("Cannot find device") {
+            return Ok(());
+        }
+        anyhow::bail!("ip link delete failed iface={} stderr={}", iface, stderr);
+    }
+
+    info!(iface = %iface, "WireGuard interface removed");
+
+    Ok(())
+}
+
 pub async fn set_peers(iface: &str, peers: &[Peer]) -> Result<()> {
     for peer in peers {
         let mut args = vec![

@@ -240,6 +240,7 @@ async fn run_heartbeat_loop(
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
                 let resource_group_ids = process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64).await;
                 sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
+                cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
 
                 let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
                 let metrics = system::collect_metrics();
@@ -491,9 +492,7 @@ async fn process_workloads(
                     {
                         Ok(dm) => {
                             firecracker_runtime =
-                                Some(firecracker::runtime::FirecrackerRuntime::new(
-                                    dm.into_docker_handle(),
-                                ));
+                                Some(firecracker::runtime::FirecrackerRuntime::new(dm));
                         }
                         Err(e) => {
                             warn!(workload_id = %workload.id, error = %e, "Docker unavailable for rootfs build, deferring firecracker workload");
@@ -648,6 +647,49 @@ async fn sync_wireguard_peers(
         let iface = wireguard::rg_interface_name(resource_group_id);
         if let Err(e) = wireguard::set_peers(&iface, &wg_peers).await {
             warn!(resource_group_id = %resource_group_id, iface = %iface, error = %e, "Failed to sync WireGuard peers");
+        }
+    }
+}
+
+async fn cleanup_stale_resource_groups(
+    client: &client::ApiClient,
+    api_key: &str,
+    wg_private_key_b64: &str,
+) {
+    let active_ids = match client.fetch_active_resource_group_ids(api_key).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            warn!(error = %e, "Failed to fetch active resource group ids");
+            return;
+        }
+    };
+
+    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await
+    {
+        Ok(d) => d,
+        Err(e) => {
+            warn!(error = %e, "Docker unavailable, deferring resource group cleanup");
+            return;
+        }
+    };
+
+    let local_ids = match docker.list_rg_ids().await {
+        Ok(ids) => ids,
+        Err(e) => {
+            warn!(error = %e, "Failed to list local resource group networks");
+            return;
+        }
+    };
+
+    for local_id in local_ids {
+        if active_ids.iter().any(|id| id == &local_id) {
+            continue;
+        }
+
+        info!(resource_group_id = %local_id, "Tearing down stale resource group network");
+
+        if let Err(e) = docker.teardown_rg_network(&local_id).await {
+            warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale resource group network");
         }
     }
 }

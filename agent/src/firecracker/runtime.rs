@@ -24,13 +24,13 @@ struct VmHandle {
 }
 
 pub struct FirecrackerRuntime {
-    docker: bollard::Docker,
+    docker: crate::docker::DockerRuntime,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
 }
 
 impl FirecrackerRuntime {
-    pub fn new(docker: bollard::Docker) -> Self {
+    pub fn new(docker: crate::docker::DockerRuntime) -> Self {
         Self {
             docker,
             handles: Mutex::new(HashMap::new()),
@@ -49,19 +49,11 @@ impl FirecrackerRuntime {
 #[async_trait::async_trait]
 impl crate::runtime::Runtime for FirecrackerRuntime {
     async fn pull_image(&self, image: &str) -> Result<()> {
-        let options = bollard::query_parameters::CreateImageOptionsBuilder::default()
-            .from_image(image)
-            .build();
-        let mut stream = self.docker.create_image(Some(options), None, None);
-        use futures_util::StreamExt;
-        while let Some(item) = stream.next().await {
-            item.context("Failed to pull image for rootfs build")?;
-        }
-        Ok(())
+        self.docker.pull_image(image).await
     }
 
     async fn start_workload(&self, spec: &WorkloadSpec) -> Result<String> {
-        let rootfs_builder = RootfsBuilder::new(&self.docker);
+        let rootfs_builder = RootfsBuilder::new(self.docker.docker_handle());
         let rootfs_path = rootfs_builder.ensure_rootfs(&spec.image).await?;
 
         let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&spec.workload_id);
@@ -76,12 +68,23 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .to_string_lossy()
             .to_string();
 
+        let bridge_iface = match &spec.resource_group_id {
+            Some(resource_group_id) => {
+                self.docker
+                    .ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
+                    .await?;
+                Some(crate::docker::rg_bridge_iface_name(resource_group_id))
+            }
+            None => None,
+        };
+
         let jailer_pid = spawn_jailer(&spec.workload_id, &chroot_dir, &api_socket).await?;
 
         configure_and_boot_vm(
             &api_socket,
             &rootfs_path,
             &tap_device,
+            bridge_iface.as_deref(),
             vsock_cid,
             spec.cpu_millicores,
             spec.memory_bytes,
@@ -234,11 +237,12 @@ async fn configure_and_boot_vm(
     api_socket: &str,
     rootfs_path: &std::path::Path,
     tap_device: &str,
+    bridge_iface: Option<&str>,
     vsock_cid: u32,
     cpu_millicores: i32,
     memory_bytes: i64,
 ) -> Result<()> {
-    create_tap_device(tap_device).await?;
+    create_tap_device(tap_device, bridge_iface).await?;
 
     let client = FirecrackerApiClient::new(api_socket.to_string());
 
@@ -304,7 +308,7 @@ async fn configure_and_boot_vm(
     Ok(())
 }
 
-async fn create_tap_device(tap_device: &str) -> Result<()> {
+async fn create_tap_device(tap_device: &str, bridge_iface: Option<&str>) -> Result<()> {
     let status = Command::new("ip")
         .args(["tuntap", "add", "dev", tap_device, "mode", "tap"])
         .status()
@@ -313,6 +317,22 @@ async fn create_tap_device(tap_device: &str) -> Result<()> {
 
     if !status.success() {
         anyhow::bail!("failed to create tap device {}", tap_device);
+    }
+
+    if let Some(bridge) = bridge_iface {
+        let status = Command::new("ip")
+            .args(["link", "set", "dev", tap_device, "master", bridge])
+            .status()
+            .await
+            .context("Failed to execute ip link set master")?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "failed to attach tap device {} to bridge {}",
+                tap_device,
+                bridge
+            );
+        }
     }
 
     let status = Command::new("ip")
