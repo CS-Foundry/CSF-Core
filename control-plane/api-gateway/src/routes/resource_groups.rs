@@ -375,6 +375,95 @@ pub async fn list_resource_group_networks(
     Ok((StatusCode::OK, Json(json!(nets))))
 }
 
+#[derive(Debug, Serialize)]
+pub struct ResourceGroupPeer {
+    pub agent_id: Uuid,
+    pub wg_public_key: String,
+    pub wg_endpoint: String,
+    pub wg_tunnel_ip: String,
+}
+
+pub async fn list_resource_group_peers(
+    _agent: crate::auth::agent::AgentApiKey,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    ResourceGroups::find_by_id(id)
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to find resource group");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "resource group not found" })),
+            )
+        })?;
+
+    let hosting_agents = Workloads::find()
+        .filter(workloads::Column::ResourceGroupId.eq(id))
+        .filter(workloads::Column::AssignedAgentId.is_not_null())
+        .filter(
+            workloads::Column::Status
+                .eq("scheduled")
+                .or(workloads::Column::Status.eq("running")),
+        )
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list resource group workloads");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let mut agent_ids: Vec<Uuid> = hosting_agents
+        .into_iter()
+        .filter_map(|w| w.assigned_agent_id)
+        .collect();
+    agent_ids.sort_unstable();
+    agent_ids.dedup();
+
+    if agent_ids.is_empty() {
+        return Ok((StatusCode::OK, Json(json!(Vec::<ResourceGroupPeer>::new()))));
+    }
+
+    let agent_rows = Agents::find()
+        .filter(agents::Column::Id.is_in(agent_ids))
+        .filter(agents::Column::WgPublicKey.is_not_null())
+        .filter(agents::Column::WgEndpoint.is_not_null())
+        .filter(agents::Column::WgTunnelIp.is_not_null())
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to fetch peer agents");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let peers: Vec<ResourceGroupPeer> = agent_rows
+        .into_iter()
+        .filter_map(|a| {
+            Some(ResourceGroupPeer {
+                agent_id: a.id,
+                wg_public_key: a.wg_public_key?,
+                wg_endpoint: a.wg_endpoint?,
+                wg_tunnel_ip: a.wg_tunnel_ip?,
+            })
+        })
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!(peers))))
+}
+
 pub async fn get_vpn_config(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
     State(state): State<AppState>,
@@ -553,4 +642,8 @@ pub fn resource_groups_routes() -> Router<AppState> {
             get(list_resource_group_networks),
         )
         .route("/resource-groups/{id}/vpn-config", get(get_vpn_config))
+        .route(
+            "/resource-groups/{id}/peers",
+            get(list_resource_group_peers),
+        )
 }

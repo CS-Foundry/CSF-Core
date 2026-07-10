@@ -8,6 +8,8 @@ mod server;
 mod ssh_keys;
 mod system;
 mod update_watch;
+mod wg_identity;
+mod wireguard;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -55,11 +57,11 @@ async fn main() -> Result<()> {
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
     let wg_tunnel_ip = std::env::var("CSFX_WG_TUNNEL_IP").ok();
-    let (_wg_private_key, wg_public_key) = client::generate_wg_keypair();
+    let wg_identity = wg_identity::load_or_generate().context("Failed to initialize WireGuard identity")?;
 
     let api_client = client::ApiClient::new(
         gateway_url.clone(),
-        wg_public_key,
+        wg_identity.public_key_b64.clone(),
         wg_endpoint,
         wg_tunnel_ip,
     )
@@ -143,6 +145,7 @@ async fn main() -> Result<()> {
         workload_phases,
         mounted_volumes,
         restart_counts,
+        &wg_identity.private_key_b64,
     )
     .await;
 
@@ -222,6 +225,7 @@ async fn run_heartbeat_loop(
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
+    wg_private_key_b64: &str,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
     let mut failure_count: u32 = 0;
@@ -231,7 +235,8 @@ async fn run_heartbeat_loop(
         tokio::select! {
             _ = interval.tick() => {
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
-                process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts).await;
+                let resource_group_ids = process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64).await;
+                sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
 
                 let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
                 let metrics = system::collect_metrics();
@@ -425,25 +430,36 @@ async fn process_workloads(
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
-) {
+    wg_private_key_b64: &str,
+) -> Vec<String> {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
         Ok(w) => w,
         Err(e) => {
             warn!(error = %e, "Failed to fetch assigned workloads");
-            return;
+            return Vec::new();
         }
+    };
+
+    let resource_group_ids: Vec<String> = {
+        let mut ids: Vec<String> = workloads
+            .iter()
+            .filter_map(|w| w.resource_group_id.clone())
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     };
 
     let mut docker_guard = docker.lock().await;
     if docker_guard.is_none() {
-        match docker::DockerManager::ensure_running().await {
+        match docker::DockerManager::ensure_running(wg_private_key_b64.to_string()).await {
             Ok(dm) => {
                 info!("Docker ready");
                 *docker_guard = Some(dm);
             }
             Err(e) => {
                 warn!(error = %e, "Docker unavailable, deferring workloads");
-                return;
+                return resource_group_ids;
             }
         }
     }
@@ -539,6 +555,48 @@ async fn process_workloads(
                 workload_phases.lock().await.remove(&workload.id);
                 warn!(workload_id = %workload.id, error = %e, "Failed to start container");
             }
+        }
+    }
+
+    resource_group_ids
+}
+
+async fn sync_wireguard_peers(
+    client: &client::ApiClient,
+    api_key: &str,
+    agent_id: uuid::Uuid,
+    resource_group_ids: &[String],
+) {
+    for resource_group_id in resource_group_ids {
+        let peers = match client
+            .fetch_resource_group_peers(api_key, resource_group_id)
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(resource_group_id = %resource_group_id, error = %e, "Failed to fetch resource group peers");
+                continue;
+            }
+        };
+
+        let agent_id_str = agent_id.to_string();
+        let wg_peers: Vec<wireguard::Peer> = peers
+            .into_iter()
+            .filter(|p| p.agent_id != agent_id_str)
+            .map(|p| wireguard::Peer {
+                public_key: p.wg_public_key,
+                endpoint: Some(p.wg_endpoint),
+                allowed_ips: format!("{}/32", p.wg_tunnel_ip),
+            })
+            .collect();
+
+        if wg_peers.is_empty() {
+            continue;
+        }
+
+        let iface = wireguard::rg_interface_name(resource_group_id);
+        if let Err(e) = wireguard::set_peers(&iface, &wg_peers).await {
+            warn!(resource_group_id = %resource_group_id, iface = %iface, error = %e, "Failed to sync WireGuard peers");
         }
     }
 }

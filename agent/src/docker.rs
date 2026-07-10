@@ -54,6 +54,19 @@ pub fn rg_network_name(resource_group_id: &str) -> String {
     format!("csfx-rg-{}", resource_group_id)
 }
 
+pub fn rg_wireguard_port(resource_group_id: &str) -> u16 {
+    const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
+    const FNV_PRIME: u32 = 0x01000193;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in resource_group_id.as_bytes() {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    49152u16 + (hash % (65535 - 49152)) as u16
+}
+
 pub fn rg_bridge_iface_name(resource_group_id: &str) -> String {
     const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
     const FNV_PRIME: u32 = 0x01000193;
@@ -69,10 +82,11 @@ pub fn rg_bridge_iface_name(resource_group_id: &str) -> String {
 
 pub struct DockerManager {
     docker: Docker,
+    wg_private_key_b64: String,
 }
 
 impl DockerManager {
-    pub async fn ensure_running() -> Result<Self> {
+    pub async fn ensure_running(wg_private_key_b64: String) -> Result<Self> {
         if !Path::new(DOCKER_SOCKET_PATH).exists() {
             start_docker_unit().await?;
             wait_for_socket().await?;
@@ -80,7 +94,10 @@ impl DockerManager {
 
         let docker =
             Docker::connect_with_unix_defaults().context("Failed to connect to Docker socket")?;
-        Ok(Self { docker })
+        Ok(Self {
+            docker,
+            wg_private_key_b64,
+        })
     }
 
     pub async fn pull_image(&self, image: &str) -> Result<()> {
@@ -180,7 +197,29 @@ impl DockerManager {
             .await
             .context("Failed to apply nftables isolation for resource group network")?;
 
+        if let Some(cidr) = resource_group_cidr {
+            self.ensure_rg_wireguard(resource_group_id, cidr).await?;
+        }
+
         Ok(response.id)
+    }
+
+    async fn ensure_rg_wireguard(&self, resource_group_id: &str, resource_group_cidr: &str) -> Result<()> {
+        let listen_port = rg_wireguard_port(resource_group_id);
+
+        let wg_iface = crate::wireguard::ensure_interface(
+            resource_group_id,
+            &self.wg_private_key_b64,
+            listen_port,
+        )
+        .await
+        .context("Failed to bring up resource group WireGuard interface")?;
+
+        crate::wireguard::set_route(&wg_iface, resource_group_cidr)
+            .await
+            .context("Failed to route resource group CIDR over WireGuard interface")?;
+
+        Ok(())
     }
 
     pub async fn list_rg_bridge_ifaces(

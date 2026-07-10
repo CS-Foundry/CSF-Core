@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use reqwest::Client;
-use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -91,6 +89,14 @@ pub struct AssignedWorkload {
     pub resource_group_cidr: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct ResourceGroupPeer {
+    pub agent_id: String,
+    pub wg_public_key: String,
+    pub wg_endpoint: String,
+    pub wg_tunnel_ip: String,
+}
+
 pub struct ApiClient {
     client: Client,
     gateway_url: String,
@@ -98,19 +104,6 @@ pub struct ApiClient {
     wg_public_key: String,
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
-}
-
-pub fn generate_wg_keypair() -> (String, String) {
-    let rng = SystemRandom::new();
-    let mut private_bytes = [0u8; 32];
-    rng.fill(&mut private_bytes)
-        .expect("failed to generate WireGuard key");
-    private_bytes[0] &= 248;
-    private_bytes[31] &= 127;
-    private_bytes[31] |= 64;
-    let secret = x25519_dalek::StaticSecret::from(private_bytes);
-    let public = x25519_dalek::PublicKey::from(&secret);
-    (B64.encode(private_bytes), B64.encode(public.to_bytes()))
 }
 
 impl ApiClient {
@@ -273,6 +266,38 @@ impl ApiClient {
         resp.json::<HeartbeatResponse>()
             .await
             .context("Failed to parse heartbeat response")
+    }
+
+    pub async fn fetch_resource_group_peers(
+        &self,
+        api_key: &str,
+        resource_group_id: &str,
+    ) -> Result<Vec<ResourceGroupPeer>> {
+        let url = format!(
+            "{}/api/resource-groups/{}/peers",
+            self.gateway_url, resource_group_id
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to fetch resource group peers")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to fetch resource group peers status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        resp.json::<Vec<ResourceGroupPeer>>()
+            .await
+            .context("Failed to parse resource group peers response")
     }
 
     pub async fn fetch_assigned_workloads(&self, api_key: &str) -> Result<Vec<AssignedWorkload>> {
