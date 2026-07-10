@@ -56,6 +56,12 @@ export interface Workload {
     restart_policy: string;
     max_restarts: number | null;
     restart_count: number;
+    desired_state: string;
+    cpu_usage_percent: number | null;
+    memory_usage_bytes: number | null;
+    network_rx_bytes: number | null;
+    network_tx_bytes: number | null;
+    stats_updated_at: string | null;
     created_at: string;
     updated_at: string | null;
 }
@@ -187,6 +193,24 @@ export async function deleteWorkload(token: string, id: string): Promise<void> {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to delete workload: ${res.status}`);
+}
+
+export async function stopWorkload(token: string, id: string): Promise<Workload> {
+    const res = await fetch(`${API_BASE}/workloads/${id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to stop workload: ${res.status}`);
+    return res.json();
+}
+
+export async function restartWorkload(token: string, id: string): Promise<Workload> {
+    const res = await fetch(`${API_BASE}/workloads/${id}/restart`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to restart workload: ${res.status}`);
+    return res.json();
 }
 
 export async function streamWorkloadLogs(

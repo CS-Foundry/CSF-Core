@@ -4,7 +4,8 @@ use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrai
 use uuid::Uuid;
 
 use crate::models::workload::{
-    CreateWorkloadRequest, RestartPolicy, RuntimeClass, WorkloadResponse, WorkloadStatus,
+    CreateWorkloadRequest, DesiredState, RestartPolicy, RuntimeClass, WorkloadResponse,
+    WorkloadStatus,
 };
 
 pub async fn create(
@@ -46,6 +47,13 @@ pub async fn create(
         max_restarts: Set(req.max_restarts),
         restart_count: Set(0),
         runtime_class: Set(req.runtime_class.as_str().to_string()),
+        desired_state: Set(DesiredState::Running.as_str().to_string()),
+        restart_requested: Set(false),
+        cpu_usage_percent: Set(None),
+        memory_usage_bytes: Set(None),
+        network_rx_bytes: Set(None),
+        network_tx_bytes: Set(None),
+        stats_updated_at: Set(None),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(None),
     };
@@ -105,6 +113,81 @@ pub async fn update_container_status(
     Ok(())
 }
 
+pub async fn set_desired_state(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+    desired_state: DesiredState,
+) -> Result<workloads::Model, sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+    active.desired_state = Set(desired_state.as_str().to_string());
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await
+}
+
+pub async fn request_restart(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+) -> Result<workloads::Model, sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+    active.desired_state = Set(DesiredState::Running.as_str().to_string());
+    active.restart_requested = Set(true);
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await
+}
+
+pub async fn clear_restart_request(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+) -> Result<(), sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+    active.restart_requested = Set(false);
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await?;
+    Ok(())
+}
+
+pub async fn update_stats(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+    cpu_usage_percent: Option<f64>,
+    memory_usage_bytes: Option<i64>,
+    network_rx_bytes: Option<i64>,
+    network_tx_bytes: Option<i64>,
+) -> Result<(), sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+    active.cpu_usage_percent = Set(cpu_usage_percent);
+    active.memory_usage_bytes = Set(memory_usage_bytes);
+    active.network_rx_bytes = Set(network_rx_bytes);
+    active.network_tx_bytes = Set(network_tx_bytes);
+    active.stats_updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await?;
+    Ok(())
+}
+
 pub async fn delete(db: &DatabaseConnection, workload_id: Uuid) -> Result<(), sea_orm::DbErr> {
     let workload = workloads::Entity::find_by_id(workload_id)
         .one(db)
@@ -139,6 +222,12 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         max_restarts: m.max_restarts,
         restart_count: m.restart_count,
         runtime_class: RuntimeClass::from_str(&m.runtime_class),
+        desired_state: DesiredState::from_str(&m.desired_state),
+        cpu_usage_percent: m.cpu_usage_percent,
+        memory_usage_bytes: m.memory_usage_bytes,
+        network_rx_bytes: m.network_rx_bytes,
+        network_tx_bytes: m.network_tx_bytes,
+        stats_updated_at: m.stats_updated_at.map(|dt| dt.and_utc()),
         created_at: m.created_at.and_utc(),
         updated_at: m.updated_at.map(|dt| dt.and_utc()),
     }

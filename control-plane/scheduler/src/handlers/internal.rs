@@ -45,6 +45,68 @@ pub struct BatchStatusRequest {
     pub statuses: Vec<ContainerStatusUpdate>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct WorkloadStatsUpdate {
+    pub workload_id: Uuid,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchStatsRequest {
+    pub stats: Vec<WorkloadStatsUpdate>,
+}
+
+pub async fn update_workload_stats(
+    State(state): State<AppState>,
+    Json(req): Json<BatchStatsRequest>,
+) -> impl IntoResponse {
+    for update in &req.stats {
+        if let Err(e) = crate::db::workloads::update_stats(
+            &state.db,
+            update.workload_id,
+            update.cpu_usage_percent,
+            update.memory_usage_bytes,
+            update.network_rx_bytes,
+            update.network_tx_bytes,
+        )
+        .await
+        {
+            crate::log_warn!(
+                "internal",
+                &format!(
+                    "Failed to update workload stats workload_id={} err={}",
+                    update.workload_id, e
+                )
+            );
+        }
+    }
+
+    StatusCode::NO_CONTENT
+}
+
+pub async fn ack_workload_restart(
+    State(state): State<AppState>,
+    Path(workload_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match crate::db::workloads::clear_restart_request(&state.db, workload_id).await {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(sea_orm::DbErr::RecordNotFound(_)) => StatusCode::NOT_FOUND,
+        Err(e) => {
+            crate::log_warn!(
+                "internal",
+                &format!(
+                    "Failed to ack workload restart workload_id={} err={}",
+                    workload_id, e
+                )
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
 pub async fn update_container_statuses(
     State(state): State<AppState>,
     Json(req): Json<BatchStatusRequest>,

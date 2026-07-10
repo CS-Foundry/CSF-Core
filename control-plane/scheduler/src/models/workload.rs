@@ -114,6 +114,29 @@ fn default_runtime_class() -> RuntimeClass {
     RuntimeClass::Docker
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DesiredState {
+    Running,
+    Stopped,
+}
+
+impl DesiredState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DesiredState::Running => "running",
+            DesiredState::Stopped => "stopped",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "stopped" => DesiredState::Stopped,
+            _ => DesiredState::Running,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkloadRequest {
     pub name: String,
@@ -171,6 +194,12 @@ pub struct WorkloadResponse {
     pub max_restarts: Option<i32>,
     pub restart_count: i32,
     pub runtime_class: RuntimeClass,
+    pub desired_state: DesiredState,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+    pub stats_updated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }

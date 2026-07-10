@@ -62,6 +62,20 @@ pub struct ContainerStatus {
     pub status: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct WorkloadStatsUpdate {
+    pub workload_id: String,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkloadStatsRequest {
+    stats: Vec<WorkloadStatsUpdate>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct HeartbeatResponse {
     pub desired_flake_rev: Option<String>,
@@ -89,6 +103,8 @@ pub struct AssignedWorkload {
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
     pub runtime_class: String,
+    #[serde(default)]
+    pub restart_requested: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -351,6 +367,64 @@ impl ApiClient {
         resp.json::<Vec<AssignedWorkload>>()
             .await
             .context("Failed to parse workloads response")
+    }
+
+    pub async fn push_workload_stats(
+        &self,
+        api_key: &str,
+        stats: Vec<WorkloadStatsUpdate>,
+    ) -> Result<()> {
+        if stats.is_empty() {
+            return Ok(());
+        }
+
+        let url = format!("{}/api/agents/self/workloads/stats", self.gateway_url);
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-API-Key", api_key)
+            .json(&WorkloadStatsRequest { stats })
+            .send()
+            .await
+            .context("Failed to push workload stats")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to push workload stats status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        Ok(())
+    }
+
+    pub async fn ack_workload_restart(&self, api_key: &str, workload_id: &str) -> Result<()> {
+        let url = format!(
+            "{}/api/agents/self/workloads/{}/restart-ack",
+            self.gateway_url, workload_id
+        );
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to ack workload restart")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to ack workload restart status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        Ok(())
     }
 
     pub async fn fetch_bootstrap_token(&self) -> Result<String> {

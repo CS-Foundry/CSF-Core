@@ -90,6 +90,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./control-plane/api-gateway:/app/control-plane/api-gateway
+      - ./control-plane/shared:/app/control-plane/shared
       - cargo_target_api_gateway:/app/target
     command: cargo watch -x "run -p api-gateway"
     healthcheck:
@@ -149,6 +150,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./control-plane/scheduler:/app/control-plane/scheduler
+      - ./control-plane/shared:/app/control-plane/shared
       - cargo_target_scheduler:/app/target
     command: cargo watch -x "run -p scheduler"
 
@@ -172,6 +174,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./control-plane/volume-manager:/app/control-plane/volume-manager
+      - ./control-plane/shared:/app/control-plane/shared
       - cargo_target_volume_manager:/app/target
     command: cargo watch -x "run -p volume-manager"
 
@@ -196,6 +199,7 @@ services:
         condition: service_started
     volumes:
       - ./control-plane/failover-controller:/app/control-plane/failover-controller
+      - ./control-plane/shared:/app/control-plane/shared
       - cargo_target_failover_controller:/app/target
     command: cargo watch -x "run -p failover-controller"
 

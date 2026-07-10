@@ -26,6 +26,13 @@ pub struct Model {
     pub max_restarts: Option<i32>,
     pub restart_count: i32,
     pub runtime_class: String,
+    pub desired_state: String,
+    pub restart_requested: bool,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+    pub stats_updated_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: Option<DateTime>,
 }

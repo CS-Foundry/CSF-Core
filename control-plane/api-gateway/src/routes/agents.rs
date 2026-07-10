@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
@@ -350,6 +350,7 @@ pub async fn get_self_workloads(
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows = workloads::Entity::find()
         .filter(workloads::Column::AssignedAgentId.eq(agent.agent_id))
+        .filter(workloads::Column::DesiredState.ne("stopped"))
         .all(&state.db_conn)
         .await
         .map_err(|e| {
@@ -378,6 +379,53 @@ pub async fn get_self_workloads(
     }
 
     Ok(Json(response))
+}
+
+pub async fn push_self_workload_stats(
+    _agent: AgentApiKey,
+    State(state): State<AppState>,
+    body: String,
+) -> Result<impl IntoResponse, StatusCode> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    match state
+        .service_client
+        .forward_to_scheduler(
+            reqwest::Method::POST,
+            "/internal/workloads/stats",
+            body_json,
+            None,
+        )
+        .await
+    {
+        Ok((status, _)) => Ok(StatusCode::from_u16(status.as_u16())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            .into_response()),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to forward workload stats to scheduler");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+    }
+}
+
+pub async fn ack_self_workload_restart(
+    _agent: AgentApiKey,
+    State(state): State<AppState>,
+    Path(workload_id): Path<Uuid>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let path = format!("/internal/workloads/{}/restart-ack", workload_id);
+    match state
+        .service_client
+        .forward_to_scheduler(reqwest::Method::POST, &path, None, None)
+        .await
+    {
+        Ok((status, _)) => Ok(StatusCode::from_u16(status.as_u16())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            .into_response()),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to forward restart ack to scheduler");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+    }
 }
 
 pub async fn get_self_volumes(
@@ -410,5 +458,13 @@ pub fn agents_unmetered_routes() -> Router<AppState> {
         .route("/agents/heartbeat", post(heartbeat))
         .route("/agents/metrics", post(receive_metrics))
         .route("/agents/self/workloads", get(get_self_workloads))
+        .route(
+            "/agents/self/workloads/{id}/restart-ack",
+            post(ack_self_workload_restart),
+        )
+        .route(
+            "/agents/self/workloads/stats",
+            post(push_self_workload_stats),
+        )
         .route("/agents/self/volumes", get(get_self_volumes))
 }

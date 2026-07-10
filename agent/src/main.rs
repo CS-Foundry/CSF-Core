@@ -243,6 +243,7 @@ async fn run_heartbeat_loop(
                 cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
 
                 let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
+                push_workload_stats(client, api_key, &docker, &running_containers).await;
                 let metrics = system::collect_metrics();
 
                 match client.heartbeat(agent_id, api_key, Some(statuses), Some(metrics)).await {
@@ -483,6 +484,7 @@ async fn process_workloads(
     let mut firecracker_runtime: Option<firecracker::runtime::FirecrackerRuntime> = None;
 
     for workload in workloads {
+        let workload_id = workload.id.clone();
         let selected_runtime: &dyn runtime::Runtime = match workload.runtime_class.as_str() {
             "docker" => docker_runtime,
             "firecracker" => {
@@ -508,7 +510,7 @@ async fn process_workloads(
             }
         };
 
-        start_or_restart_workload(
+        let restart_fulfilled = start_or_restart_workload(
             selected_runtime,
             workload,
             running_containers,
@@ -517,6 +519,12 @@ async fn process_workloads(
             restart_counts,
         )
         .await;
+
+        if restart_fulfilled {
+            if let Err(e) = client.ack_workload_restart(api_key, &workload_id).await {
+                warn!(workload_id = %workload_id, error = %e, "Failed to ack workload restart");
+            }
+        }
     }
 
     resource_group_ids
@@ -529,12 +537,20 @@ async fn start_or_restart_workload(
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
-) {
+) -> bool {
     let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();
+    let restart_requested = workload.restart_requested;
 
     if let Some(container_id) = existing_container_id {
-        if !should_restart_after_crash(runtime, &workload, &container_id, restart_counts).await {
-            return;
+        let should_restart = restart_requested
+            || should_restart_after_crash(runtime, &workload, &container_id, restart_counts)
+                .await;
+        if !should_restart {
+            return false;
+        }
+        if let Err(e) = runtime.stop_workload(&container_id).await {
+            warn!(workload_id = %workload.id, container_id = %container_id, error = %e, "Failed to stop container for restart");
+            return false;
         }
         running_containers.lock().await.remove(&workload.id);
     }
@@ -549,7 +565,7 @@ async fn start_or_restart_workload(
     if let Err(e) = runtime.pull_image(&workload.image).await {
         warn!(workload_id = %workload.id, error = %e, "Failed to pull image");
         workload_phases.lock().await.remove(&workload.id);
-        return;
+        return false;
     }
 
     if let Some(ref mounts) = workload.volume_mounts {
@@ -558,7 +574,7 @@ async fn start_or_restart_workload(
         drop(locked);
         if !all_ready {
             info!(workload_id = %workload.id, "Waiting for volumes to be mounted, deferring workload");
-            return;
+            return false;
         }
     }
 
@@ -603,10 +619,12 @@ async fn start_or_restart_workload(
                 container_id = %container_id,
                 "Workload started"
             );
+            restart_requested
         }
         Err(e) => {
             workload_phases.lock().await.remove(&workload.id);
             warn!(workload_id = %workload.id, error = %e, "Failed to start workload");
+            false
         }
     }
 }
@@ -739,4 +757,42 @@ async fn build_container_statuses(
     }
 
     statuses
+}
+
+async fn push_workload_stats(
+    client: &client::ApiClient,
+    api_key: &str,
+    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
+    running_containers: &Arc<Mutex<HashMap<String, String>>>,
+) {
+    let containers = running_containers.lock().await.clone();
+    if containers.is_empty() {
+        return;
+    }
+
+    let docker_guard = docker.lock().await;
+    let Some(runtime) = docker_guard.as_ref() else {
+        return;
+    };
+
+    let mut stats = Vec::with_capacity(containers.len());
+    for (workload_id, container_id) in containers.iter() {
+        match runtime.stats(container_id).await {
+            Ok(s) => stats.push(client::WorkloadStatsUpdate {
+                workload_id: workload_id.clone(),
+                cpu_usage_percent: s.cpu_usage_percent,
+                memory_usage_bytes: s.memory_usage_bytes,
+                network_rx_bytes: s.network_rx_bytes,
+                network_tx_bytes: s.network_tx_bytes,
+            }),
+            Err(e) => {
+                warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to collect container stats");
+            }
+        }
+    }
+    drop(docker_guard);
+
+    if let Err(e) = client.push_workload_stats(api_key, stats).await {
+        warn!(error = %e, "Failed to push workload stats");
+    }
 }
