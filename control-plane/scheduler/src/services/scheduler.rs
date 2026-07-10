@@ -47,11 +47,20 @@ impl SchedulerService {
 
         let volume_pinned_agent = self.resolve_volume_affinity(&req).await?;
 
-        if let Some(required_agent) = volume_pinned_agent {
+        let placement = if let Some(required_agent) = volume_pinned_agent {
             agents.retain(|a| a.agent_id == required_agent);
-        }
+            self.first_fit(&req, &agents)
+        } else if let Some(resource_group_id) = req.resource_group_id {
+            let preferred = self
+                .preferred_resource_group_agents(resource_group_id, &agents)
+                .await?;
+            self.first_fit(&req, &preferred)
+                .or_else(|| self.first_fit(&req, &agents))
+        } else {
+            self.first_fit(&req, &agents)
+        };
 
-        match self.first_fit(&req, &agents) {
+        match placement {
             Some(agent_id) => {
                 crate::db::workloads::assign(&self.db, workload.id, agent_id)
                     .await
@@ -67,6 +76,7 @@ impl SchedulerService {
                     scheduled_at: Utc::now().to_rfc3339(),
                     stack_id: req.stack_id,
                     service_name: req.service_name.clone(),
+                    runtime_class: req.runtime_class.as_str().to_string(),
                 };
 
                 put_placement(&self.etcd, &record).await?;
@@ -165,7 +175,8 @@ impl SchedulerService {
         let total_memory: i64 = services.iter().map(|s| s.memory_bytes).sum();
         let total_disk: i64 = services.iter().map(|s| s.disk_bytes).sum();
 
-        let agent_id = self.first_fit_resources(total_cpu, total_memory, total_disk, &agents);
+        let agent_id =
+            self.first_fit_resources(total_cpu, total_memory, total_disk, false, &agents);
 
         let mut responses = Vec::with_capacity(services.len());
         for service in services {
@@ -181,6 +192,9 @@ impl SchedulerService {
                 resource_group_id: Some(resource_group_id),
                 stack_id: Some(stack_id),
                 service_name: Some(service.service_name.clone()),
+                restart_policy: crate::models::workload::RestartPolicy::Always,
+                max_restarts: None,
+                runtime_class: crate::models::workload::RuntimeClass::Docker,
             };
 
             let workload = crate::db::workloads::create(&self.db, &req)
@@ -203,6 +217,7 @@ impl SchedulerService {
                         scheduled_at: Utc::now().to_rfc3339(),
                         stack_id: Some(stack_id),
                         service_name: Some(service.service_name.clone()),
+                        runtime_class: req.runtime_class.as_str().to_string(),
                     };
                     put_placement(&self.etcd, &record).await?;
 
@@ -233,6 +248,23 @@ impl SchedulerService {
         );
 
         Ok(responses)
+    }
+
+    async fn preferred_resource_group_agents(
+        &self,
+        resource_group_id: Uuid,
+        agents: &[AgentResources],
+    ) -> Result<Vec<AgentResources>, String> {
+        let hosting_agents =
+            crate::db::agents::get_agents_hosting_resource_group(&self.db, resource_group_id)
+                .await
+                .map_err(|e| format!("Failed to resolve resource group affinity: {}", e))?;
+
+        Ok(agents
+            .iter()
+            .filter(|a| hosting_agents.contains(&a.agent_id))
+            .cloned()
+            .collect())
     }
 
     async fn resolve_volume_affinity(
@@ -269,7 +301,13 @@ impl SchedulerService {
     }
 
     fn first_fit(&self, req: &CreateWorkloadRequest, agents: &[AgentResources]) -> Option<Uuid> {
-        self.first_fit_resources(req.cpu_millicores, req.memory_bytes, req.disk_bytes, agents)
+        self.first_fit_resources(
+            req.cpu_millicores,
+            req.memory_bytes,
+            req.disk_bytes,
+            req.runtime_class.requires_kvm(),
+            agents,
+        )
     }
 
     fn first_fit_resources(
@@ -277,6 +315,7 @@ impl SchedulerService {
         cpu_millicores: i32,
         memory_bytes: i64,
         disk_bytes: i64,
+        requires_kvm: bool,
         agents: &[AgentResources],
     ) -> Option<Uuid> {
         let mut sorted: Vec<&AgentResources> = agents.iter().collect();
@@ -292,6 +331,7 @@ impl SchedulerService {
                 a.free_cpu_millicores >= cpu_millicores
                     && a.free_memory_bytes >= memory_bytes
                     && a.free_disk_bytes >= disk_bytes
+                    && (!requires_kvm || a.kvm_capable)
             })
             .map(|a| a.agent_id)
     }
@@ -302,6 +342,110 @@ impl SchedulerService {
         crate::db::workloads::get_all(&self.db)
             .await
             .map_err(|e| format!("Failed to list workloads: {}", e))
+    }
+
+    pub async fn reschedule_from_agent(
+        &self,
+        dead_agent_id: Uuid,
+        workload_ids: &[Uuid],
+    ) -> Result<Vec<CreateWorkloadResponse>, String> {
+        let mut agents = crate::db::agents::get_online_agents_with_resources(&self.db)
+            .await
+            .map_err(|e| format!("Failed to fetch agent resources: {}", e))?;
+
+        agents.retain(|a| a.agent_id != dead_agent_id);
+
+        for agent in agents.iter_mut() {
+            let (reserved_cpu, reserved_mem, reserved_disk) =
+                crate::db::agents::get_assigned_workload_resources(&self.db, agent.agent_id)
+                    .await
+                    .map_err(|e| format!("Failed to fetch reserved resources: {}", e))?;
+
+            agent.free_cpu_millicores -= reserved_cpu;
+            agent.free_memory_bytes -= reserved_mem;
+            agent.free_disk_bytes -= reserved_disk;
+        }
+
+        let mut responses = Vec::with_capacity(workload_ids.len());
+
+        for &workload_id in workload_ids {
+            let workload = crate::db::workloads::get_by_id(&self.db, workload_id)
+                .await
+                .map_err(|e| format!("Failed to fetch workload: {}", e))?
+                .ok_or_else(|| format!("Workload {} not found", workload_id))?;
+
+            let runtime_class =
+                crate::models::workload::RuntimeClass::from_str(&workload.runtime_class);
+
+            let placed = self.first_fit_resources(
+                workload.cpu_millicores,
+                workload.memory_bytes,
+                workload.disk_bytes,
+                runtime_class.requires_kvm(),
+                &agents,
+            );
+
+            match placed {
+                Some(agent_id) => {
+                    crate::db::workloads::assign(&self.db, workload_id, agent_id)
+                        .await
+                        .map_err(|e| format!("Failed to assign workload: {}", e))?;
+
+                    let record = PlacementRecord {
+                        workload_id,
+                        agent_id,
+                        image: workload.image.clone(),
+                        cpu_millicores: workload.cpu_millicores,
+                        memory_bytes: workload.memory_bytes,
+                        disk_bytes: workload.disk_bytes,
+                        scheduled_at: Utc::now().to_rfc3339(),
+                        stack_id: workload.stack_id,
+                        service_name: workload.service_name.clone(),
+                        runtime_class: workload.runtime_class.clone(),
+                    };
+                    put_placement(&self.etcd, &record).await?;
+
+                    if let Some(agent) = agents.iter_mut().find(|a| a.agent_id == agent_id) {
+                        agent.free_cpu_millicores -= workload.cpu_millicores;
+                        agent.free_memory_bytes -= workload.memory_bytes;
+                        agent.free_disk_bytes -= workload.disk_bytes;
+                    }
+
+                    crate::log_info!(
+                        "scheduler",
+                        &format!(
+                            "Workload rescheduled workload_id={} from_agent_id={} to_agent_id={}",
+                            workload_id, dead_agent_id, agent_id
+                        )
+                    );
+
+                    responses.push(CreateWorkloadResponse {
+                        workload_id,
+                        status: WorkloadStatus::Scheduled,
+                        assigned_agent_id: Some(agent_id),
+                        message: format!("Workload rescheduled to agent {}", agent_id),
+                    });
+                }
+                None => {
+                    crate::log_warn!(
+                        "scheduler",
+                        &format!(
+                            "No suitable agent found for reschedule workload_id={}",
+                            workload_id
+                        )
+                    );
+
+                    responses.push(CreateWorkloadResponse {
+                        workload_id,
+                        status: WorkloadStatus::Pending,
+                        assigned_agent_id: None,
+                        message: "No agent with sufficient resources available".to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(responses)
     }
 
     pub async fn delete_workload(&self, workload_id: Uuid) -> Result<(), String> {

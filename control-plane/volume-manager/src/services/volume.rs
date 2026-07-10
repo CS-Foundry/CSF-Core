@@ -178,4 +178,33 @@ impl VolumeService {
             .await
             .map_err(|e| e.to_string())
     }
+
+    pub async fn force_detach_all(&self, agent_id: Uuid) -> Result<Vec<Uuid>, String> {
+        let attached = db::get_attached_to_agent(&self.db, agent_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut detached_ids = Vec::with_capacity(attached.len());
+
+        for volume in attached {
+            if let Some(ceph) = &self.ceph {
+                if let Some(ref device) = volume.mapped_device {
+                    if let Err(e) = ceph.rbd_manager.unmap_device(device).await {
+                        log_warn!(
+                            "volume_service",
+                            &format!("Ceph RBD unmap failed volume_id={} err={}", volume.id, e)
+                        );
+                    }
+                }
+            }
+
+            db::detach(&self.db, volume.id)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            detached_ids.push(volume.id);
+        }
+
+        Ok(detached_ids)
+    }
 }

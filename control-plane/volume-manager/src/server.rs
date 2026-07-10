@@ -4,7 +4,11 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::{handlers::volumes, metrics, services::volume::VolumeService};
+use crate::{
+    handlers::{internal, volumes},
+    metrics,
+    services::volume::VolumeService,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -41,5 +45,9 @@ pub fn create_router(state: AppState) -> Router {
             axum::routing::post(volumes::create_snapshot),
         )
         .route("/volumes/{id}/snapshots", get(volumes::list_snapshots))
+        .route(
+            "/internal/agents/{id}/detach-all",
+            axum::routing::post(internal::detach_all_for_agent),
+        )
         .with_state(state)
 }

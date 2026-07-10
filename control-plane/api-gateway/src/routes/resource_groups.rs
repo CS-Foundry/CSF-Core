@@ -94,25 +94,38 @@ pub async fn create_resource_group(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let org_id = get_org_id(&state);
 
-    let existing = ResourceGroups::find()
-        .filter(resource_groups::Column::InternalCidr.eq(&req.internal_cidr))
-        .one(&state.db_conn)
+    let requested = parse_cidr(&req.internal_cidr).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("invalid CIDR: {}", req.internal_cidr) })),
+        )
+    })?;
+
+    let existing_groups = ResourceGroups::find()
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .all(&state.db_conn)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "failed to check cidr uniqueness");
+            tracing::error!(error = %e, "failed to check cidr overlap");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "database error" })),
             )
         })?;
 
-    if existing.is_some() {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(
-                json!({ "error": format!("CIDR {} is already in use by another resource group", req.internal_cidr) }),
-            ),
-        ));
+    for group in &existing_groups {
+        let Some(other) = parse_cidr(&group.internal_cidr) else {
+            continue;
+        };
+
+        if requested.overlaps(&other) {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(
+                    json!({ "error": format!("CIDR {} overlaps with existing resource group {} ({})", req.internal_cidr, group.name, group.internal_cidr) }),
+                ),
+            ));
+        }
     }
 
     let now = Utc::now().naive_utc();
@@ -362,6 +375,117 @@ pub async fn list_resource_group_networks(
     Ok((StatusCode::OK, Json(json!(nets))))
 }
 
+#[derive(Debug, Serialize)]
+pub struct ResourceGroupPeer {
+    pub agent_id: Uuid,
+    pub wg_public_key: String,
+    pub wg_endpoint: String,
+    pub wg_tunnel_ip: String,
+}
+
+pub async fn list_active_resource_group_ids(
+    _agent: crate::auth::agent::AgentApiKey,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let ids: Vec<Uuid> = ResourceGroups::find()
+        .filter(resource_groups::Column::Status.eq("active"))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list active resource groups");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .into_iter()
+        .map(|rg| rg.id)
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!(ids))))
+}
+
+pub async fn list_resource_group_peers(
+    _agent: crate::auth::agent::AgentApiKey,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    ResourceGroups::find_by_id(id)
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to find resource group");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "resource group not found" })),
+            )
+        })?;
+
+    let hosting_agents = Workloads::find()
+        .filter(workloads::Column::ResourceGroupId.eq(id))
+        .filter(workloads::Column::AssignedAgentId.is_not_null())
+        .filter(
+            workloads::Column::Status
+                .eq("scheduled")
+                .or(workloads::Column::Status.eq("running")),
+        )
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list resource group workloads");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let mut agent_ids: Vec<Uuid> = hosting_agents
+        .into_iter()
+        .filter_map(|w| w.assigned_agent_id)
+        .collect();
+    agent_ids.sort_unstable();
+    agent_ids.dedup();
+
+    if agent_ids.is_empty() {
+        return Ok((StatusCode::OK, Json(json!(Vec::<ResourceGroupPeer>::new()))));
+    }
+
+    let agent_rows = Agents::find()
+        .filter(agents::Column::Id.is_in(agent_ids))
+        .filter(agents::Column::WgPublicKey.is_not_null())
+        .filter(agents::Column::WgEndpoint.is_not_null())
+        .filter(agents::Column::WgTunnelIp.is_not_null())
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to fetch peer agents");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let peers: Vec<ResourceGroupPeer> = agent_rows
+        .into_iter()
+        .filter_map(|a| {
+            Some(ResourceGroupPeer {
+                agent_id: a.id,
+                wg_public_key: a.wg_public_key?,
+                wg_endpoint: a.wg_endpoint?,
+                wg_tunnel_ip: a.wg_tunnel_ip?,
+            })
+        })
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!(peers))))
+}
+
 pub async fn get_vpn_config(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
     State(state): State<AppState>,
@@ -455,6 +579,53 @@ fn generate_wg_key() -> Result<String, ring::error::Unspecified> {
     Ok(B64.encode(key_bytes))
 }
 
+struct Cidr {
+    network: u32,
+    prefix_len: u8,
+}
+
+impl Cidr {
+    fn mask(&self) -> u32 {
+        if self.prefix_len == 0 {
+            0
+        } else {
+            u32::MAX << (32 - self.prefix_len)
+        }
+    }
+
+    fn overlaps(&self, other: &Cidr) -> bool {
+        let shared_prefix = self.prefix_len.min(other.prefix_len);
+        let shared_mask = if shared_prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - shared_prefix)
+        };
+        (self.network & shared_mask) == (other.network & shared_mask)
+    }
+}
+
+fn parse_cidr(cidr: &str) -> Option<Cidr> {
+    let (addr, prefix) = cidr.split_once('/')?;
+    let octets: Vec<u8> = addr.split('.').filter_map(|o| o.parse().ok()).collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let prefix_len: u8 = prefix.parse().ok()?;
+    if prefix_len > 32 {
+        return None;
+    }
+    let network = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]);
+    let cidr = Cidr {
+        network,
+        prefix_len,
+    };
+    let masked = network & cidr.mask();
+    if masked != network {
+        return None;
+    }
+    Some(cidr)
+}
+
 fn first_host_ip(cidr: &str) -> Option<String> {
     let parts: Vec<&str> = cidr.split('/').collect();
     if parts.len() != 2 {
@@ -477,6 +648,10 @@ pub fn resource_groups_routes() -> Router<AppState> {
             get(list_resource_groups).post(create_resource_group),
         )
         .route(
+            "/resource-groups/agent/active-ids",
+            get(list_active_resource_group_ids),
+        )
+        .route(
             "/resource-groups/{id}",
             get(get_resource_group).delete(delete_resource_group),
         )
@@ -493,4 +668,8 @@ pub fn resource_groups_routes() -> Router<AppState> {
             get(list_resource_group_networks),
         )
         .route("/resource-groups/{id}/vpn-config", get(get_vpn_config))
+        .route(
+            "/resource-groups/{id}/peers",
+            get(list_resource_group_peers),
+        )
 }

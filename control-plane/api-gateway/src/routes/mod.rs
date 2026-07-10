@@ -110,6 +110,8 @@ pub fn create_router() -> Router<AppState> {
         .merge(registry::registry_routes())
         .merge(ssh_keys::ssh_keys_internal_routes());
 
+    let agent_unmetered_router = Router::new().merge(agents::agents_unmetered_routes());
+
     let rate_limited_router = Router::new()
         .merge(agent_proxy::agent_proxy_routes())
         .merge(agents::agents_routes())
@@ -131,6 +133,7 @@ pub fn create_router() -> Router<AppState> {
         .layer(GovernorLayer::new(login_governor_config));
 
     let api_router = Router::new()
+        .merge(agent_unmetered_router)
         .merge(rate_limited_router)
         .merge(login_rate_limited_router)
         .merge(update::routes())

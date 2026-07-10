@@ -7,18 +7,17 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use bollard::exec::StartExecResults;
 use futures_util::{SinkExt, StreamExt};
 use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_ASN1};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-use crate::docker::DockerManager;
 use crate::pki::AgentPki;
+use crate::runtime::Runtime;
 use crate::system::LiveMetricsCollector;
 
 const TICKET_HEADER: &str = "X-Csfx-Proxy-Ticket";
@@ -26,7 +25,7 @@ pub const METRICS_TICKET_SCOPE: &str = "__node_metrics__";
 
 #[derive(Clone)]
 pub struct ServerState {
-    pub docker: Arc<Mutex<Option<DockerManager>>>,
+    pub docker: Arc<Mutex<Option<Box<dyn Runtime>>>>,
     pub running_containers: Arc<Mutex<HashMap<String, String>>>,
     pub agent_id: uuid::Uuid,
 }
@@ -176,7 +175,7 @@ async fn logs_handler(
         ))?;
 
     let docker_guard = state.docker.lock().await;
-    let docker = docker_guard.as_ref().ok_or((
+    let docker: &dyn Runtime = docker_guard.as_deref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "docker unavailable".to_string(),
     ))?;
@@ -216,7 +215,7 @@ async fn exec_handler(
 
 async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id: String) {
     let docker_guard = state.docker.lock().await;
-    let docker = match docker_guard.as_ref() {
+    let docker: &dyn Runtime = match docker_guard.as_deref() {
         Some(d) => d,
         None => {
             warn!("docker unavailable for exec session");
@@ -224,8 +223,8 @@ async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id:
         }
     };
 
-    let exec_result = match docker.exec(&container_id).await {
-        Ok(r) => r,
+    let exec_session = match docker.exec(&container_id).await {
+        Ok(s) => s,
         Err(e) => {
             warn!(container_id = %container_id, error = %e, "failed to start exec session");
             return;
@@ -233,23 +232,22 @@ async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id:
     };
     drop(docker_guard);
 
-    let StartExecResults::Attached {
-        mut output,
-        mut input,
-    } = exec_result
-    else {
-        warn!(container_id = %container_id, "exec session detached unexpectedly");
-        return;
-    };
+    let mut output = exec_session.output;
+    let mut input = exec_session.input;
 
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     let output_task = tokio::spawn(async move {
-        while let Some(item) = output.next().await {
-            match item {
-                Ok(log_output) => {
-                    let bytes = log_output.into_bytes();
-                    if ws_sink.send(Message::Binary(bytes)).await.is_err() {
+        let mut buf = [0u8; 4096];
+        loop {
+            match output.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if ws_sink
+                        .send(Message::Binary(buf[..n].to_vec().into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

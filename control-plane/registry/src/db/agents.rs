@@ -81,6 +81,7 @@ pub async fn create(
         wg_public_key: Set(None),
         wg_endpoint: Set(None),
         wg_tunnel_ip: Set(None),
+        kvm_capable: Set(false),
     };
 
     Ok(model.insert(db).await?)
@@ -102,6 +103,7 @@ pub async fn update_heartbeat(
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
     agent_version: Option<String>,
+    kvm_capable: bool,
 ) -> Result<()> {
     let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
         .one(db)
@@ -124,6 +126,7 @@ pub async fn update_heartbeat(
     if let Some(agent_version) = agent_version {
         agent.agent_version = Set(agent_version);
     }
+    agent.kvm_capable = Set(kvm_capable);
     agent.update(db).await?;
 
     Ok(())

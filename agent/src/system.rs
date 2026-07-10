@@ -105,6 +105,10 @@ fn detect_os() -> (String, String) {
     )
 }
 
+pub fn is_kvm_capable() -> bool {
+    std::path::Path::new("/dev/kvm").exists()
+}
+
 pub fn collect_info() -> SystemInfo {
     let (os_type, os_version) = detect_os();
     SystemInfo {

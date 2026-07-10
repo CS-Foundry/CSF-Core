@@ -1,4 +1,5 @@
 use axum::http::Request;
+use sha2::{Digest, Sha256};
 use tower_governor::key_extractor::{KeyExtractor, PeerIpKeyExtractor};
 use tower_governor::GovernorError;
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use super::jwt::verify_jwt;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum RateLimitKey {
     User(Uuid),
+    AgentApiKey([u8; 32]),
     Ip(std::net::IpAddr),
 }
 
@@ -32,6 +34,10 @@ impl KeyExtractor for JwtOrIpKeyExtractor {
             return Ok(RateLimitKey::User(user_id));
         }
 
+        if let Some(key_hash) = extract_agent_api_key_hash(req) {
+            return Ok(RateLimitKey::AgentApiKey(key_hash));
+        }
+
         self.fallback.extract(req).map(RateLimitKey::Ip)
     }
 }
@@ -42,4 +48,12 @@ fn extract_user_id<T>(req: &Request<T>) -> Option<Uuid> {
     let token = value.strip_prefix("Bearer ")?;
     let claims = verify_jwt(token).ok()?;
     Some(claims.claims.user_id)
+}
+
+fn extract_agent_api_key_hash<T>(req: &Request<T>) -> Option<[u8; 32]> {
+    let header = req.headers().get("X-API-Key")?;
+    let raw_key = header.to_str().ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(raw_key.as_bytes());
+    Some(hasher.finalize().into())
 }

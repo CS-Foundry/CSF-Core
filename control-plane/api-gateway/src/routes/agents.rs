@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use entity::entities::{agent_metrics, agents, volumes, workloads};
+use entity::entities::{agent_metrics, agents, resource_groups, volumes, workloads};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -169,6 +169,7 @@ pub async fn register_agent(
             wg_public_key: ActiveValue::Set(None),
             wg_endpoint: ActiveValue::Set(None),
             wg_tunnel_ip: ActiveValue::Set(None),
+            kvm_capable: ActiveValue::Set(false),
         };
 
         new_agent.insert(&state.db_conn).await.map_err(|e| {
@@ -336,6 +337,13 @@ pub async fn get_agent_metrics_latest(
     Ok(Json(metric))
 }
 
+#[derive(Debug, Serialize)]
+pub struct AssignedWorkloadResponse {
+    #[serde(flatten)]
+    pub workload: workloads::Model,
+    pub resource_group_cidr: Option<String>,
+}
+
 pub async fn get_self_workloads(
     agent: AgentApiKey,
     State(state): State<AppState>,
@@ -349,7 +357,27 @@ pub async fn get_self_workloads(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(rows))
+    let mut response = Vec::with_capacity(rows.len());
+    for workload in rows {
+        let resource_group_cidr = match workload.resource_group_id {
+            Some(rg_id) => resource_groups::Entity::find_by_id(rg_id)
+                .one(&state.db_conn)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "failed to fetch resource group for workload");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .map(|rg| rg.internal_cidr),
+            None => None,
+        };
+
+        response.push(AssignedWorkloadResponse {
+            workload,
+            resource_group_cidr,
+        });
+    }
+
+    Ok(Json(response))
 }
 
 pub async fn get_self_volumes(
@@ -370,16 +398,17 @@ pub async fn get_self_volumes(
 
 pub fn agents_routes() -> Router<AppState> {
     Router::new()
-        // Public endpoints (for agents)
-        .route("/agents/register", post(register_agent))
-        .route("/agents/heartbeat", post(heartbeat))
-        .route("/agents/metrics", post(receive_metrics))
-        // Agent-authenticated endpoints (X-API-Key)
-        .route("/agents/self/workloads", get(get_self_workloads))
-        .route("/agents/self/volumes", get(get_self_volumes))
-        // Protected endpoints (for frontend)
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
         .route("/agents/{id}/metrics", get(get_agent_metrics))
         .route("/agents/{id}/metrics/latest", get(get_agent_metrics_latest))
+}
+
+pub fn agents_unmetered_routes() -> Router<AppState> {
+    Router::new()
+        .route("/agents/register", post(register_agent))
+        .route("/agents/heartbeat", post(heartbeat))
+        .route("/agents/metrics", post(receive_metrics))
+        .route("/agents/self/workloads", get(get_self_workloads))
+        .route("/agents/self/volumes", get(get_self_volumes))
 }

@@ -17,6 +17,8 @@ pub struct PlacementRecord {
     pub stack_id: Option<Uuid>,
     #[serde(default)]
     pub service_name: Option<String>,
+    #[serde(default)]
+    pub runtime_class: String,
 }
 
 pub async fn put_placement(

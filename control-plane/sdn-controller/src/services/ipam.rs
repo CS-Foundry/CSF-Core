@@ -55,45 +55,6 @@ impl IpamService {
             .context("etcd delete failed")?;
         Ok(())
     }
-
-    pub async fn store_peer(
-        &mut self,
-        network_id: Uuid,
-        node_id: &str,
-        overlay_ip: &str,
-        public_key: Option<&str>,
-    ) -> Result<()> {
-        let base_key = format!("/csfx/peers/{}/{}", network_id, node_id);
-        self.etcd
-            .put(
-                format!("{}/overlay_ip", base_key).as_str(),
-                overlay_ip,
-                None,
-            )
-            .await
-            .context("etcd put overlay_ip failed")?;
-
-        if let Some(key) = public_key {
-            self.etcd
-                .put(format!("{}/pubkey", base_key).as_str(), key, None)
-                .await
-                .context("etcd put pubkey failed")?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn remove_peer(&mut self, network_id: Uuid, node_id: &str) -> Result<()> {
-        let prefix = format!("/csfx/peers/{}/{}", network_id, node_id);
-        self.etcd
-            .delete(
-                prefix.as_str(),
-                Some(etcd_client::DeleteOptions::new().with_prefix()),
-            )
-            .await
-            .context("etcd delete peer failed")?;
-        Ok(())
-    }
 }
 
 fn parse_cidr(cidr: &str) -> Result<(Ipv4Addr, u32)> {

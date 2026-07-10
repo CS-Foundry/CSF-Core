@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use reqwest::Client;
-use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -54,6 +52,7 @@ struct HeartbeatRequest {
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
     agent_version: Option<String>,
+    kvm_capable: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -75,21 +74,29 @@ pub struct VolumeMount {
     pub mount_path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AssignedWorkload {
     pub id: String,
-    pub name: String,
     pub image: String,
     pub cpu_millicores: i32,
     pub memory_bytes: i64,
-    pub disk_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<crate::docker::PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
-    pub status: String,
-    pub container_id: Option<String>,
-    pub stack_id: Option<String>,
     pub service_name: Option<String>,
+    pub restart_policy: String,
+    pub max_restarts: Option<i32>,
+    pub resource_group_id: Option<String>,
+    pub resource_group_cidr: Option<String>,
+    pub runtime_class: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ResourceGroupPeer {
+    pub agent_id: String,
+    pub wg_public_key: String,
+    pub wg_endpoint: String,
+    pub wg_tunnel_ip: String,
 }
 
 pub struct ApiClient {
@@ -99,19 +106,6 @@ pub struct ApiClient {
     wg_public_key: String,
     wg_endpoint: Option<String>,
     wg_tunnel_ip: Option<String>,
-}
-
-pub fn generate_wg_keypair() -> (String, String) {
-    let rng = SystemRandom::new();
-    let mut private_bytes = [0u8; 32];
-    rng.fill(&mut private_bytes)
-        .expect("failed to generate WireGuard key");
-    private_bytes[0] &= 248;
-    private_bytes[31] &= 127;
-    private_bytes[31] |= 64;
-    let secret = x25519_dalek::StaticSecret::from(private_bytes);
-    let public = x25519_dalek::PublicKey::from(&secret);
-    (B64.encode(private_bytes), B64.encode(public.to_bytes()))
 }
 
 impl ApiClient {
@@ -257,6 +251,7 @@ impl ApiClient {
                 wg_endpoint: self.wg_endpoint.clone(),
                 wg_tunnel_ip: self.wg_tunnel_ip.clone(),
                 agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+                kvm_capable: crate::system::is_kvm_capable(),
             });
 
         if let Some(ref cert_pem) = self.cert_pem {
@@ -274,6 +269,63 @@ impl ApiClient {
         resp.json::<HeartbeatResponse>()
             .await
             .context("Failed to parse heartbeat response")
+    }
+
+    pub async fn fetch_resource_group_peers(
+        &self,
+        api_key: &str,
+        resource_group_id: &str,
+    ) -> Result<Vec<ResourceGroupPeer>> {
+        let url = format!(
+            "{}/api/resource-groups/{}/peers",
+            self.gateway_url, resource_group_id
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to fetch resource group peers")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to fetch resource group peers status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        resp.json::<Vec<ResourceGroupPeer>>()
+            .await
+            .context("Failed to parse resource group peers response")
+    }
+
+    pub async fn fetch_active_resource_group_ids(&self, api_key: &str) -> Result<Vec<String>> {
+        let url = format!("{}/api/resource-groups/agent/active-ids", self.gateway_url);
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to fetch active resource group ids")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to fetch active resource group ids status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        resp.json::<Vec<String>>()
+            .await
+            .context("Failed to parse active resource group ids response")
     }
 
     pub async fn fetch_assigned_workloads(&self, api_key: &str) -> Result<Vec<AssignedWorkload>> {
@@ -296,15 +348,9 @@ impl ApiClient {
             );
         }
 
-        let all: Vec<AssignedWorkload> = resp
-            .json()
+        resp.json::<Vec<AssignedWorkload>>()
             .await
-            .context("Failed to parse workloads response")?;
-
-        Ok(all
-            .into_iter()
-            .filter(|w| w.status == "scheduled" && w.container_id.is_none())
-            .collect())
+            .context("Failed to parse workloads response")
     }
 
     pub async fn fetch_bootstrap_token(&self) -> Result<String> {

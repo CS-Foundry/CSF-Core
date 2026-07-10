@@ -53,6 +53,9 @@ export interface Workload {
     resource_group_id: string | null;
     stack_id: string | null;
     service_name: string | null;
+    restart_policy: string;
+    max_restarts: number | null;
+    restart_count: number;
     created_at: string;
     updated_at: string | null;
 }
@@ -67,6 +70,8 @@ export interface CreateWorkloadRequest {
     ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string;
+    restart_policy?: 'always' | 'on-failure' | 'never';
+    max_restarts?: number | null;
 }
 
 export interface CreateVolumeRequest {

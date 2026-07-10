@@ -1,8 +1,37 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::server::AppState;
+
+#[derive(Debug, Deserialize)]
+pub struct RescheduleRequest {
+    pub workload_ids: Vec<Uuid>,
+}
+
+pub async fn reschedule_agent_workloads(
+    State(state): State<AppState>,
+    Path(agent_id): Path<Uuid>,
+    Json(req): Json<RescheduleRequest>,
+) -> impl IntoResponse {
+    match state
+        .scheduler
+        .reschedule_from_agent(agent_id, &req.workload_ids)
+        .await
+    {
+        Ok(results) => (StatusCode::OK, Json(serde_json::json!(results))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ContainerStatusUpdate {
