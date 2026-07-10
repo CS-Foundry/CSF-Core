@@ -664,8 +664,7 @@ async fn cleanup_stale_resource_groups(
         }
     };
 
-    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await
-    {
+    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
         Ok(d) => d,
         Err(e) => {
             warn!(error = %e, "Docker unavailable, deferring resource group cleanup");
