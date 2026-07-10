@@ -42,8 +42,7 @@ impl<'a> RootfsBuilder<'a> {
         self.remove_container(&container_id).await;
         export_result?;
 
-        let tmp_image_path =
-            Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4.tmp", cache_key));
+        let tmp_image_path = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4.tmp", cache_key));
         build_ext4_image(&extract_dir, &tmp_image_path).await?;
 
         tokio::fs::remove_dir_all(&extract_dir)

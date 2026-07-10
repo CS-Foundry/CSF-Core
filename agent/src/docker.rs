@@ -395,12 +395,14 @@ impl DockerRuntime {
             .tail("200")
             .build();
 
-        Box::pin(self.docker.logs(container_id, Some(options)).map(|item| {
-            match item {
-                Ok(log_output) => Ok(log_output.into_bytes()),
-                Err(e) => Err(std::io::Error::other(e.to_string())),
-            }
-        }))
+        Box::pin(
+            self.docker
+                .logs(container_id, Some(options))
+                .map(|item| match item {
+                    Ok(log_output) => Ok(log_output.into_bytes()),
+                    Err(e) => Err(std::io::Error::other(e.to_string())),
+                }),
+        )
     }
 
     async fn exec_session(&self, container_id: &str) -> Result<crate::runtime::ExecSession> {

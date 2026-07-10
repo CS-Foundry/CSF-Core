@@ -142,12 +142,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .get(workload_handle)
             .context("workload not running here")?;
 
-        let stream = tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(
-            handle.vsock_cid,
-            10002,
-        ))
-        .await
-        .context("Failed to connect to guest exec vsock port")?;
+        let stream =
+            tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(handle.vsock_cid, 10002))
+                .await
+                .context("Failed to connect to guest exec vsock port")?;
 
         let (read_half, write_half) = stream.into_split();
 
@@ -181,7 +179,9 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 }
 
-fn vsock_log_stream(vsock_cid: u32) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
+fn vsock_log_stream(
+    vsock_cid: u32,
+) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
     async_stream::stream! {
         let connect_result = tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(vsock_cid, 10001)).await;
 

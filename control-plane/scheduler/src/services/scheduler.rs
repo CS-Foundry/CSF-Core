@@ -175,7 +175,8 @@ impl SchedulerService {
         let total_memory: i64 = services.iter().map(|s| s.memory_bytes).sum();
         let total_disk: i64 = services.iter().map(|s| s.disk_bytes).sum();
 
-        let agent_id = self.first_fit_resources(total_cpu, total_memory, total_disk, false, &agents);
+        let agent_id =
+            self.first_fit_resources(total_cpu, total_memory, total_disk, false, &agents);
 
         let mut responses = Vec::with_capacity(services.len());
         for service in services {
@@ -373,7 +374,8 @@ impl SchedulerService {
                 .map_err(|e| format!("Failed to fetch workload: {}", e))?
                 .ok_or_else(|| format!("Workload {} not found", workload_id))?;
 
-            let runtime_class = crate::models::workload::RuntimeClass::from_str(&workload.runtime_class);
+            let runtime_class =
+                crate::models::workload::RuntimeClass::from_str(&workload.runtime_class);
 
             let placed = self.first_fit_resources(
                 workload.cpu_millicores,
