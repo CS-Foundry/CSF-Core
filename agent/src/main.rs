@@ -446,7 +446,14 @@ async fn process_workloads(
         .as_ref()
         .expect("docker manager initialized above");
 
-    reap_stale_containers(docker, running_containers, workload_phases, restart_counts, &workloads).await;
+    reap_stale_containers(
+        docker,
+        running_containers,
+        workload_phases,
+        restart_counts,
+        &workloads,
+    )
+    .await;
 
     for workload in workloads {
         let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();

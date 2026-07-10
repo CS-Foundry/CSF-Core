@@ -192,10 +192,7 @@ impl VolumeService {
                     if let Err(e) = ceph.rbd_manager.unmap_device(device).await {
                         log_warn!(
                             "volume_service",
-                            &format!(
-                                "Ceph RBD unmap failed volume_id={} err={}",
-                                volume.id, e
-                            )
+                            &format!("Ceph RBD unmap failed volume_id={} err={}", volume.id, e)
                         );
                     }
                 }
