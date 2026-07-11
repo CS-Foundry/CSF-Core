@@ -21,12 +21,13 @@ use crate::{
         create_exec_ticket, create_node_metrics_ticket, verify_exec_ticket,
         verify_node_metrics_ticket,
     },
-    auth::rbac::{CanManageWorkloads, CanViewAgents, CanViewWorkloads},
+    auth::rbac::{CanManageSystem, CanManageWorkloads, CanViewAgents, CanViewWorkloads},
     AppState,
 };
 
 const CSFX_AGENT_PORT_ENV: &str = "CSFX_AGENT_PORT";
 const METRICS_TICKET_SCOPE: &str = "__node_metrics__";
+const POWER_TICKET_SCOPE: &str = "__power__";
 
 async fn resolve_agent_tunnel_ip(
     state: &AppState,
@@ -407,6 +408,76 @@ async fn bridge_metrics_socket(
     }
 }
 
+#[derive(Deserialize)]
+pub struct PowerRequest {
+    action: PowerAction,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum PowerAction {
+    Reboot,
+    Poweroff,
+}
+
+impl PowerAction {
+    fn as_str(&self) -> &'static str {
+        match self {
+            PowerAction::Reboot => "reboot",
+            PowerAction::Poweroff => "poweroff",
+        }
+    }
+}
+
+pub async fn power_agent(
+    CanManageSystem(claims): CanManageSystem,
+    State(state): State<AppState>,
+    Path(agent_id): Path<Uuid>,
+    Json(req): Json<PowerRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    tracing::warn!(
+        user_id = %claims.user_id,
+        agent_id = %agent_id,
+        action = req.action.as_str(),
+        "power action requested"
+    );
+
+    let tunnel_ip = resolve_agent_tunnel_ip(&state, agent_id).await?;
+    let proxy_ticket = fetch_proxy_ticket(&state, agent_id, POWER_TICKET_SCOPE).await?;
+
+    let agent_port: u16 = std::env::var(CSFX_AGENT_PORT_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7443);
+
+    let url = format!("http://{}:{}/power", tunnel_ip, agent_port);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .header("X-Csfx-Proxy-Ticket", proxy_ticket)
+        .json(&json!({ "action": req.action.as_str() }))
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": format!("failed to reach agent: {}", e) })),
+            )
+        })?;
+
+    if !resp.status().is_success() {
+        let status =
+            StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        return Err((
+            status,
+            Json(json!({ "error": "agent refused power action" })),
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn agent_proxy_routes() -> Router<AppState> {
     Router::new()
         .route("/workloads/{id}/logs", get(stream_workload_logs))
@@ -420,4 +491,5 @@ pub fn agent_proxy_routes() -> Router<AppState> {
             axum::routing::post(issue_node_metrics_ticket),
         )
         .route("/agents/{id}/metrics/stream", get(stream_node_metrics))
+        .route("/agents/{id}/power", axum::routing::post(power_agent))
 }

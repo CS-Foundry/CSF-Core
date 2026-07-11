@@ -3,16 +3,18 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{SinkExt, StreamExt};
 use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_ASN1};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
@@ -22,6 +24,7 @@ use crate::system::LiveMetricsCollector;
 
 const TICKET_HEADER: &str = "X-Csfx-Proxy-Ticket";
 pub const METRICS_TICKET_SCOPE: &str = "__node_metrics__";
+pub const POWER_TICKET_SCOPE: &str = "__power__";
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -35,6 +38,7 @@ pub async fn run(state: ServerState, port: u16) -> Result<()> {
         .route("/logs/{workload_id}", get(logs_handler))
         .route("/exec/{workload_id}", get(exec_handler))
         .route("/metrics/stream", get(metrics_stream_handler))
+        .route("/power", post(power_handler))
         .with_state(state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
@@ -329,4 +333,57 @@ async fn handle_metrics_socket(socket: WebSocket) {
     }
 
     info!("live metrics session closed");
+}
+
+#[derive(Debug, Deserialize)]
+struct PowerRequest {
+    action: PowerAction,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PowerAction {
+    Reboot,
+    Poweroff,
+}
+
+impl PowerAction {
+    fn systemctl_verb(&self) -> &'static str {
+        match self {
+            PowerAction::Reboot => "reboot",
+            PowerAction::Poweroff => "poweroff",
+        }
+    }
+}
+
+async fn power_handler(
+    State(state): State<ServerState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<PowerRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if !is_internal_source(&addr) {
+        warn!(source = %addr, "rejected agent inbound request from non-internal source");
+        return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
+    }
+
+    verify_ticket(&headers, POWER_TICKET_SCOPE, &state.agent_id.to_string())
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+
+    let verb = req.action.systemctl_verb();
+    info!(agent_id = %state.agent_id, action = verb, "power action requested");
+
+    let output = Command::new("systemctl")
+        .arg(verb)
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        warn!(action = verb, error = %stderr, "power action failed");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, stderr));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -7,6 +7,7 @@ use bollard::models::{
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptionsBuilder,
     ListNetworksOptionsBuilder, LogsOptionsBuilder, StartContainerOptionsBuilder,
+    StatsOptionsBuilder,
 };
 use bollard::Docker;
 use futures_util::StreamExt;
@@ -503,6 +504,65 @@ impl DockerRuntime {
         info!(container_id = %container_id, "Container stopped and removed");
         Ok(())
     }
+
+    pub async fn collect_stats(
+        &self,
+        container_id: &str,
+    ) -> Result<crate::runtime::ContainerStats> {
+        let options = StatsOptionsBuilder::default().stream(false).build();
+        let mut stream = self.docker.stats(container_id, Some(options)).take(1);
+
+        let sample = stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("No stats sample returned"))?
+            .context("Failed to read container stats")?;
+
+        let cpu_usage_percent = sample.cpu_stats.as_ref().and_then(|cpu| {
+            let precpu = sample.precpu_stats.as_ref()?;
+            let total_usage = cpu.cpu_usage.as_ref()?.total_usage?;
+            let pretotal_usage = precpu.cpu_usage.as_ref()?.total_usage?;
+            let system_usage = cpu.system_cpu_usage?;
+            let presystem_usage = precpu.system_cpu_usage?;
+            let online_cpus = cpu.online_cpus.unwrap_or(1).max(1) as f64;
+
+            let cpu_delta = total_usage.saturating_sub(pretotal_usage) as f64;
+            let system_delta = system_usage.saturating_sub(presystem_usage) as f64;
+
+            if system_delta <= 0.0 {
+                return None;
+            }
+
+            Some((cpu_delta / system_delta) * online_cpus * 100.0)
+        });
+
+        let memory_usage_bytes = sample
+            .memory_stats
+            .as_ref()
+            .and_then(|mem| mem.usage)
+            .map(|v| v as i64);
+
+        let (network_rx_bytes, network_tx_bytes) = sample
+            .networks
+            .as_ref()
+            .map(|networks| {
+                networks.values().fold((0u64, 0u64), |(rx, tx), iface| {
+                    (
+                        rx + iface.rx_bytes.unwrap_or(0),
+                        tx + iface.tx_bytes.unwrap_or(0),
+                    )
+                })
+            })
+            .map(|(rx, tx)| (Some(rx as i64), Some(tx as i64)))
+            .unwrap_or((None, None));
+
+        Ok(crate::runtime::ContainerStats {
+            cpu_usage_percent,
+            memory_usage_bytes,
+            network_rx_bytes,
+            network_tx_bytes,
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -529,6 +589,10 @@ impl crate::runtime::Runtime for DockerRuntime {
 
     async fn stop_workload(&self, workload_handle: &str) -> Result<()> {
         self.stop_container(workload_handle).await
+    }
+
+    async fn stats(&self, workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
+        self.collect_stats(workload_handle).await
     }
 }
 

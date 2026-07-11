@@ -61,12 +61,17 @@ async fn main() -> anyhow::Result<()> {
     let etcd_endpoints =
         std::env::var("ETCD_ENDPOINTS").unwrap_or_else(|_| "http://localhost:2379".to_string());
 
+    let mgmt_ipam = Arc::new(services::mgmt_ipam::MgmtIpamService::new(
+        etcd_endpoints.clone(),
+    ));
+
     let state = server::AppState {
         token_manager: token_manager.clone(),
         bootstrap_token_manager: bootstrap_token_manager.clone(),
         api_key_manager: api_key_manager.clone(),
         agent_registry: agent_registry.clone(),
         pki_service: Arc::new(pki_service),
+        mgmt_ipam,
         db: db_conn.clone(),
         scheduler_url,
         gateway_url,

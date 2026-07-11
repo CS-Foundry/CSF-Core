@@ -58,6 +58,7 @@ pub struct RegisteredAgent {
     pub registered_at: DateTime<Utc>,
     pub last_heartbeat: Option<DateTime<Utc>>,
     pub tags: Option<HashMap<String, String>>,
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +106,7 @@ pub struct RegisterResponse {
     pub api_key: String,
     pub certificate_pem: Option<String>,
     pub ca_cert_pem: Option<String>,
+    pub wg_tunnel_ip: Option<String>,
     pub message: String,
 }
 

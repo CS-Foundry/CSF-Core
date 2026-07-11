@@ -2,11 +2,42 @@ use anyhow::{anyhow, Context, Result};
 use tokio::process::Command;
 use tracing::{info, warn};
 
+struct CephClientArgs {
+    mon_hosts: String,
+    keyring_path: Option<String>,
+    client_name: String,
+}
+
+impl CephClientArgs {
+    fn from_env() -> Self {
+        Self {
+            mon_hosts: std::env::var("CEPH_MON_HOSTS")
+                .unwrap_or_else(|_| "ceph-mon1:6789,ceph-mon2:6789,ceph-mon3:6789".to_string()),
+            keyring_path: std::env::var("CEPH_KEYRING").ok(),
+            client_name: std::env::var("CEPH_CLIENT_NAME").unwrap_or_else(|_| "admin".to_string()),
+        }
+    }
+
+    fn apply(&self, command: &mut Command) {
+        command.arg("-m").arg(&self.mon_hosts);
+        if let Some(ref keyring) = self.keyring_path {
+            command.arg("--keyring").arg(keyring);
+        }
+        command
+            .arg("--name")
+            .arg(format!("client.{}", self.client_name));
+    }
+}
+
 pub async fn map_device(pool: &str, image: &str) -> Result<String> {
     info!(pool = %pool, image = %image, "Mapping RBD device");
 
-    let output = Command::new("rbd")
-        .args(["map", &format!("{}/{}", pool, image)])
+    let ceph_args = CephClientArgs::from_env();
+    let mut command = Command::new("rbd");
+    command.arg("map").arg(format!("{}/{}", pool, image));
+    ceph_args.apply(&mut command);
+
+    let output = command
         .output()
         .await
         .context("Failed to execute rbd map")?;
@@ -29,8 +60,12 @@ pub async fn map_device(pool: &str, image: &str) -> Result<String> {
 pub async fn unmap_device(device: &str) -> Result<()> {
     info!(device = %device, "Unmapping RBD device");
 
-    let output = Command::new("rbd")
-        .args(["unmap", device])
+    let ceph_args = CephClientArgs::from_env();
+    let mut command = Command::new("rbd");
+    command.arg("unmap").arg(device);
+    ceph_args.apply(&mut command);
+
+    let output = command
         .output()
         .await
         .context("Failed to execute rbd unmap")?;

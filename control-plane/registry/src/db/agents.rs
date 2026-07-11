@@ -60,6 +60,7 @@ pub async fn create(
     tags: Option<serde_json::Value>,
     capabilities: Option<serde_json::Value>,
     public_key_pem: Option<String>,
+    wg_tunnel_ip: Option<String>,
 ) -> Result<agents::Model> {
     let model = agents::ActiveModel {
         id: Set(id),
@@ -80,8 +81,9 @@ pub async fn create(
         public_key_pem: Set(public_key_pem),
         wg_public_key: Set(None),
         wg_endpoint: Set(None),
-        wg_tunnel_ip: Set(None),
+        wg_tunnel_ip: Set(wg_tunnel_ip),
         kvm_capable: Set(false),
+        cordoned: Set(false),
     };
 
     Ok(model.insert(db).await?)
@@ -189,5 +191,21 @@ pub async fn get_statistics(db: &DatabaseConnection) -> Result<(usize, usize, us
 
 pub async fn delete(db: &DatabaseConnection, agent_id: Uuid) -> Result<()> {
     agents::Entity::delete_by_id(agent_id).exec(db).await?;
+    Ok(())
+}
+
+pub async fn set_wg_tunnel_ip(
+    db: &DatabaseConnection,
+    agent_id: Uuid,
+    wg_tunnel_ip: &str,
+) -> Result<()> {
+    let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Agent not found"))?
+        .into();
+
+    agent.wg_tunnel_ip = Set(Some(wg_tunnel_ip.to_string()));
+    agent.update(db).await?;
     Ok(())
 }

@@ -180,6 +180,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         Ok(())
     }
+
+    async fn stats(&self, _workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
+        Ok(crate::runtime::ContainerStats::default())
+    }
 }
 
 fn vsock_log_stream(

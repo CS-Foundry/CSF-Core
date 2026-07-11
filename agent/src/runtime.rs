@@ -61,6 +61,14 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContainerStats {
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+}
+
 #[async_trait::async_trait]
 pub trait Runtime: Send + Sync {
     async fn pull_image(&self, image: &str) -> Result<()>;
@@ -69,4 +77,5 @@ pub trait Runtime: Send + Sync {
     fn logs(&self, workload_handle: &str) -> LogStream;
     async fn exec(&self, workload_handle: &str) -> Result<ExecSession>;
     async fn stop_workload(&self, workload_handle: &str) -> Result<()>;
+    async fn stats(&self, workload_handle: &str) -> Result<ContainerStats>;
 }

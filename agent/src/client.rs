@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -33,6 +34,7 @@ pub struct RegisterResponse {
     pub api_key: String,
     pub certificate_pem: Option<String>,
     pub ca_cert_pem: Option<String>,
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +64,20 @@ pub struct ContainerStatus {
     pub status: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct WorkloadStatsUpdate {
+    pub workload_id: String,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub network_rx_bytes: Option<i64>,
+    pub network_tx_bytes: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkloadStatsRequest {
+    stats: Vec<WorkloadStatsUpdate>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct HeartbeatResponse {
     pub desired_flake_rev: Option<String>,
@@ -89,6 +105,8 @@ pub struct AssignedWorkload {
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
     pub runtime_class: String,
+    #[serde(default)]
+    pub restart_requested: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -105,7 +123,7 @@ pub struct ApiClient {
     cert_pem: Option<String>,
     wg_public_key: String,
     wg_endpoint: Option<String>,
-    wg_tunnel_ip: Option<String>,
+    wg_tunnel_ip: RwLock<Option<String>>,
 }
 
 impl ApiClient {
@@ -127,13 +145,17 @@ impl ApiClient {
             cert_pem: None,
             wg_public_key,
             wg_endpoint,
-            wg_tunnel_ip,
+            wg_tunnel_ip: RwLock::new(wg_tunnel_ip),
         })
     }
 
     pub fn with_certificate(mut self, cert_pem: String) -> Self {
         self.cert_pem = Some(cert_pem);
         self
+    }
+
+    pub async fn set_wg_tunnel_ip(&self, ip: String) {
+        *self.wg_tunnel_ip.write().await = Some(ip);
     }
 
     pub async fn register(
@@ -231,6 +253,8 @@ impl ApiClient {
             })
             .unwrap_or_default();
 
+        let wg_tunnel_ip = self.wg_tunnel_ip.read().await.clone();
+
         let mut req = self
             .client
             .post(&url)
@@ -249,7 +273,7 @@ impl ApiClient {
                 uptime_seconds,
                 wg_public_key: Some(self.wg_public_key.clone()),
                 wg_endpoint: self.wg_endpoint.clone(),
-                wg_tunnel_ip: self.wg_tunnel_ip.clone(),
+                wg_tunnel_ip,
                 agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 kvm_capable: crate::system::is_kvm_capable(),
             });
@@ -351,6 +375,64 @@ impl ApiClient {
         resp.json::<Vec<AssignedWorkload>>()
             .await
             .context("Failed to parse workloads response")
+    }
+
+    pub async fn push_workload_stats(
+        &self,
+        api_key: &str,
+        stats: Vec<WorkloadStatsUpdate>,
+    ) -> Result<()> {
+        if stats.is_empty() {
+            return Ok(());
+        }
+
+        let url = format!("{}/api/agents/self/workloads/stats", self.gateway_url);
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-API-Key", api_key)
+            .json(&WorkloadStatsRequest { stats })
+            .send()
+            .await
+            .context("Failed to push workload stats")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to push workload stats status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        Ok(())
+    }
+
+    pub async fn ack_workload_restart(&self, api_key: &str, workload_id: &str) -> Result<()> {
+        let url = format!(
+            "{}/api/agents/self/workloads/{}/restart-ack",
+            self.gateway_url, workload_id
+        );
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to ack workload restart")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to ack workload restart status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        Ok(())
     }
 
     pub async fn fetch_bootstrap_token(&self) -> Result<String> {

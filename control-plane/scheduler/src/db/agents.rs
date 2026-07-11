@@ -11,6 +11,7 @@ pub async fn get_online_agents_with_resources(
 ) -> Result<Vec<AgentResources>, sea_orm::DbErr> {
     let online_agents = agents::Entity::find()
         .filter(agents::Column::Status.eq("Online"))
+        .filter(agents::Column::Cordoned.eq(false))
         .all(db)
         .await?;
 

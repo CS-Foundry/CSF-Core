@@ -12,6 +12,8 @@ pub struct DaemonConfig {
     pub gateway_url: String,
     pub agent_id: Uuid,
     pub heartbeat_interval_secs: u64,
+    #[serde(default)]
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Clone)]

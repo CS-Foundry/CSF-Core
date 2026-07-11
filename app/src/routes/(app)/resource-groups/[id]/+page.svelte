@@ -10,6 +10,8 @@
         createWorkload,
         createWorkloadStack,
         deleteWorkload,
+        stopWorkload,
+        restartWorkload,
         createVolume,
         deleteVolume,
         streamWorkloadLogs,
@@ -89,14 +91,16 @@
     let volFormName = $state("");
     let volFormSize = $state("10");
 
-    let logsDialog = $state<HTMLDialogElement | null>(null);
-    let logsWorkloadName = $state("");
+    let containerDialog = $state<HTMLDialogElement | null>(null);
+    let containerDialogTab = $state<"logs" | "shell" | "insights">("logs");
+    let activeContainer = $state<Workload | null>(null);
+    let containerActionError = $state<string | null>(null);
+    let containerActionBusy = $state(false);
+
     let logsLines = $state<string[]>([]);
     let logsError = $state<string | null>(null);
     let logsAbort: AbortController | null = null;
 
-    let execDialog = $state<HTMLDialogElement | null>(null);
-    let execWorkloadName = $state("");
     let execError = $state<string | null>(null);
     let execTerminalEl = $state<HTMLDivElement | null>(null);
     let execTerminal: Terminal | null = null;
@@ -271,24 +275,38 @@
         }
     }
 
-    async function handleDeleteWorkload(id: string) {
-        if (!auth.token) return;
-        try {
-            await deleteWorkload(auth.token, id);
-            workloads = workloads.filter((w) => w.id !== id);
-        } catch (e) {
-            error = e instanceof Error ? e.message : "Failed to stop workload";
-        }
+    function openContainer(workload: Workload) {
+        activeContainer = workload;
+        containerDialogTab = "logs";
+        containerActionError = null;
+        containerDialog?.showModal();
+        startLogsStream(workload);
     }
 
-    async function openLogs(workload: Workload) {
+    function closeContainer() {
+        stopLogsStream();
+        stopExecSession();
+        containerDialog?.close();
+        activeContainer = null;
+    }
+
+    function switchTab(tab: "logs" | "shell" | "insights") {
+        if (containerDialogTab === tab || !activeContainer) return;
+
+        if (containerDialogTab === "logs") stopLogsStream();
+        if (containerDialogTab === "shell") stopExecSession();
+
+        containerDialogTab = tab;
+
+        if (tab === "logs") startLogsStream(activeContainer);
+        if (tab === "shell") startExecSession(activeContainer);
+    }
+
+    async function startLogsStream(workload: Workload) {
         if (!auth.token) return;
 
-        logsWorkloadName = workload.name;
         logsLines = [];
         logsError = null;
-        logsDialog?.showModal();
-
         logsAbort = new AbortController();
         const decoder = new TextDecoder();
 
@@ -311,19 +329,15 @@
         }
     }
 
-    function closeLogs() {
+    function stopLogsStream() {
         logsAbort?.abort();
         logsAbort = null;
-        logsDialog?.close();
     }
 
-    async function openExec(workload: Workload) {
-        if (!auth.token) return;
+    async function startExecSession(workload: Workload) {
+        if (!auth.token || workload.status !== "running") return;
 
-        execWorkloadName = workload.name;
         execError = null;
-        execDialog?.showModal();
-
         await tick();
 
         if (!execTerminalEl) return;
@@ -365,13 +379,57 @@
         }
     }
 
-    function closeExec() {
+    function stopExecSession() {
         execSocket?.close();
         execSocket = null;
         execTerminal?.dispose();
         execTerminal = null;
         execFitAddon = null;
-        execDialog?.close();
+    }
+
+    async function handleStopContainer() {
+        if (!auth.token || !activeContainer) return;
+        containerActionBusy = true;
+        containerActionError = null;
+        try {
+            await stopWorkload(auth.token, activeContainer.id);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+            activeContainer = workloads.find((w) => w.id === activeContainer?.id) ?? null;
+        } catch (e) {
+            containerActionError = e instanceof Error ? e.message : "Failed to stop container";
+        } finally {
+            containerActionBusy = false;
+        }
+    }
+
+    async function handleRestartContainer() {
+        if (!auth.token || !activeContainer) return;
+        containerActionBusy = true;
+        containerActionError = null;
+        try {
+            await restartWorkload(auth.token, activeContainer.id);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+            activeContainer = workloads.find((w) => w.id === activeContainer?.id) ?? null;
+        } catch (e) {
+            containerActionError = e instanceof Error ? e.message : "Failed to restart container";
+        } finally {
+            containerActionBusy = false;
+        }
+    }
+
+    async function handleDeleteContainer() {
+        if (!auth.token || !activeContainer) return;
+        containerActionBusy = true;
+        containerActionError = null;
+        try {
+            await deleteWorkload(auth.token, activeContainer.id);
+            workloads = workloads.filter((w) => w.id !== activeContainer?.id);
+            closeContainer();
+        } catch (e) {
+            containerActionError = e instanceof Error ? e.message : "Failed to delete container";
+        } finally {
+            containerActionBusy = false;
+        }
     }
 
     async function handleDeleteVolume(id: string) {
@@ -549,11 +607,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Deploy Container</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => deployDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -624,11 +683,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Add Resource</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => resourcePickerDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="flex flex-col gap-2">
@@ -659,11 +719,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Deploy Docker Compose Stack</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => composeDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="flex flex-col gap-1">
@@ -755,11 +816,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Create Volume</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => volumeDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -785,53 +847,141 @@
 </dialog>
 
 <dialog
-    bind:this={logsDialog}
-    class="fixed inset-0 z-50 m-auto w-full max-w-3xl h-[70vh] rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
-    onclose={() => closeLogs()}
->
-    <div class="flex flex-col h-full">
-        <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
-            <h2 class="text-base font-semibold font-mono">{logsWorkloadName}</h2>
-            <button
-                class="text-muted-foreground hover:text-foreground"
-                onclick={() => logsDialog?.close()}
-                aria-label="Close"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-        </div>
-        <div class="flex-1 overflow-y-auto bg-black p-4 font-mono text-xs text-green-400">
-            {#if logsError}
-                <p class="text-red-400">{logsError}</p>
-            {/if}
-            {#each logsLines as line}
-                <p class="whitespace-pre-wrap">{line}</p>
-            {/each}
-        </div>
-    </div>
-</dialog>
-
-<dialog
-    bind:this={execDialog}
+    bind:this={containerDialog}
     class="fixed inset-0 z-50 m-auto w-full max-w-4xl h-[80vh] rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
-    onclose={() => closeExec()}
+    onclose={() => closeContainer()}
 >
-    <div class="flex flex-col h-full">
-        <div class="flex items-center justify-between px-6 py-4 border-b shrink-0">
-            <h2 class="text-base font-semibold font-mono">{execWorkloadName}</h2>
-            <button
-                class="text-muted-foreground hover:text-foreground"
-                onclick={() => execDialog?.close()}
-                aria-label="Close"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+    {#if activeContainer}
+        <div class="flex flex-col h-full">
+            <div class="flex items-center justify-between px-6 py-4 border-b shrink-0 gap-4">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <Icon icon={resolveImageIcon(activeContainer.image)} width={20} height={20} class="shrink-0" />
+                    <div class="min-w-0">
+                        <h2 class="text-base font-semibold leading-tight truncate">{activeContainer.service_name ?? activeContainer.name}</h2>
+                        <p class="text-xs text-muted-foreground font-mono truncate">{activeContainer.image}</p>
+                    </div>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 {statusClass(activeContainer.status)}">
+                        {statusLabel(activeContainer.status)}
+                    </span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        onclick={handleRestartContainer}
+                        disabled={containerActionBusy}
+                        aria-label="Restart"
+                        title="Restart"
+                    >
+                        <Icon icon="mdi:restart" width={18} height={18} />
+                    </button>
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        onclick={handleStopContainer}
+                        disabled={containerActionBusy || activeContainer.desired_state === "stopped"}
+                        aria-label="Stop"
+                        title="Stop"
+                    >
+                        <Icon icon="mdi:stop-circle-outline" width={18} height={18} />
+                    </button>
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        onclick={handleDeleteContainer}
+                        disabled={containerActionBusy}
+                        aria-label="Delete"
+                        title="Delete"
+                    >
+                        <Icon icon="mdi:trash-can-outline" width={18} height={18} />
+                    </button>
+                    <div class="w-px h-5 bg-border mx-1"></div>
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        onclick={() => containerDialog?.close()}
+                        aria-label="Close"
+                        title="Close"
+                    >
+                        <Icon icon="mdi:close" width={18} height={18} />
+                    </button>
+                </div>
+            </div>
+            {#if containerActionError}
+                <p class="px-6 py-2 text-xs text-destructive shrink-0 border-b">{containerActionError}</p>
+            {/if}
+            <div class="px-6 py-2 border-b shrink-0">
+                <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"]] as [tab, label]}
+                        <button
+                            class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                            onclick={() => switchTab(tab as typeof containerDialogTab)}
+                        >
+                            {label}
+                        </button>
+                    {/each}
+                </div>
+            </div>
+            <div class="flex-1 overflow-hidden">
+                {#if containerDialogTab === "logs"}
+                    <div class="h-full overflow-y-auto bg-black p-4 font-mono text-xs text-green-400">
+                        {#if logsError}
+                            <p class="text-red-400">{logsError}</p>
+                        {/if}
+                        {#each logsLines as line}
+                            <p class="whitespace-pre-wrap">{line}</p>
+                        {/each}
+                    </div>
+                {:else if containerDialogTab === "shell"}
+                    <div class="flex flex-col h-full">
+                        {#if activeContainer.status !== "running"}
+                            <p class="p-4 text-xs text-muted-foreground">Shell is only available while the container is running.</p>
+                        {:else}
+                            {#if execError}
+                                <p class="px-4 py-2 text-xs text-destructive shrink-0">{execError}</p>
+                            {/if}
+                            <div class="flex-1 overflow-hidden bg-black p-2" bind:this={execTerminalEl}></div>
+                        {/if}
+                    </div>
+                {:else}
+                    <div class="h-full overflow-y-auto p-6">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div class="border rounded-lg p-4">
+                                <p class="text-xs text-muted-foreground">CPU Usage</p>
+                                <p class="text-2xl font-semibold mt-1">
+                                    {activeContainer.cpu_usage_percent !== null ? `${activeContainer.cpu_usage_percent.toFixed(1)}%` : "-"}
+                                </p>
+                                <p class="text-xs text-muted-foreground mt-0.5">{activeContainer.cpu_millicores}m requested</p>
+                            </div>
+                            <div class="border rounded-lg p-4">
+                                <p class="text-xs text-muted-foreground">Memory Usage</p>
+                                <p class="text-2xl font-semibold mt-1">
+                                    {activeContainer.memory_usage_bytes !== null ? fmtBytes(activeContainer.memory_usage_bytes) : "-"}
+                                </p>
+                                <p class="text-xs text-muted-foreground mt-0.5">{fmtBytes(activeContainer.memory_bytes)} requested</p>
+                            </div>
+                            <div class="border rounded-lg p-4">
+                                <p class="text-xs text-muted-foreground">Network RX</p>
+                                <p class="text-2xl font-semibold mt-1">
+                                    {activeContainer.network_rx_bytes !== null ? fmtBytes(activeContainer.network_rx_bytes) : "-"}
+                                </p>
+                            </div>
+                            <div class="border rounded-lg p-4">
+                                <p class="text-xs text-muted-foreground">Network TX</p>
+                                <p class="text-2xl font-semibold mt-1">
+                                    {activeContainer.network_tx_bytes !== null ? fmtBytes(activeContainer.network_tx_bytes) : "-"}
+                                </p>
+                            </div>
+                        </div>
+                        <p class="text-xs text-muted-foreground mt-4">
+                            {activeContainer.stats_updated_at ? `Last updated ${new Date(activeContainer.stats_updated_at).toLocaleTimeString()}` : "No stats reported yet."}
+                        </p>
+                        {#if activeContainer.restart_count > 0}
+                            <p class="text-xs text-muted-foreground mt-1">
+                                Restarted {activeContainer.restart_count} time{activeContainer.restart_count === 1 ? "" : "s"}{activeContainer.max_restarts !== null ? ` (max ${activeContainer.max_restarts})` : ""}
+                            </p>
+                        {/if}
+                    </div>
+                {/if}
+            </div>
         </div>
-        {#if execError}
-            <p class="px-6 py-2 text-xs text-destructive shrink-0">{execError}</p>
-        {/if}
-        <div class="flex-1 overflow-hidden bg-black p-2" bind:this={execTerminalEl}></div>
-    </div>
+    {/if}
 </dialog>
 
 <header class="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
@@ -911,10 +1061,10 @@
 
         <div class="border rounded-lg overflow-hidden">
             <div class="px-4 py-3 border-b flex items-center justify-between gap-4 flex-wrap">
-                <div class="flex items-center gap-1">
+                <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
                     {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.length}`], ["volume", `Volume ${volumes.length}`]] as [tab, label]}
                         <button
-                            class="px-3 py-1 rounded text-sm font-medium transition-colors {activeTab === tab ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}"
+                            class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {activeTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => (activeTab = tab as typeof activeTab)}
                         >
                             {label}
@@ -946,35 +1096,11 @@
                             </td>
                         </tr>
                     {:else}
-                        {#snippet workloadActions(w: Workload)}
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 px-2 text-xs"
-                                onclick={() => openLogs(w)}
-                            >
-                                Logs
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 px-2 text-xs"
-                                onclick={() => openExec(w)}
-                                disabled={w.status !== "running"}
-                            >
-                                Shell
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                class="text-destructive hover:text-destructive h-7 px-2 text-xs"
-                                onclick={() => handleDeleteWorkload(w.id)}
-                            >
-                                Stop
-                            </Button>
-                        {/snippet}
                         {#snippet workloadRow(w: Workload, indented: boolean)}
-                            <tr class="border-t hover:bg-muted/20 transition-colors">
+                            <tr
+                                class="border-t hover:bg-muted/20 transition-colors cursor-pointer"
+                                onclick={() => openContainer(w)}
+                            >
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2.5" class:ps-6={indented}>
                                         <div class="flex w-5 shrink-0 items-center justify-center">
@@ -1015,9 +1141,7 @@
                                         {/if}
                                     </div>
                                 </td>
-                                <td class="px-4 py-3 text-right">
-                                    {@render workloadActions(w)}
-                                </td>
+                                <td class="px-4 py-3"></td>
                             </tr>
                         {/snippet}
                         {#each filteredResources as item (item.kind + (item.kind === "stack" ? item.data.stack_id : item.data.id))}
