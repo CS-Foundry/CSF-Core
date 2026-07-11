@@ -607,11 +607,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Deploy Container</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => deployDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -682,11 +683,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Add Resource</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => resourcePickerDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="flex flex-col gap-2">
@@ -717,11 +719,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Deploy Docker Compose Stack</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => composeDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="flex flex-col gap-1">
@@ -813,11 +816,12 @@
         <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold">Create Volume</h2>
             <button
-                class="text-muted-foreground hover:text-foreground"
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => volumeDialog?.close()}
                 aria-label="Close"
+                title="Close"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon icon="mdi:close" width={18} height={18} />
             </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -860,53 +864,59 @@
                         {statusLabel(activeContainer.status)}
                     </span>
                 </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    <Button
-                        size="sm"
-                        variant="outline"
+                <div class="flex items-center gap-1 shrink-0">
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
                         onclick={handleRestartContainer}
                         disabled={containerActionBusy}
+                        aria-label="Restart"
+                        title="Restart"
                     >
-                        Restart
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
+                        <Icon icon="mdi:restart" width={18} height={18} />
+                    </button>
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
                         onclick={handleStopContainer}
                         disabled={containerActionBusy || activeContainer.desired_state === "stopped"}
+                        aria-label="Stop"
+                        title="Stop"
                     >
-                        Stop
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        class="text-destructive hover:text-destructive"
+                        <Icon icon="mdi:stop-circle-outline" width={18} height={18} />
+                    </button>
+                    <button
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 disabled:pointer-events-none"
                         onclick={handleDeleteContainer}
                         disabled={containerActionBusy}
+                        aria-label="Delete"
+                        title="Delete"
                     >
-                        Delete
-                    </Button>
+                        <Icon icon="mdi:trash-can-outline" width={18} height={18} />
+                    </button>
+                    <div class="w-px h-5 bg-border mx-1"></div>
                     <button
-                        class="text-muted-foreground hover:text-foreground ms-1"
+                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                         onclick={() => containerDialog?.close()}
                         aria-label="Close"
+                        title="Close"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <Icon icon="mdi:close" width={18} height={18} />
                     </button>
                 </div>
             </div>
             {#if containerActionError}
                 <p class="px-6 py-2 text-xs text-destructive shrink-0 border-b">{containerActionError}</p>
             {/if}
-            <div class="flex items-center gap-1 px-6 py-2 border-b shrink-0">
-                {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"]] as [tab, label]}
-                    <button
-                        class="px-3 py-1.5 rounded text-sm font-medium transition-colors {containerDialogTab === tab ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}"
-                        onclick={() => switchTab(tab as typeof containerDialogTab)}
-                    >
-                        {label}
-                    </button>
-                {/each}
+            <div class="px-6 py-2 border-b shrink-0">
+                <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"]] as [tab, label]}
+                        <button
+                            class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                            onclick={() => switchTab(tab as typeof containerDialogTab)}
+                        >
+                            {label}
+                        </button>
+                    {/each}
+                </div>
             </div>
             <div class="flex-1 overflow-hidden">
                 {#if containerDialogTab === "logs"}
@@ -1051,10 +1061,10 @@
 
         <div class="border rounded-lg overflow-hidden">
             <div class="px-4 py-3 border-b flex items-center justify-between gap-4 flex-wrap">
-                <div class="flex items-center gap-1">
+                <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
                     {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.length}`], ["volume", `Volume ${volumes.length}`]] as [tab, label]}
                         <button
-                            class="px-3 py-1 rounded text-sm font-medium transition-colors {activeTab === tab ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}"
+                            class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {activeTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => (activeTab = tab as typeof activeTab)}
                         >
                             {label}
