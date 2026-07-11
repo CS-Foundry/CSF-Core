@@ -1,6 +1,6 @@
 <script lang="ts">
     import { auth } from '$lib/auth/store.svelte';
-    import { getNodeMetricsLatest, openNodeMetricsSocket, type LiveNodeMetrics, type Node, type NodeMetricsLatest } from '$lib/api/nodes';
+    import { getNodeMetricsLatest, openNodeMetricsSocket, rebootNode, powerOffNode, drainNode, uncordonNode, type LiveNodeMetrics, type Node, type NodeMetricsLatest } from '$lib/api/nodes';
     import * as Sheet from '$lib/components/ui/sheet/index.js';
     import { Button } from '$lib/components/ui/button/index.js';
 
@@ -18,6 +18,8 @@
     let metricsLive = $state(false);
     let activeTab = $state<'summary' | 'hardware' | 'workloads' | 'network' | 'tasks'>('summary');
     let liveSocket: WebSocket | null = null;
+    let powerActionBusy = $state(false);
+    let powerActionError = $state<string | null>(null);
 
     $effect(() => {
         if (node && open) {
@@ -190,6 +192,63 @@
         return diff < 60 ? `refreshed ${diff}s ago` : `refreshed ${Math.floor(diff / 60)}m ago`;
     }
 
+    async function handleReboot() {
+        if (!auth.token || !node) return;
+        if (!confirm(`Reboot ${node.hostname}? This will restart the host and briefly disconnect all workloads on it.`)) return;
+        powerActionBusy = true;
+        powerActionError = null;
+        try {
+            await rebootNode(auth.token, node.id);
+        } catch (e) {
+            powerActionError = e instanceof Error ? e.message : 'Failed to reboot node';
+        } finally {
+            powerActionBusy = false;
+        }
+    }
+
+    async function handlePowerOff() {
+        if (!auth.token || !node) return;
+        if (!confirm(`Power off ${node.hostname}? The host will shut down and stop all workloads on it.`)) return;
+        powerActionBusy = true;
+        powerActionError = null;
+        try {
+            await powerOffNode(auth.token, node.id);
+        } catch (e) {
+            powerActionError = e instanceof Error ? e.message : 'Failed to power off node';
+        } finally {
+            powerActionBusy = false;
+        }
+    }
+
+    async function handleDrain() {
+        if (!auth.token || !node) return;
+        if (!confirm(`Drain ${node.hostname}? All workloads will be rescheduled to other nodes and this node will stop receiving new ones.`)) return;
+        powerActionBusy = true;
+        powerActionError = null;
+        try {
+            await drainNode(auth.token, node.id);
+            node.cordoned = true;
+        } catch (e) {
+            powerActionError = e instanceof Error ? e.message : 'Failed to drain node';
+        } finally {
+            powerActionBusy = false;
+        }
+    }
+
+    async function handleUncordon() {
+        if (!auth.token || !node) return;
+        powerActionBusy = true;
+        powerActionError = null;
+        try {
+            await uncordonNode(auth.token, node.id);
+            node.cordoned = false;
+        } catch (e) {
+            powerActionError = e instanceof Error ? e.message : 'Failed to uncordon node';
+        } finally {
+            powerActionBusy = false;
+        }
+    }
+
     const tabs: { id: typeof activeTab; label: string }[] = [
         { id: 'summary', label: 'Summary' },
         { id: 'hardware', label: 'Hardware' },
@@ -243,6 +302,9 @@
                         <span class="text-xs text-muted-foreground">{node.ip_address ?? 'no ip'}</span>
                     </div>
                     <div class="ml-auto flex items-center gap-1.5 shrink-0">
+                        {#if node.cordoned}
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-yellow-500/15 text-yellow-600">cordoned</span>
+                        {/if}
                         <span class="inline-block w-2 h-2 rounded-full {statusDotClass(node.status)}"></span>
                         <span class="text-xs font-medium">{node.status.toLowerCase()}</span>
                     </div>
@@ -256,25 +318,38 @@
                         </svg>
                         BMC / iDRAC
                     </Button>
-                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" onclick={handleReboot} disabled={powerActionBusy}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>
                         </svg>
                         Reboot
                     </Button>
-                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M5 12h14M12 5l7 7-7 7"/>
-                        </svg>
-                        Drain
-                    </Button>
-                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5 text-red-500 hover:text-red-500" disabled>
+                    {#if node.cordoned}
+                        <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" onclick={handleUncordon} disabled={powerActionBusy}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                            Uncordon
+                        </Button>
+                    {:else}
+                        <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" onclick={handleDrain} disabled={powerActionBusy}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                            Drain
+                        </Button>
+                    {/if}
+                    <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5 text-red-500 hover:text-red-500" onclick={handlePowerOff} disabled={powerActionBusy}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
                         </svg>
                         Power off
                     </Button>
                 </div>
+
+                {#if powerActionError}
+                    <p class="text-xs text-destructive mt-1.5">{powerActionError}</p>
+                {/if}
 
                 <div class="flex gap-0 mt-3 border-b -mx-6 px-6">
                     {#each tabs as tab}

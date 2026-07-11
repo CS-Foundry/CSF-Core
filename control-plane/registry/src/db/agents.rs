@@ -83,6 +83,7 @@ pub async fn create(
         wg_endpoint: Set(None),
         wg_tunnel_ip: Set(wg_tunnel_ip),
         kvm_capable: Set(false),
+        cordoned: Set(false),
     };
 
     Ok(model.insert(db).await?)

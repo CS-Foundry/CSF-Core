@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::agent::AgentApiKey;
-use crate::auth::rbac::CanViewAgents;
+use crate::auth::rbac::{CanManageSystem, CanViewAgents};
 use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -87,6 +87,7 @@ pub struct AgentResponse {
     pub status: String,
     pub last_heartbeat: Option<String>,
     pub registered_at: String,
+    pub cordoned: bool,
 }
 
 impl From<agents::Model> for AgentResponse {
@@ -103,6 +104,7 @@ impl From<agents::Model> for AgentResponse {
             status: model.status,
             last_heartbeat: model.last_heartbeat.map(|dt| dt.to_string()),
             registered_at: model.registered_at.to_string(),
+            cordoned: model.cordoned,
         }
     }
 }
@@ -170,6 +172,7 @@ pub async fn register_agent(
             wg_endpoint: ActiveValue::Set(None),
             wg_tunnel_ip: ActiveValue::Set(None),
             kvm_capable: ActiveValue::Set(false),
+            cordoned: ActiveValue::Set(false),
         };
 
         new_agent.insert(&state.db_conn).await.map_err(|e| {
@@ -444,12 +447,101 @@ pub async fn get_self_volumes(
     Ok(Json(rows))
 }
 
+pub async fn drain_agent(
+    CanManageSystem(claims): CanManageSystem,
+    State(state): State<AppState>,
+    Path(agent_id): Path<Uuid>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let agent = agents::Entity::find_by_id(agent_id)
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to fetch agent for drain");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut active: agents::ActiveModel = agent.into();
+    active.cordoned = ActiveValue::Set(true);
+    active.update(&state.db_conn).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to cordon agent");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let workload_ids: Vec<Uuid> = workloads::Entity::find()
+        .filter(workloads::Column::AssignedAgentId.eq(agent_id))
+        .filter(
+            workloads::Column::Status
+                .eq("scheduled")
+                .or(workloads::Column::Status.eq("running")),
+        )
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list agent workloads for drain");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .into_iter()
+        .map(|w| w.id)
+        .collect();
+
+    tracing::warn!(
+        user_id = %claims.user_id,
+        agent_id = %agent_id,
+        workload_count = workload_ids.len(),
+        "node drain requested"
+    );
+
+    let path = format!("/internal/agents/{}/reschedule", agent_id);
+    let body = serde_json::json!({ "workload_ids": workload_ids });
+
+    match state
+        .service_client
+        .forward_to_scheduler(reqwest::Method::POST, &path, Some(body), None)
+        .await
+    {
+        Ok((status, _)) => Ok(StatusCode::from_u16(status.as_u16())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            .into_response()),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to forward drain reschedule to scheduler");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+    }
+}
+
+pub async fn uncordon_agent(
+    CanManageSystem(_claims): CanManageSystem,
+    State(state): State<AppState>,
+    Path(agent_id): Path<Uuid>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let agent = agents::Entity::find_by_id(agent_id)
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to fetch agent for uncordon");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut active: agents::ActiveModel = agent.into();
+    active.cordoned = ActiveValue::Set(false);
+    active.update(&state.db_conn).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to uncordon agent");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn agents_routes() -> Router<AppState> {
     Router::new()
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
         .route("/agents/{id}/metrics", get(get_agent_metrics))
         .route("/agents/{id}/metrics/latest", get(get_agent_metrics_latest))
+        .route("/agents/{id}/drain", post(drain_agent))
+        .route("/agents/{id}/uncordon", post(uncordon_agent))
 }
 
 pub fn agents_unmetered_routes() -> Router<AppState> {

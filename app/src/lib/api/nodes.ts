@@ -12,6 +12,7 @@ export interface Node {
     status: string;
     last_heartbeat: string | null;
     registered_at: string;
+    cordoned: boolean;
 }
 
 export interface NodeMetrics {
@@ -131,4 +132,50 @@ export async function getHealthHistory(token: string, range: '1h' | '7d' | '30d'
     });
     if (!res.ok) throw new Error(`health history fetch failed: ${res.status}`);
     return res.json();
+}
+
+export async function rebootNode(token: string, id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/agents/${id}/power`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reboot' }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to reboot node: ${res.status}`);
+    }
+}
+
+export async function powerOffNode(token: string, id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/agents/${id}/power`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'poweroff' }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to power off node: ${res.status}`);
+    }
+}
+
+export async function drainNode(token: string, id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/agents/${id}/drain`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to drain node: ${res.status}`);
+    }
+}
+
+export async function uncordonNode(token: string, id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/agents/${id}/uncordon`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to uncordon node: ${res.status}`);
+    }
 }
