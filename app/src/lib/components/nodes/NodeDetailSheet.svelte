@@ -17,7 +17,6 @@
     let metricsLoading = $state(false);
     let metricsLive = $state(false);
     let activeTab = $state<'summary' | 'hardware' | 'workloads' | 'network' | 'tasks'>('summary');
-    let sshCopied = $state(false);
     let liveSocket: WebSocket | null = null;
 
     $effect(() => {
@@ -191,13 +190,6 @@
         return diff < 60 ? `refreshed ${diff}s ago` : `refreshed ${Math.floor(diff / 60)}m ago`;
     }
 
-    async function copySshCommand() {
-        if (!node?.ip_address) return;
-        await navigator.clipboard.writeText(`ssh root@${node.ip_address}`);
-        sshCopied = true;
-        setTimeout(() => { sshCopied = false; }, 2000);
-    }
-
     const tabs: { id: typeof activeTab; label: string }[] = [
         { id: 'summary', label: 'Summary' },
         { id: 'hardware', label: 'Hardware' },
@@ -257,13 +249,6 @@
                 </div>
 
                 <div class="flex flex-wrap gap-1 pb-0 -mx-1 px-1">
-                    <Button variant="default" size="sm" class="text-xs h-7 shrink-0 gap-1.5" onclick={copySshCommand}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="2"/>
-                            <path d="M8 12h8M12 8l4 4-4 4"/>
-                        </svg>
-                        {sshCopied ? 'Copied' : 'SSH console'}
-                    </Button>
                     <Button variant="outline" size="sm" class="text-xs h-7 shrink-0 gap-1.5" disabled>
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="3"/>
