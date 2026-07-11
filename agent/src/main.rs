@@ -59,9 +59,7 @@ async fn main() -> Result<()> {
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
     let wg_tunnel_ip = if config::is_registered() {
-        config::load_config()
-            .ok()
-            .and_then(|cfg| cfg.wg_tunnel_ip)
+        config::load_config().ok().and_then(|cfg| cfg.wg_tunnel_ip)
     } else {
         std::env::var("CSFX_WG_TUNNEL_IP").ok()
     };

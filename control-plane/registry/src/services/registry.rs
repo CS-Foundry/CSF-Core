@@ -150,13 +150,14 @@ impl AgentRegistry {
                 let wg_tunnel_ip = match db_agent.wg_tunnel_ip {
                     Some(ip) => Some(ip),
                     None => {
-                        let ip = mgmt_ipam
-                            .allocate(db_agent.id)
-                            .await
-                            .map_err(|e| format!("Failed to allocate management tunnel IP: {}", e))?;
+                        let ip = mgmt_ipam.allocate(db_agent.id).await.map_err(|e| {
+                            format!("Failed to allocate management tunnel IP: {}", e)
+                        })?;
                         crate::db::agents::set_wg_tunnel_ip(&self.db, db_agent.id, &ip)
                             .await
-                            .map_err(|e| format!("Failed to persist management tunnel IP: {}", e))?;
+                            .map_err(|e| {
+                                format!("Failed to persist management tunnel IP: {}", e)
+                            })?;
                         Some(ip)
                     }
                 };
