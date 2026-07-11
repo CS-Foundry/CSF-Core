@@ -121,7 +121,11 @@ pub async fn deregister_agent(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let _ = state.api_key_manager.revoke_key(agent_id).await;
 
-    match state.agent_registry.deregister_agent(agent_id).await {
+    match state
+        .agent_registry
+        .deregister_agent(agent_id, &state.mgmt_ipam)
+        .await
+    {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(e) => Err((
             StatusCode::NOT_FOUND,

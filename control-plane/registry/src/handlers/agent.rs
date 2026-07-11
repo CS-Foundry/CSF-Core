@@ -82,17 +82,20 @@ pub async fn register_agent(
 
     let (agent, reregistered) = match state
         .agent_registry
-        .register_agent(RegisterAgentParams {
-            agent_id,
-            name: request.name,
-            hostname: request.hostname,
-            os_type: request.os_type,
-            os_version: request.os_version,
-            architecture: request.architecture,
-            agent_version: request.agent_version,
-            tags: request.tags,
-            allow_reregister,
-        })
+        .register_agent(
+            RegisterAgentParams {
+                agent_id,
+                name: request.name,
+                hostname: request.hostname,
+                os_type: request.os_type,
+                os_version: request.os_version,
+                architecture: request.architecture,
+                agent_version: request.agent_version,
+                tags: request.tags,
+                allow_reregister,
+            },
+            &state.mgmt_ipam,
+        )
         .await
     {
         Ok(result) => result,
@@ -143,6 +146,7 @@ pub async fn register_agent(
         api_key: api_key.key,
         certificate_pem,
         ca_cert_pem,
+        wg_tunnel_ip: agent.wg_tunnel_ip,
         message: "Agent successfully registered".to_string(),
     }))
 }

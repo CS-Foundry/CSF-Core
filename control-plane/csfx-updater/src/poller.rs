@@ -47,8 +47,9 @@ pub async fn poll_and_update(
         }
     };
 
+    let forced = etcd.get(etcd::FORCE_UPDATE_KEY).await?.as_deref() == Some("true");
     let current = etcd.get(etcd::AVAILABLE_FLAKE_REV_KEY).await?;
-    if current.as_deref() == Some(sha.as_str()) {
+    if !forced && current.as_deref() == Some(sha.as_str()) {
         tracing::debug!(version = %desired_version, sha = %sha, "flake rev unchanged");
         return Ok(None);
     }

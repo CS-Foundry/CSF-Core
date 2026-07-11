@@ -58,7 +58,13 @@ async fn main() -> Result<()> {
         .unwrap_or(60);
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
-    let wg_tunnel_ip = std::env::var("CSFX_WG_TUNNEL_IP").ok();
+    let wg_tunnel_ip = if config::is_registered() {
+        config::load_config()
+            .ok()
+            .and_then(|cfg| cfg.wg_tunnel_ip)
+    } else {
+        std::env::var("CSFX_WG_TUNNEL_IP").ok()
+    };
     let wg_identity =
         wg_identity::load_or_generate().context("Failed to initialize WireGuard identity")?;
 
@@ -204,10 +210,18 @@ async fn perform_registration(
         warn!("Registry did not issue a certificate during registration");
     }
 
+    if let Some(ref ip) = resp.wg_tunnel_ip {
+        client.set_wg_tunnel_ip(ip.clone()).await;
+        info!(wg_tunnel_ip = %ip, "Management tunnel IP assigned by registry");
+    } else {
+        warn!("Registry did not assign a management tunnel IP");
+    }
+
     let cfg = config::DaemonConfig {
         gateway_url: gateway_url.to_string(),
         agent_id: resp.agent_id,
         heartbeat_interval_secs,
+        wg_tunnel_ip: resp.wg_tunnel_ip.clone(),
     };
 
     config::save_config(&cfg).context("Failed to save daemon config")?;

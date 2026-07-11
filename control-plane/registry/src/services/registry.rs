@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::agent::{AgentStatistics, AgentStatus, PreRegisteredAgent, RegisteredAgent};
+use crate::services::mgmt_ipam::MgmtIpamService;
 
 pub struct PreRegisterParams {
     pub agent_id: Uuid,
@@ -113,6 +114,7 @@ impl AgentRegistry {
     pub async fn register_agent(
         &self,
         params: RegisterAgentParams,
+        mgmt_ipam: &MgmtIpamService,
     ) -> Result<(RegisteredAgent, bool), String> {
         let tags_json = params
             .tags
@@ -145,6 +147,20 @@ impl AgentRegistry {
                     )
                 );
 
+                let wg_tunnel_ip = match db_agent.wg_tunnel_ip {
+                    Some(ip) => Some(ip),
+                    None => {
+                        let ip = mgmt_ipam
+                            .allocate(db_agent.id)
+                            .await
+                            .map_err(|e| format!("Failed to allocate management tunnel IP: {}", e))?;
+                        crate::db::agents::set_wg_tunnel_ip(&self.db, db_agent.id, &ip)
+                            .await
+                            .map_err(|e| format!("Failed to persist management tunnel IP: {}", e))?;
+                        Some(ip)
+                    }
+                };
+
                 let agent = RegisteredAgent {
                     id: db_agent.id,
                     name: db_agent.name,
@@ -160,11 +176,17 @@ impl AgentRegistry {
                         .last_heartbeat
                         .map(|dt: NaiveDateTime| dt.and_utc()),
                     tags: params.tags,
+                    wg_tunnel_ip,
                 };
 
                 return Ok((agent, true));
             }
         }
+
+        let wg_tunnel_ip = mgmt_ipam
+            .allocate(params.agent_id)
+            .await
+            .map_err(|e| format!("Failed to allocate management tunnel IP: {}", e))?;
 
         let db_agent = crate::db::agents::create(
             &self.db,
@@ -180,13 +202,17 @@ impl AgentRegistry {
             tags_json,
             None,
             None,
+            Some(wg_tunnel_ip.clone()),
         )
         .await
         .map_err(|e| format!("Failed to create agent in database: {}", e))?;
 
         crate::log_info!(
             "agent_registry",
-            &format!("Registered new agent: {} id={}", params.name, db_agent.id)
+            &format!(
+                "Registered new agent: {} id={} wg_tunnel_ip={}",
+                params.name, db_agent.id, wg_tunnel_ip
+            )
         );
 
         let agent = RegisteredAgent {
@@ -204,6 +230,7 @@ impl AgentRegistry {
                 .last_heartbeat
                 .map(|dt: NaiveDateTime| dt.and_utc()),
             tags: params.tags,
+            wg_tunnel_ip: db_agent.wg_tunnel_ip,
         };
 
         Ok((agent, false))
@@ -256,6 +283,7 @@ impl AgentRegistry {
                     .last_heartbeat
                     .map(|dt: NaiveDateTime| dt.and_utc()),
                 tags: None,
+                wg_tunnel_ip: db_agent.wg_tunnel_ip,
             }),
             _ => None,
         }
@@ -280,6 +308,7 @@ impl AgentRegistry {
                         .last_heartbeat
                         .map(|dt: NaiveDateTime| dt.and_utc()),
                     tags: None,
+                    wg_tunnel_ip: db_agent.wg_tunnel_ip,
                 })
                 .collect(),
             Err(e) => {
@@ -289,10 +318,28 @@ impl AgentRegistry {
         }
     }
 
-    pub async fn deregister_agent(&self, agent_id: Uuid) -> Result<(), String> {
+    pub async fn deregister_agent(
+        &self,
+        agent_id: Uuid,
+        mgmt_ipam: &MgmtIpamService,
+    ) -> Result<(), String> {
+        let wg_tunnel_ip = crate::db::agents::get_by_id(&self.db, agent_id)
+            .await
+            .map_err(|e| format!("Failed to query agent: {}", e))?
+            .and_then(|a| a.wg_tunnel_ip);
+
         crate::db::agents::delete(&self.db, agent_id)
             .await
             .map_err(|e| format!("Failed to delete agent: {}", e))?;
+
+        if let Some(ip) = wg_tunnel_ip {
+            if let Err(e) = mgmt_ipam.release(&ip).await {
+                crate::log_warn!(
+                    "agent_registry",
+                    &format!("Failed to release management tunnel IP {}: {}", ip, e)
+                );
+            }
+        }
 
         crate::log_info!(
             "agent_registry",

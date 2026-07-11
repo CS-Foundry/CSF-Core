@@ -12,8 +12,8 @@ use crate::{
     handlers::{admin, agent, pki},
     metrics,
     services::{
-        api_keys::ApiKeyManager, bootstrap_tokens::BootstrapTokenManager, pki::PkiService,
-        registry::AgentRegistry, tokens::TokenManager,
+        api_keys::ApiKeyManager, bootstrap_tokens::BootstrapTokenManager,
+        mgmt_ipam::MgmtIpamService, pki::PkiService, registry::AgentRegistry, tokens::TokenManager,
     },
 };
 
@@ -24,6 +24,7 @@ pub struct AppState {
     pub api_key_manager: Arc<ApiKeyManager>,
     pub agent_registry: Arc<AgentRegistry>,
     pub pki_service: Arc<PkiService>,
+    pub mgmt_ipam: Arc<MgmtIpamService>,
     pub db: DatabaseConnection,
     pub scheduler_url: String,
     pub gateway_url: String,

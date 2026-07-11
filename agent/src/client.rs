@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -33,6 +34,7 @@ pub struct RegisterResponse {
     pub api_key: String,
     pub certificate_pem: Option<String>,
     pub ca_cert_pem: Option<String>,
+    pub wg_tunnel_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -121,7 +123,7 @@ pub struct ApiClient {
     cert_pem: Option<String>,
     wg_public_key: String,
     wg_endpoint: Option<String>,
-    wg_tunnel_ip: Option<String>,
+    wg_tunnel_ip: RwLock<Option<String>>,
 }
 
 impl ApiClient {
@@ -143,13 +145,17 @@ impl ApiClient {
             cert_pem: None,
             wg_public_key,
             wg_endpoint,
-            wg_tunnel_ip,
+            wg_tunnel_ip: RwLock::new(wg_tunnel_ip),
         })
     }
 
     pub fn with_certificate(mut self, cert_pem: String) -> Self {
         self.cert_pem = Some(cert_pem);
         self
+    }
+
+    pub async fn set_wg_tunnel_ip(&self, ip: String) {
+        *self.wg_tunnel_ip.write().await = Some(ip);
     }
 
     pub async fn register(
@@ -247,6 +253,8 @@ impl ApiClient {
             })
             .unwrap_or_default();
 
+        let wg_tunnel_ip = self.wg_tunnel_ip.read().await.clone();
+
         let mut req = self
             .client
             .post(&url)
@@ -265,7 +273,7 @@ impl ApiClient {
                 uptime_seconds,
                 wg_public_key: Some(self.wg_public_key.clone()),
                 wg_endpoint: self.wg_endpoint.clone(),
-                wg_tunnel_ip: self.wg_tunnel_ip.clone(),
+                wg_tunnel_ip,
                 agent_version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 kvm_capable: crate::system::is_kvm_capable(),
             });
