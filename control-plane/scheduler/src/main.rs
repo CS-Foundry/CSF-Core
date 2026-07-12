@@ -52,7 +52,27 @@ async fn main() -> anyhow::Result<()> {
         scheduler,
     };
 
-    let app = server::create_router(state);
+    let app = server::create_router(state.clone());
+
+    let retry_scheduler = state.scheduler.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            match retry_scheduler.retry_pending().await {
+                Ok(0) => {}
+                Ok(count) => {
+                    log_info!(
+                        "main",
+                        &format!("Retried pending workloads placed={}", count)
+                    );
+                }
+                Err(e) => {
+                    log_error!("main", &format!("Pending retry failed err={}", e));
+                }
+            }
+        }
+    });
 
     let port = std::env::var("SCHEDULER_PORT")
         .ok()

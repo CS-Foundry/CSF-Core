@@ -245,8 +245,9 @@ impl AgentRegistry {
         wg_tunnel_ip: Option<String>,
         agent_version: Option<String>,
         kvm_capable: bool,
+        mgmt_ipam: &MgmtIpamService,
     ) -> Result<(), String> {
-        crate::db::agents::update_heartbeat(
+        let db_agent = crate::db::agents::update_heartbeat(
             &self.db,
             agent_id,
             "Online".to_string(),
@@ -258,6 +259,21 @@ impl AgentRegistry {
         )
         .await
         .map_err(|e| format!("Failed to update heartbeat: {}", e))?;
+
+        if db_agent.wg_tunnel_ip.is_none() {
+            let ip = mgmt_ipam
+                .allocate(agent_id)
+                .await
+                .map_err(|e| format!("Failed to backfill management tunnel IP: {}", e))?;
+            crate::db::agents::set_wg_tunnel_ip(&self.db, agent_id, &ip)
+                .await
+                .map_err(|e| format!("Failed to persist management tunnel IP: {}", e))?;
+
+            crate::log_info!(
+                "agent_registry",
+                &format!("Backfilled management tunnel IP agent={} ip={}", agent_id, ip)
+            );
+        }
 
         crate::log_debug!(
             "agent_registry",

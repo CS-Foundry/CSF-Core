@@ -212,6 +212,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
+ "x25519-dalek",
 ]
 
 [[package]]

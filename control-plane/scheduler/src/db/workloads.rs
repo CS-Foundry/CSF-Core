@@ -1,6 +1,9 @@
 use chrono::Utc;
 use entity::entities::workloads;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait, ModelTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
+    QueryFilter,
+};
 use uuid::Uuid;
 
 use crate::models::workload::{
@@ -82,6 +85,14 @@ pub async fn assign(
 pub async fn get_all(db: &DatabaseConnection) -> Result<Vec<WorkloadResponse>, sea_orm::DbErr> {
     let rows = workloads::Entity::find().all(db).await?;
     Ok(rows.into_iter().map(into_response).collect())
+}
+
+pub async fn get_pending(db: &DatabaseConnection) -> Result<Vec<workloads::Model>, sea_orm::DbErr> {
+    workloads::Entity::find()
+        .filter(workloads::Column::Status.eq(WorkloadStatus::Pending.as_str()))
+        .filter(workloads::Column::AssignedAgentId.is_null())
+        .all(db)
+        .await
 }
 
 pub async fn get_by_id(

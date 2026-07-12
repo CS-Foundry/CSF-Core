@@ -9,6 +9,28 @@ pub struct Peer {
     pub allowed_ips: String,
 }
 
+pub const MGMT_INTERFACE_NAME: &str = "wgmgmt0";
+
+pub async fn ensure_mgmt_interface(
+    private_key_b64: &str,
+    listen_port: u16,
+    tunnel_ip: &str,
+) -> Result<()> {
+    let iface = MGMT_INTERFACE_NAME;
+
+    if !interface_exists(iface).await? {
+        run_ip(&["link", "add", "dev", iface, "type", "wireguard"]).await?;
+        set_private_key(iface, private_key_b64).await?;
+        run_wg(&["set", iface, "listen-port", &listen_port.to_string()]).await?;
+        run_ip(&["address", "add", &format!("{}/32", tunnel_ip), "dev", iface]).await?;
+        run_ip(&["link", "set", "up", "dev", iface]).await?;
+
+        info!(iface = %iface, tunnel_ip = %tunnel_ip, "Management WireGuard interface ready");
+    }
+
+    Ok(())
+}
+
 pub fn rg_interface_name(resource_group_id: &str) -> String {
     const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
     const FNV_PRIME: u32 = 0x01000193;
@@ -109,6 +131,38 @@ pub async fn set_peers(iface: &str, peers: &[Peer]) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub async fn reconcile_peers(iface: &str, peers: &[Peer]) -> Result<()> {
+    let current = list_peer_public_keys(iface).await?;
+    let desired: std::collections::HashSet<&str> =
+        peers.iter().map(|p| p.public_key.as_str()).collect();
+
+    for stale_key in current.iter().filter(|k| !desired.contains(k.as_str())) {
+        run_wg(&["set", iface, "peer", stale_key, "remove"]).await?;
+        info!(iface = %iface, public_key = %stale_key, "Removed stale WireGuard peer");
+    }
+
+    set_peers(iface, peers).await
+}
+
+async fn list_peer_public_keys(iface: &str) -> Result<Vec<String>> {
+    let output = Command::new("wg")
+        .args(["show", iface, "peers"])
+        .output()
+        .await
+        .context("failed to execute wg show peers")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("wg show peers failed iface={} stderr={}", iface, stderr);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 async fn interface_exists(iface: &str) -> Result<bool> {

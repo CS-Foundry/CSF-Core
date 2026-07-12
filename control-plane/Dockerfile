@@ -21,6 +21,7 @@ FROM base AS dependencies
 COPY Cargo.toml Cargo.lock ./
 
 COPY agent/Cargo.toml ./agent/
+COPY agent/csfx-guest-init/Cargo.toml ./agent/csfx-guest-init/
 COPY control-plane/api-gateway/Cargo.toml ./control-plane/api-gateway/
 COPY control-plane/scheduler/Cargo.toml ./control-plane/scheduler/
 COPY control-plane/failover-controller/Cargo.toml ./control-plane/failover-controller/
@@ -34,6 +35,7 @@ COPY control-plane/csfx-migrate/Cargo.toml ./control-plane/csfx-migrate/
 COPY control-plane/csfx-updater/Cargo.toml ./control-plane/csfx-updater/
 
 RUN mkdir -p agent/src \
+    agent/csfx-guest-init/src \
     control-plane/api-gateway/src \
     control-plane/scheduler/src \
     control-plane/failover-controller/src \
@@ -46,6 +48,7 @@ RUN mkdir -p agent/src \
     control-plane/csfx-migrate/src \
     control-plane/csfx-updater/src \
     && echo "fn main() {}" > agent/src/main.rs \
+    && echo "fn main() {}" > agent/csfx-guest-init/src/main.rs \
     && echo "fn main() {}" > control-plane/api-gateway/src/main.rs \
     && echo "fn main() {}" > control-plane/scheduler/src/main.rs \
     && echo "fn main() {}" > control-plane/failover-controller/src/main.rs \

@@ -106,7 +106,7 @@ pub async fn update_heartbeat(
     wg_tunnel_ip: Option<String>,
     agent_version: Option<String>,
     kvm_capable: bool,
-) -> Result<()> {
+) -> Result<agents::Model> {
     let mut agent: agents::ActiveModel = agents::Entity::find_by_id(agent_id)
         .one(db)
         .await?
@@ -129,9 +129,7 @@ pub async fn update_heartbeat(
         agent.agent_version = Set(agent_version);
     }
     agent.kvm_capable = Set(kvm_capable);
-    agent.update(db).await?;
-
-    Ok(())
+    Ok(agent.update(db).await?)
 }
 
 pub async fn mark_degraded_by_timeout(

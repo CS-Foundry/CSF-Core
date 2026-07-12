@@ -221,6 +221,7 @@ pub async fn heartbeat(
             request.wg_tunnel_ip.clone(),
             request.agent_version.clone(),
             request.kvm_capable,
+            &state.mgmt_ipam,
         )
         .await
     {
@@ -355,10 +356,37 @@ async fn forward_metrics(
 
     let url = format!("{}/api/agents/metrics", state.gateway_url);
 
-    if let Err(e) = state.http_client.post(&url).json(&payload).send().await {
-        crate::log_warn!(
-            "agent_handler",
-            &format!("Failed to forward metrics to gateway err={}", e)
-        );
+    for attempt in 1..=2 {
+        match state.http_client.post(&url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => return,
+            Ok(resp) => {
+                crate::log_warn!(
+                    "agent_handler",
+                    &format!(
+                        "Metrics forward rejected by gateway attempt={} status={}",
+                        attempt,
+                        resp.status()
+                    )
+                );
+            }
+            Err(e) => {
+                crate::log_warn!(
+                    "agent_handler",
+                    &format!(
+                        "Failed to forward metrics to gateway attempt={} err={}",
+                        attempt, e
+                    )
+                );
+            }
+        }
+
+        if attempt == 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
     }
+
+    crate::log_error!(
+        "agent_handler",
+        &format!("Metrics forward permanently failed agent_id={}", agent_id)
+    );
 }

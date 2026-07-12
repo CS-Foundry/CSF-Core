@@ -8,8 +8,8 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::Utc;
 use entity::{
-    entities::{agents, networks, resource_groups, volumes, workloads},
-    Agents, Networks, ResourceGroups, Volumes, Workloads,
+    entities::{agents, networks, resource_group_vpn_peers, resource_groups, volumes, workloads},
+    Agents, Networks, ResourceGroupVpnPeers, ResourceGroups, Volumes, Workloads,
 };
 use ring::rand::{SecureRandom, SystemRandom};
 use sea_orm::{
@@ -486,6 +486,38 @@ pub async fn list_resource_group_peers(
     Ok((StatusCode::OK, Json(json!(peers))))
 }
 
+#[derive(Debug, Serialize)]
+pub struct VpnPeerInfo {
+    pub client_public_key: String,
+    pub client_tunnel_ip: String,
+}
+
+pub async fn list_resource_group_vpn_peers(
+    _agent: crate::auth::agent::AgentApiKey,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let peers: Vec<VpnPeerInfo> = ResourceGroupVpnPeers::find()
+        .filter(resource_group_vpn_peers::Column::ResourceGroupId.eq(id))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list resource group vpn peers");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .into_iter()
+        .map(|p| VpnPeerInfo {
+            client_public_key: p.client_public_key,
+            client_tunnel_ip: p.client_tunnel_ip,
+        })
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!(peers))))
+}
+
 pub async fn get_vpn_config(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
     State(state): State<AppState>,
@@ -511,7 +543,40 @@ pub async fn get_vpn_config(
             )
         })?;
 
+    let hosting_agents = Workloads::find()
+        .filter(workloads::Column::ResourceGroupId.eq(id))
+        .filter(workloads::Column::AssignedAgentId.is_not_null())
+        .filter(
+            workloads::Column::Status
+                .eq("scheduled")
+                .or(workloads::Column::Status.eq("running")),
+        )
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list resource group workloads");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let mut agent_ids: Vec<Uuid> = hosting_agents
+        .into_iter()
+        .filter_map(|w| w.assigned_agent_id)
+        .collect();
+    agent_ids.sort_unstable();
+    agent_ids.dedup();
+
+    if agent_ids.is_empty() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "no WireGuard-enabled agent online" })),
+        ));
+    }
+
     let gateway_agent = Agents::find()
+        .filter(agents::Column::Id.is_in(agent_ids))
         .filter(agents::Column::Status.eq("Online"))
         .filter(agents::Column::WgPublicKey.is_not_null())
         .filter(agents::Column::WgEndpoint.is_not_null())
@@ -542,11 +607,57 @@ pub async fn get_vpn_config(
         )
     })?;
 
+    let client_public_key = derive_wg_public_key(&client_private_key).ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "failed to derive public key" })),
+        )
+    })?;
+
+    let existing_ips: Vec<String> = ResourceGroupVpnPeers::find()
+        .filter(resource_group_vpn_peers::Column::ResourceGroupId.eq(id))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list existing vpn peers");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .into_iter()
+        .map(|p| p.client_tunnel_ip)
+        .collect();
+
+    let client_tunnel_ip =
+        allocate_vpn_peer_ip(&group.internal_cidr, &existing_ips).ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "no free address in resource group cidr" })),
+            )
+        })?;
+
+    let peer = resource_group_vpn_peers::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        resource_group_id: Set(id),
+        client_public_key: Set(client_public_key),
+        client_tunnel_ip: Set(client_tunnel_ip.clone()),
+        created_at: Set(Utc::now().naive_utc()),
+    };
+    peer.insert(&state.db_conn).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to store vpn peer");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "database error" })),
+        )
+    })?;
+
     let dns = first_host_ip(&group.internal_cidr).unwrap_or_else(|| "1.1.1.1".to_string());
 
     let config = format!(
-        "[Interface]\nPrivateKey = {client_private_key}\nAddress = {dns}/32\nDNS = {dns}\n\n[Peer]\nPublicKey = {server_pubkey}\nEndpoint = {endpoint}\nAllowedIPs = {cidr}\nPersistentKeepalive = 25\n",
+        "[Interface]\nPrivateKey = {client_private_key}\nAddress = {client_tunnel_ip}/32\nDNS = {dns}\n\n[Peer]\nPublicKey = {server_pubkey}\nEndpoint = {endpoint}\nAllowedIPs = {cidr}\nPersistentKeepalive = 25\n",
         client_private_key = client_private_key,
+        client_tunnel_ip = client_tunnel_ip,
         dns = dns,
         server_pubkey = server_pubkey,
         endpoint = endpoint,
@@ -577,6 +688,34 @@ fn generate_wg_key() -> Result<String, ring::error::Unspecified> {
     key_bytes[31] &= 127;
     key_bytes[31] |= 64;
     Ok(B64.encode(key_bytes))
+}
+
+fn derive_wg_public_key(private_key_b64: &str) -> Option<String> {
+    let bytes = B64.decode(private_key_b64).ok()?;
+    let bytes: [u8; 32] = bytes.try_into().ok()?;
+    let secret = x25519_dalek::StaticSecret::from(bytes);
+    let public = x25519_dalek::PublicKey::from(&secret);
+    Some(B64.encode(public.as_bytes()))
+}
+
+fn allocate_vpn_peer_ip(cidr: &str, taken: &[String]) -> Option<String> {
+    let parsed = parse_cidr(cidr)?;
+    let host_count = 1u32 << (32 - parsed.prefix_len);
+    let dns_host = parsed.network + 1;
+
+    for offset in 2..host_count.saturating_sub(1) {
+        let candidate_bits = parsed.network + offset;
+        if candidate_bits == dns_host {
+            continue;
+        }
+        let [a, b, c, d] = candidate_bits.to_be_bytes();
+        let candidate = format!("{}.{}.{}.{}", a, b, c, d);
+        if !taken.iter().any(|ip| ip == &candidate) {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 struct Cidr {
@@ -671,5 +810,9 @@ pub fn resource_groups_routes() -> Router<AppState> {
         .route(
             "/resource-groups/{id}/peers",
             get(list_resource_group_peers),
+        )
+        .route(
+            "/resource-groups/{id}/vpn-peers",
+            get(list_resource_group_vpn_peers),
         )
 }

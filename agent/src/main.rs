@@ -57,7 +57,9 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
 
-    let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT").ok();
+    let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT")
+        .ok()
+        .or_else(detect_wg_endpoint);
     let wg_tunnel_ip = if config::is_registered() {
         config::load_config().ok().and_then(|cfg| cfg.wg_tunnel_ip)
     } else {
@@ -108,6 +110,18 @@ async fn main() -> Result<()> {
     };
 
     info!(agent_id = %agent_id, "Agent registered, starting heartbeat loop");
+
+    let mgmt_tunnel_ip = config::load_config().ok().and_then(|cfg| cfg.wg_tunnel_ip);
+    if let Some(ref tunnel_ip) = mgmt_tunnel_ip {
+        if let Err(e) =
+            wireguard::ensure_mgmt_interface(&wg_identity.private_key_b64, MGMT_WG_PORT, tunnel_ip)
+                .await
+        {
+            warn!(error = %e, "Failed to bring up management WireGuard interface");
+        }
+    } else {
+        warn!("No management tunnel IP available, VPN peering disabled for this agent");
+    }
 
     if let Err(e) = nftables::ensure_table_and_chain().await {
         warn!(error = %e, "Failed to initialize nftables resource group isolation");
@@ -252,6 +266,7 @@ async fn run_heartbeat_loop(
                 process_volumes(client, agent_id, api_key, &mounted_volumes).await;
                 let resource_group_ids = process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64).await;
                 sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
+                sync_vpn_peers(client, api_key, &resource_group_ids).await;
                 cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
 
                 let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
@@ -680,6 +695,32 @@ async fn sync_wireguard_peers(
     }
 }
 
+async fn sync_vpn_peers(client: &client::ApiClient, api_key: &str, resource_group_ids: &[String]) {
+    let mut wg_peers: Vec<wireguard::Peer> = Vec::new();
+
+    for resource_group_id in resource_group_ids {
+        match client
+            .fetch_resource_group_vpn_peers(api_key, resource_group_id)
+            .await
+        {
+            Ok(peers) => {
+                wg_peers.extend(peers.into_iter().map(|p| wireguard::Peer {
+                    public_key: p.client_public_key,
+                    endpoint: None,
+                    allowed_ips: format!("{}/32", p.client_tunnel_ip),
+                }));
+            }
+            Err(e) => {
+                warn!(resource_group_id = %resource_group_id, error = %e, "Failed to fetch resource group vpn peers");
+            }
+        }
+    }
+
+    if let Err(e) = wireguard::reconcile_peers(wireguard::MGMT_INTERFACE_NAME, &wg_peers).await {
+        warn!(error = %e, "Failed to sync VPN client peers");
+    }
+}
+
 async fn cleanup_stale_resource_groups(
     client: &client::ApiClient,
     api_key: &str,
@@ -805,4 +846,13 @@ async fn push_workload_stats(
     if let Err(e) = client.push_workload_stats(api_key, stats).await {
         warn!(error = %e, "Failed to push workload stats");
     }
+}
+
+const MGMT_WG_PORT: u16 = 51820;
+
+fn detect_wg_endpoint() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let local_ip = socket.local_addr().ok()?.ip();
+    Some(format!("{}:{}", local_ip, MGMT_WG_PORT))
 }
