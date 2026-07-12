@@ -271,7 +271,10 @@ impl AgentRegistry {
 
             crate::log_info!(
                 "agent_registry",
-                &format!("Backfilled management tunnel IP agent={} ip={}", agent_id, ip)
+                &format!(
+                    "Backfilled management tunnel IP agent={} ip={}",
+                    agent_id, ip
+                )
             );
         }
 
