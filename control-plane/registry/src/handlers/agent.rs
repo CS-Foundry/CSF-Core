@@ -221,6 +221,7 @@ pub async fn heartbeat(
             request.wg_tunnel_ip.clone(),
             request.agent_version.clone(),
             request.kvm_capable,
+            &state.mgmt_ipam,
         )
         .await
     {
