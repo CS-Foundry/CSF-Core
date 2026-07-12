@@ -25,13 +25,6 @@ pub async fn get_online_agents_with_resources(
             .await?;
 
         let Some(m) = latest_metrics else {
-            result.push(AgentResources {
-                agent_id: agent.id,
-                free_cpu_millicores: 0,
-                free_memory_bytes: 0,
-                free_disk_bytes: 0,
-                kvm_capable: agent.kvm_capable,
-            });
             continue;
         };
 

@@ -448,6 +448,84 @@ impl SchedulerService {
         Ok(responses)
     }
 
+    pub async fn retry_pending(&self) -> Result<usize, String> {
+        let pending = crate::db::workloads::get_pending(&self.db)
+            .await
+            .map_err(|e| format!("Failed to fetch pending workloads: {}", e))?;
+
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        let mut agents = crate::db::agents::get_online_agents_with_resources(&self.db)
+            .await
+            .map_err(|e| format!("Failed to fetch agent resources: {}", e))?;
+
+        for agent in agents.iter_mut() {
+            let (reserved_cpu, reserved_mem, reserved_disk) =
+                crate::db::agents::get_assigned_workload_resources(&self.db, agent.agent_id)
+                    .await
+                    .map_err(|e| format!("Failed to fetch reserved resources: {}", e))?;
+
+            agent.free_cpu_millicores -= reserved_cpu;
+            agent.free_memory_bytes -= reserved_mem;
+            agent.free_disk_bytes -= reserved_disk;
+        }
+
+        let mut placed_count = 0;
+
+        for workload in pending {
+            let runtime_class =
+                crate::models::workload::RuntimeClass::from_str(&workload.runtime_class);
+
+            let Some(agent_id) = self.first_fit_resources(
+                workload.cpu_millicores,
+                workload.memory_bytes,
+                workload.disk_bytes,
+                runtime_class.requires_kvm(),
+                &agents,
+            ) else {
+                continue;
+            };
+
+            crate::db::workloads::assign(&self.db, workload.id, agent_id)
+                .await
+                .map_err(|e| format!("Failed to assign workload: {}", e))?;
+
+            let record = PlacementRecord {
+                workload_id: workload.id,
+                agent_id,
+                image: workload.image.clone(),
+                cpu_millicores: workload.cpu_millicores,
+                memory_bytes: workload.memory_bytes,
+                disk_bytes: workload.disk_bytes,
+                scheduled_at: Utc::now().to_rfc3339(),
+                stack_id: workload.stack_id,
+                service_name: workload.service_name.clone(),
+                runtime_class: workload.runtime_class.clone(),
+            };
+            put_placement(&self.etcd, &record).await?;
+
+            if let Some(agent) = agents.iter_mut().find(|a| a.agent_id == agent_id) {
+                agent.free_cpu_millicores -= workload.cpu_millicores;
+                agent.free_memory_bytes -= workload.memory_bytes;
+                agent.free_disk_bytes -= workload.disk_bytes;
+            }
+
+            crate::log_info!(
+                "scheduler",
+                &format!(
+                    "Pending workload scheduled workload_id={} agent_id={}",
+                    workload.id, agent_id
+                )
+            );
+
+            placed_count += 1;
+        }
+
+        Ok(placed_count)
+    }
+
     pub async fn delete_workload(&self, workload_id: Uuid) -> Result<(), String> {
         crate::db::workloads::delete(&self.db, workload_id)
             .await

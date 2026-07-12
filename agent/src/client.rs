@@ -117,6 +117,12 @@ pub struct ResourceGroupPeer {
     pub wg_tunnel_ip: String,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct VpnPeer {
+    pub client_public_key: String,
+    pub client_tunnel_ip: String,
+}
+
 pub struct ApiClient {
     client: Client,
     gateway_url: String,
@@ -325,6 +331,38 @@ impl ApiClient {
         resp.json::<Vec<ResourceGroupPeer>>()
             .await
             .context("Failed to parse resource group peers response")
+    }
+
+    pub async fn fetch_resource_group_vpn_peers(
+        &self,
+        api_key: &str,
+        resource_group_id: &str,
+    ) -> Result<Vec<VpnPeer>> {
+        let url = format!(
+            "{}/api/resource-groups/{}/vpn-peers",
+            self.gateway_url, resource_group_id
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await
+            .context("Failed to fetch resource group vpn peers")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!(
+                "Failed to fetch resource group vpn peers status={} {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+        }
+
+        resp.json::<Vec<VpnPeer>>()
+            .await
+            .context("Failed to parse resource group vpn peers response")
     }
 
     pub async fn fetch_active_resource_group_ids(&self, api_key: &str) -> Result<Vec<String>> {

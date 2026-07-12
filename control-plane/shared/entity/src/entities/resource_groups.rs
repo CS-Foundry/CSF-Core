@@ -32,6 +32,8 @@ pub enum Relation {
     Networks,
     #[sea_orm(has_many = "super::workload_stacks::Entity")]
     WorkloadStacks,
+    #[sea_orm(has_many = "super::resource_group_vpn_peers::Entity")]
+    ResourceGroupVpnPeers,
 }
 
 impl Related<super::organization::Entity> for Entity {
@@ -61,6 +63,12 @@ impl Related<super::networks::Entity> for Entity {
 impl Related<super::workload_stacks::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WorkloadStacks.def()
+    }
+}
+
+impl Related<super::resource_group_vpn_peers::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceGroupVpnPeers.def()
     }
 }
 

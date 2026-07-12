@@ -17,31 +17,6 @@ use crate::auth::rbac::{CanManageSystem, CanViewAgents};
 use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AgentRegistration {
-    pub agent_id: Uuid,
-    pub name: String,
-    pub hostname: String,
-    pub os_type: String,
-    pub os_version: String,
-    pub architecture: String,
-    pub agent_version: String,
-    pub tags: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegistrationResponse {
-    pub success: bool,
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Heartbeat {
-    pub agent_id: Uuid,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub status: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SystemMetrics {
     pub agent_id: Uuid,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -106,115 +81,6 @@ impl From<agents::Model> for AgentResponse {
             registered_at: model.registered_at.to_string(),
             cordoned: model.cordoned,
         }
-    }
-}
-
-/// Register a new agent or update existing one
-pub async fn register_agent(
-    State(state): State<AppState>,
-    Json(registration): Json<AgentRegistration>,
-) -> Result<impl IntoResponse, StatusCode> {
-    // Check if agent already exists
-    let existing_agent = agents::Entity::find()
-        .filter(agents::Column::Id.eq(registration.agent_id))
-        .one(&state.db_conn)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if let Some(agent) = existing_agent {
-        // Update existing agent
-        let mut active_model: agents::ActiveModel = agent.into();
-        active_model.name = ActiveValue::Set(registration.name);
-        active_model.hostname = ActiveValue::Set(registration.hostname);
-        active_model.os_type = ActiveValue::Set(registration.os_type);
-        active_model.os_version = ActiveValue::Set(registration.os_version);
-        active_model.architecture = ActiveValue::Set(registration.architecture);
-        active_model.agent_version = ActiveValue::Set(registration.agent_version);
-        active_model.status = ActiveValue::Set("online".to_string());
-        active_model.last_heartbeat = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
-        active_model.updated_at = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
-        if let Some(tags) = registration.tags {
-            active_model.tags = ActiveValue::Set(Some(tags));
-        }
-
-        active_model.update(&state.db_conn).await.map_err(|e| {
-            tracing::error!("Failed to update agent: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        Ok(Json(RegistrationResponse {
-            success: true,
-            message: "Agent updated successfully".to_string(),
-        }))
-    } else {
-        // Create new agent
-        let new_agent = agents::ActiveModel {
-            id: ActiveValue::Set(registration.agent_id),
-            name: ActiveValue::Set(registration.name),
-            hostname: ActiveValue::Set(registration.hostname),
-            ip_address: ActiveValue::Set(None),
-            agent_version: ActiveValue::Set(registration.agent_version),
-            os_type: ActiveValue::Set(registration.os_type),
-            os_version: ActiveValue::Set(registration.os_version),
-            architecture: ActiveValue::Set(registration.architecture),
-            status: ActiveValue::Set("online".to_string()),
-            last_heartbeat: ActiveValue::Set(Some(chrono::Utc::now().naive_utc())),
-            registered_at: ActiveValue::Set(chrono::Utc::now().naive_utc()),
-            updated_at: ActiveValue::Set(None),
-            organization_id: ActiveValue::Set(None),
-            tags: ActiveValue::Set(registration.tags),
-            capabilities: ActiveValue::Set(None),
-            public_key_pem: ActiveValue::Set(None),
-            wg_public_key: ActiveValue::Set(None),
-            wg_endpoint: ActiveValue::Set(None),
-            wg_tunnel_ip: ActiveValue::Set(None),
-            kvm_capable: ActiveValue::Set(false),
-            cordoned: ActiveValue::Set(false),
-        };
-
-        new_agent.insert(&state.db_conn).await.map_err(|e| {
-            tracing::error!("Failed to create agent: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        Ok(Json(RegistrationResponse {
-            success: true,
-            message: "Agent registered successfully".to_string(),
-        }))
-    }
-}
-
-/// Receive heartbeat from agent
-pub async fn heartbeat(
-    State(state): State<AppState>,
-    Json(heartbeat): Json<Heartbeat>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let agent = agents::Entity::find()
-        .filter(agents::Column::Id.eq(heartbeat.agent_id))
-        .one(&state.db_conn)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if let Some(agent) = agent {
-        let mut active_model: agents::ActiveModel = agent.into();
-        active_model.status = ActiveValue::Set(heartbeat.status);
-        active_model.last_heartbeat = ActiveValue::Set(Some(heartbeat.timestamp.naive_utc()));
-        active_model.updated_at = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
-
-        active_model.update(&state.db_conn).await.map_err(|e| {
-            tracing::error!("Failed to update heartbeat: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        Ok(StatusCode::OK)
-    } else {
-        Err(StatusCode::NOT_FOUND)
     }
 }
 
@@ -546,8 +412,6 @@ pub fn agents_routes() -> Router<AppState> {
 
 pub fn agents_unmetered_routes() -> Router<AppState> {
     Router::new()
-        .route("/agents/register", post(register_agent))
-        .route("/agents/heartbeat", post(heartbeat))
         .route("/agents/metrics", post(receive_metrics))
         .route("/agents/self/workloads", get(get_self_workloads))
         .route(
