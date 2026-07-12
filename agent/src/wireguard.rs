@@ -22,14 +22,7 @@ pub async fn ensure_mgmt_interface(
         run_ip(&["link", "add", "dev", iface, "type", "wireguard"]).await?;
         set_private_key(iface, private_key_b64).await?;
         run_wg(&["set", iface, "listen-port", &listen_port.to_string()]).await?;
-        run_ip(&[
-            "address",
-            "add",
-            &format!("{}/32", tunnel_ip),
-            "dev",
-            iface,
-        ])
-        .await?;
+        run_ip(&["address", "add", &format!("{}/32", tunnel_ip), "dev", iface]).await?;
         run_ip(&["link", "set", "up", "dev", iface]).await?;
 
         info!(iface = %iface, tunnel_ip = %tunnel_ip, "Management WireGuard interface ready");

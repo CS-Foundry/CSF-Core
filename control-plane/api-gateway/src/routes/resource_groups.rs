@@ -629,14 +629,13 @@ pub async fn get_vpn_config(
         .map(|p| p.client_tunnel_ip)
         .collect();
 
-    let client_tunnel_ip = allocate_vpn_peer_ip(&group.internal_cidr, &existing_ips).ok_or_else(
-        || {
+    let client_tunnel_ip =
+        allocate_vpn_peer_ip(&group.internal_cidr, &existing_ips).ok_or_else(|| {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({ "error": "no free address in resource group cidr" })),
             )
-        },
-    )?;
+        })?;
 
     let peer = resource_group_vpn_peers::ActiveModel {
         id: Set(Uuid::new_v4()),
