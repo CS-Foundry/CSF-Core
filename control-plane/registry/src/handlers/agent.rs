@@ -371,7 +371,10 @@ async fn forward_metrics(
             Err(e) => {
                 crate::log_warn!(
                     "agent_handler",
-                    &format!("Failed to forward metrics to gateway attempt={} err={}", attempt, e)
+                    &format!(
+                        "Failed to forward metrics to gateway attempt={} err={}",
+                        attempt, e
+                    )
                 );
             }
         }
