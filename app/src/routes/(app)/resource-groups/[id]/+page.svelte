@@ -68,6 +68,7 @@
     let formDisk = $state("1024");
     let formEnv = $state("");
     let formPorts = $state("");
+    let formNodePort = $state("");
     let formVolumeMounts = $state("");
 
     let composeStackName = $state("");
@@ -133,28 +134,23 @@
         return Object.keys(result).length ? result : null;
     }
 
-    function parsePorts(raw: string): PortMapping[] | null {
+    function parsePorts(raw: string, nodePortRaw: string): PortMapping[] | null {
         if (!raw.trim()) return null;
         const result: PortMapping[] = [];
         for (const part of raw.trim().split(",")) {
             const t = part.trim();
-            const nodePort = t.match(/^(\d+):(\d+)(?:\/(tcp|udp))?$/);
-            if (nodePort) {
+            const match = t.match(/^(\d+)(?:\/(tcp|udp))?$/);
+            if (match) {
                 result.push({
-                    container_port: parseInt(nodePort[2]),
-                    protocol: nodePort[3] ?? null,
-                    node_port: parseInt(nodePort[1]),
-                });
-                continue;
-            }
-            const internal = t.match(/^(\d+)(?:\/(tcp|udp))?$/);
-            if (internal) {
-                result.push({
-                    container_port: parseInt(internal[1]),
-                    protocol: internal[2] ?? null,
+                    container_port: parseInt(match[1]),
+                    protocol: match[2] ?? null,
                     node_port: null,
                 });
             }
+        }
+        const nodePort = nodePortRaw.trim() ? parseInt(nodePortRaw.trim()) : null;
+        if (nodePort !== null && result.length > 0) {
+            result[0].node_port = nodePort;
         }
         return result.length ? result : null;
     }
@@ -186,7 +182,7 @@
                 memory_bytes: parseInt(formMemory) * 1024 * 1024,
                 disk_bytes: parseInt(formDisk) * 1024 * 1024,
                 env_vars: parseEnvVars(formEnv),
-                ports: parsePorts(formPorts),
+                ports: parsePorts(formPorts, formNodePort),
                 volume_mounts: parseVolumeMounts(formVolumeMounts),
                 resource_group_id: rgId,
             });
@@ -442,6 +438,36 @@
         }
     }
 
+    async function handleRowRestart(id: string) {
+        if (!auth.token) return;
+        try {
+            await restartWorkload(auth.token, id);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to restart container";
+        }
+    }
+
+    async function handleRowStop(id: string) {
+        if (!auth.token) return;
+        try {
+            await stopWorkload(auth.token, id);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to stop container";
+        }
+    }
+
+    async function handleRowDelete(id: string) {
+        if (!auth.token) return;
+        try {
+            await deleteWorkload(auth.token, id);
+            workloads = workloads.filter((w) => w.id !== id);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete container";
+        }
+    }
+
     async function downloadVpnConfig() {
         if (!auth.token) return;
         downloadingVpn = true;
@@ -477,6 +503,7 @@
         formDisk = "1024";
         formEnv = "";
         formPorts = "";
+        formNodePort = "";
         formVolumeMounts = "";
         deployError = null;
     }
@@ -638,10 +665,15 @@
             </div>
             <div class="flex flex-col gap-1 sm:col-span-2">
                 <label class="text-xs text-muted-foreground" for="d-ports">
-                    Ports — <span class="font-mono">nodePort:containerPort</span> to expose externally,
-                    <span class="font-mono">containerPort</span> for internal mesh only
+                    Ports — container ports, internal mesh only
                 </label>
-                <input id="d-ports" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="8080:80, 443 (internal only)" bind:value={formPorts} />
+                <input id="d-ports" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="80, 443" bind:value={formPorts} />
+            </div>
+            <div class="flex flex-col gap-1 sm:col-span-2">
+                <label class="text-xs text-muted-foreground" for="d-node-port">
+                    Node Port (optional) — expose the first port above externally on the node
+                </label>
+                <input id="d-node-port" type="number" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="8080" bind:value={formNodePort} />
             </div>
         </div>
         {#if volumes.length > 0}
@@ -1141,7 +1173,35 @@
                                         {/if}
                                     </div>
                                 </td>
-                                <td class="px-4 py-3"></td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center justify-end gap-1">
+                                        <button
+                                            class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                            onclick={(e) => { e.stopPropagation(); handleRowRestart(w.id); }}
+                                            aria-label="Restart"
+                                            title="Restart"
+                                        >
+                                            <Icon icon="mdi:restart" width={16} height={16} />
+                                        </button>
+                                        <button
+                                            class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                                            onclick={(e) => { e.stopPropagation(); handleRowStop(w.id); }}
+                                            disabled={w.desired_state === "stopped"}
+                                            aria-label="Stop"
+                                            title="Stop"
+                                        >
+                                            <Icon icon="mdi:stop-circle-outline" width={16} height={16} />
+                                        </button>
+                                        <button
+                                            class="flex items-center justify-center w-7 h-7 rounded-full text-destructive hover:bg-destructive/10 transition-colors"
+                                            onclick={(e) => { e.stopPropagation(); handleRowDelete(w.id); }}
+                                            aria-label="Delete"
+                                            title="Delete"
+                                        >
+                                            <Icon icon="mdi:trash-can-outline" width={16} height={16} />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         {/snippet}
                         {#each filteredResources as item (item.kind + (item.kind === "stack" ? item.data.stack_id : item.data.id))}

@@ -1,6 +1,12 @@
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
 
+fn detect_primary_ip() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip())
+}
+
 pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
     let cert_path = std::env::var("TLS_CERT").unwrap_or_default();
     let key_path = std::env::var("TLS_KEY").unwrap_or_default();
@@ -21,7 +27,15 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
         .distinguished_name
         .push(DnType::CommonName, "csfx-gateway");
 
-    let san_hosts = std::env::var("TLS_SANS").unwrap_or_else(|_| "localhost,127.0.0.1".to_string());
+    let mut san_hosts = std::env::var("TLS_SANS").unwrap_or_else(|_| "localhost,127.0.0.1".to_string());
+    if let Some(primary_ip) = detect_primary_ip() {
+        let primary_ip = primary_ip.to_string();
+        if !san_hosts.split(',').any(|s| s.trim() == primary_ip) {
+            san_hosts.push(',');
+            san_hosts.push_str(&primary_ip);
+        }
+    }
+
     for san in san_hosts.split(',') {
         let san = san.trim();
         if let Ok(ip) = san.parse::<std::net::IpAddr>() {

@@ -136,6 +136,9 @@ pub async fn set_desired_state(
 
     let mut active: workloads::ActiveModel = workload.into();
     active.desired_state = Set(desired_state.as_str().to_string());
+    if desired_state == DesiredState::Stopped {
+        active.status = Set(WorkloadStatus::Stopped.as_str().to_string());
+    }
     active.updated_at = Set(Some(Utc::now().naive_utc()));
 
     active.update(db).await
@@ -153,6 +156,7 @@ pub async fn request_restart(
     let mut active: workloads::ActiveModel = workload.into();
     active.desired_state = Set(DesiredState::Running.as_str().to_string());
     active.restart_requested = Set(true);
+    active.status = Set(WorkloadStatus::Starting.as_str().to_string());
     active.updated_at = Set(Some(Utc::now().naive_utc()));
 
     active.update(db).await
