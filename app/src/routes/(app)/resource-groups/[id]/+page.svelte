@@ -148,7 +148,8 @@
                 });
             }
         }
-        const nodePort = nodePortRaw.trim() ? parseInt(nodePortRaw.trim()) : null;
+        const nodePortTrimmed = String(nodePortRaw).trim();
+        const nodePort = nodePortTrimmed ? parseInt(nodePortTrimmed) : null;
         if (nodePort !== null && result.length > 0) {
             result[0].node_port = nodePort;
         }
