@@ -82,6 +82,24 @@ pub async fn assign(
     active.update(db).await
 }
 
+pub async fn update_ports(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+    ports: serde_json::Value,
+) -> Result<(), sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+    active.ports = Set(Some(ports));
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await?;
+    Ok(())
+}
+
 pub async fn get_all(db: &DatabaseConnection) -> Result<Vec<WorkloadResponse>, sea_orm::DbErr> {
     let rows = workloads::Entity::find().all(db).await?;
     Ok(rows.into_iter().map(into_response).collect())

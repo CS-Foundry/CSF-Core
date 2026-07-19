@@ -66,6 +66,17 @@ impl SchedulerService {
                     .await
                     .map_err(|e| format!("Failed to assign workload: {}", e))?;
 
+                if let Some(mut ports) = req.ports.clone() {
+                    crate::services::port_allocator::allocate_node_ports(
+                        &self.db, agent_id, workload.id, &mut ports,
+                    )
+                    .await?;
+                    let ports_json = crate::services::port_allocator::ports_to_json(&ports)?;
+                    crate::db::workloads::update_ports(&self.db, workload.id, ports_json)
+                        .await
+                        .map_err(|e| format!("Failed to persist allocated node ports: {}", e))?;
+                }
+
                 let record = PlacementRecord {
                     workload_id: workload.id,
                     agent_id,

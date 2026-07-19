@@ -787,10 +787,6 @@ pub fn resource_groups_routes() -> Router<AppState> {
             get(list_resource_groups).post(create_resource_group),
         )
         .route(
-            "/resource-groups/agent/active-ids",
-            get(list_active_resource_group_ids),
-        )
-        .route(
             "/resource-groups/{id}",
             get(get_resource_group).delete(delete_resource_group),
         )
@@ -807,6 +803,14 @@ pub fn resource_groups_routes() -> Router<AppState> {
             get(list_resource_group_networks),
         )
         .route("/resource-groups/{id}/vpn-config", get(get_vpn_config))
+}
+
+pub fn resource_groups_agent_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/resource-groups/agent/active-ids",
+            get(list_active_resource_group_ids),
+        )
         .route(
             "/resource-groups/{id}/peers",
             get(list_resource_group_peers),

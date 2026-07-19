@@ -110,7 +110,9 @@ pub fn create_router() -> Router<AppState> {
         .merge(registry::registry_routes())
         .merge(ssh_keys::ssh_keys_internal_routes());
 
-    let agent_unmetered_router = Router::new().merge(agents::agents_unmetered_routes());
+    let agent_unmetered_router = Router::new()
+        .merge(agents::agents_unmetered_routes())
+        .merge(resource_groups::resource_groups_agent_routes());
 
     let rate_limited_router = Router::new()
         .merge(agent_proxy::agent_proxy_routes())
