@@ -1,4 +1,5 @@
 pub mod compose_parser;
 pub mod etcd;
+pub mod gateway_notify;
 pub mod port_allocator;
 pub mod scheduler;

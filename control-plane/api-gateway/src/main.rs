@@ -127,6 +127,7 @@ pub struct AppState {
     pub db_conn: DbConn,
     pub service_client: service_client::ServiceClient,
     pub default_org_id: Option<uuid::Uuid>,
+    pub agent_stream_registry: routes::agent_stream::AgentStreamRegistry,
 }
 
 #[tokio::main]
@@ -164,6 +165,7 @@ async fn main() {
         db_conn: db_conn.clone(),
         service_client: service_client::ServiceClient::new(),
         default_org_id: Some(default_org_id),
+        agent_stream_registry: routes::agent_stream::AgentStreamRegistry::new(),
     };
 
     tracing::info!("starting log prune job");

@@ -32,3 +32,4 @@ x509-parser = { workspace = true }
 async-trait = { workspace = true }
 tokio-vsock = "0.7"
 async-stream = "0.3"
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }

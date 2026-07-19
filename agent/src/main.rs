@@ -1,3 +1,4 @@
+mod agent_stream;
 mod client;
 mod config;
 mod docker;
@@ -55,7 +56,7 @@ async fn main() -> Result<()> {
     let heartbeat_interval_secs: u64 = std::env::var("CSFX_HEARTBEAT_INTERVAL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
+        .unwrap_or(30);
 
     let wg_endpoint = std::env::var("CSFX_WG_ENDPOINT")
         .ok()
@@ -156,6 +157,8 @@ async fn main() -> Result<()> {
         info!("CSFX_AGENT_PORT not set, agent inbound server disabled");
     }
 
+    let assignment_signal = agent_stream::spawn(gateway_url.clone(), api_key.clone(), agent_id);
+
     run_heartbeat_loop(
         &api_client,
         agent_id,
@@ -166,6 +169,7 @@ async fn main() -> Result<()> {
         workload_phases,
         mounted_volumes,
         restart_counts,
+        assignment_signal,
         &wg_identity.private_key_b64,
     )
     .await;
@@ -244,6 +248,77 @@ async fn perform_registration(
     Ok((resp.agent_id, resp.api_key))
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn reconcile_tick(
+    client: &client::ApiClient,
+    agent_id: uuid::Uuid,
+    api_key: &str,
+    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
+    running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    workload_phases: &Arc<Mutex<HashMap<String, String>>>,
+    mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
+    restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    wg_private_key_b64: &str,
+    failure_count: &mut u32,
+    current_flake_rev: &mut String,
+) {
+    process_volumes(client, agent_id, api_key, mounted_volumes).await;
+    let resource_group_ids = process_workloads(client, api_key, docker, running_containers, workload_phases, mounted_volumes, restart_counts, wg_private_key_b64).await;
+    sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
+    sync_vpn_peers(client, api_key, &resource_group_ids).await;
+    cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
+
+    let statuses = build_container_statuses(docker, running_containers, workload_phases).await;
+    push_workload_stats(client, api_key, docker, running_containers).await;
+    let metrics = system::collect_metrics();
+
+    match client.heartbeat(agent_id, api_key, Some(statuses), Some(metrics)).await {
+        Ok(resp) => {
+            if *failure_count > 0 {
+                info!(agent_id = %agent_id, "Heartbeat recovered after {} failures", failure_count);
+                *failure_count = 0;
+            }
+
+            info!(
+                agent_id = %agent_id,
+                desired_flake_rev = ?resp.desired_flake_rev,
+                "heartbeat ok"
+            );
+
+            if let Some(count) = resp.post_update_heartbeats {
+                update_watch::write_heartbeat_counter(count).await;
+            }
+
+            if let Some(rev) = resp.desired_flake_rev {
+                if rev != *current_flake_rev {
+                    info!(
+                        agent_id = %agent_id,
+                        current_flake_rev = %current_flake_rev,
+                        desired_flake_rev = %rev,
+                        "update signal received from gateway, scheduling update"
+                    );
+                }
+                let rev_clone = rev.clone();
+                let current = current_flake_rev.clone();
+                tokio::spawn(async move {
+                    update_watch::handle(agent_id, &rev_clone, &current).await;
+                });
+                *current_flake_rev = rev;
+            }
+        }
+        Err(e) => {
+            *failure_count += 1;
+            warn!(
+                agent_id = %agent_id,
+                failures = *failure_count,
+                error = %e,
+                "Heartbeat failed"
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_heartbeat_loop(
     client: &client::ApiClient,
     agent_id: uuid::Uuid,
@@ -254,6 +329,7 @@ async fn run_heartbeat_loop(
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
+    mut assignment_signal: tokio::sync::mpsc::UnboundedReceiver<()>,
     wg_private_key_b64: &str,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
@@ -263,60 +339,16 @@ async fn run_heartbeat_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                process_volumes(client, agent_id, api_key, &mounted_volumes).await;
-                let resource_group_ids = process_workloads(client, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64).await;
-                sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
-                sync_vpn_peers(client, api_key, &resource_group_ids).await;
-                cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
-
-                let statuses = build_container_statuses(&docker, &running_containers, &workload_phases).await;
-                push_workload_stats(client, api_key, &docker, &running_containers).await;
-                let metrics = system::collect_metrics();
-
-                match client.heartbeat(agent_id, api_key, Some(statuses), Some(metrics)).await {
-                    Ok(resp) => {
-                        if failure_count > 0 {
-                            info!(agent_id = %agent_id, "Heartbeat recovered after {} failures", failure_count);
-                            failure_count = 0;
-                        }
-
-                        info!(
-                            agent_id = %agent_id,
-                            desired_flake_rev = ?resp.desired_flake_rev,
-                            "heartbeat ok"
-                        );
-
-                        if let Some(count) = resp.post_update_heartbeats {
-                            update_watch::write_heartbeat_counter(count).await;
-                        }
-
-                        if let Some(rev) = resp.desired_flake_rev {
-                            if rev != current_flake_rev {
-                                info!(
-                                    agent_id = %agent_id,
-                                    current_flake_rev = %current_flake_rev,
-                                    desired_flake_rev = %rev,
-                                    "update signal received from gateway, scheduling update"
-                                );
-                            }
-                            let rev_clone = rev.clone();
-                            let current = current_flake_rev.clone();
-                            tokio::spawn(async move {
-                                update_watch::handle(agent_id, &rev_clone, &current).await;
-                            });
-                            current_flake_rev = rev;
-                        }
-                    }
-                    Err(e) => {
-                        failure_count += 1;
-                        warn!(
-                            agent_id = %agent_id,
-                            failures = failure_count,
-                            error = %e,
-                            "Heartbeat failed"
-                        );
-                    }
+                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
+            }
+            signal = assignment_signal.recv() => {
+                if signal.is_none() {
+                    warn!(agent_id = %agent_id, "assignment signal channel closed");
+                    continue;
                 }
+                info!(agent_id = %agent_id, "assignment push received, reconciling immediately");
+                interval.reset();
+                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutdown signal received");

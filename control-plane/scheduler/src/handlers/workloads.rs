@@ -56,7 +56,14 @@ pub async fn stop_workload(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     match db::workloads::set_desired_state(&state.db, id, DesiredState::Stopped).await {
-        Ok(model) => (StatusCode::OK, Json(serde_json::json!(model))).into_response(),
+        Ok(model) => {
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(
+                    agent_id,
+                ));
+            }
+            (StatusCode::OK, Json(serde_json::json!(model))).into_response()
+        }
         Err(sea_orm::DbErr::RecordNotFound(_)) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -71,7 +78,14 @@ pub async fn restart_workload(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     match db::workloads::request_restart(&state.db, id).await {
-        Ok(model) => (StatusCode::OK, Json(serde_json::json!(model))).into_response(),
+        Ok(model) => {
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(
+                    agent_id,
+                ));
+            }
+            (StatusCode::OK, Json(serde_json::json!(model))).into_response()
+        }
         Err(sea_orm::DbErr::RecordNotFound(_)) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

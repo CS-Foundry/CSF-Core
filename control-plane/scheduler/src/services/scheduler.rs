@@ -90,6 +90,10 @@ impl SchedulerService {
                     runtime_class: req.runtime_class.as_str().to_string(),
                 };
 
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(
+                    agent_id,
+                ));
+
                 put_placement(&self.etcd, &record).await?;
 
                 crate::log_info!(
