@@ -27,6 +27,7 @@ const DOCKER_SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(200);
 pub struct PortMapping {
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub rg_port: Option<u16>,
     pub node_port: Option<u16>,
 }
 
@@ -52,6 +53,33 @@ pub struct WorkloadSpec {
 
 pub fn rg_network_name(resource_group_id: &str) -> String {
     format!("csfx-rg-{}", resource_group_id)
+}
+
+fn rg_dns_container_name(resource_group_id: &str) -> String {
+    format!("csfx-dns-{}", resource_group_id)
+}
+
+pub fn first_host_ip(cidr: &str) -> Option<String> {
+    nth_host_ip(cidr, 1)
+}
+
+fn second_host_ip(cidr: &str) -> Option<String> {
+    nth_host_ip(cidr, 2)
+}
+
+fn nth_host_ip(cidr: &str, offset: u32) -> Option<String> {
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let octets: Vec<u8> = parts[0].split('.').filter_map(|o| o.parse().ok()).collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let n = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]);
+    let host = n + offset;
+    let [a, b, c, d] = host.to_be_bytes();
+    Some(format!("{}.{}.{}.{}", a, b, c, d))
 }
 
 pub fn rg_wireguard_port(resource_group_id: &str) -> u16 {
@@ -166,6 +194,7 @@ impl DockerRuntime {
             driver: Some("default".to_string()),
             config: Some(vec![IpamConfig {
                 subnet: Some(cidr.to_string()),
+                gateway: second_host_ip(cidr),
                 ..Default::default()
             }]),
             ..Default::default()
@@ -206,6 +235,106 @@ impl DockerRuntime {
         }
 
         Ok(response.id)
+    }
+
+    pub async fn ensure_rg_dns_container(
+        &self,
+        resource_group_id: &str,
+        resource_group_cidr: &str,
+    ) -> Result<()> {
+        let Some(dns_ip) = first_host_ip(resource_group_cidr) else {
+            warn!(resource_group_id = %resource_group_id, cidr = %resource_group_cidr, "Invalid resource group cidr, skipping dns container");
+            return Ok(());
+        };
+
+        let container_name = rg_dns_container_name(resource_group_id);
+
+        let existing = self
+            .docker
+            .inspect_container(&container_name, None::<InspectContainerOptionsBuilder>.map(|b| b.build()))
+            .await;
+        if existing.is_ok() {
+            return Ok(());
+        }
+
+        crate::rg_dns::write_corefile(resource_group_id, &dns_ip)
+            .await
+            .context("Failed to write dns corefile")?;
+
+        let network_name = rg_network_name(resource_group_id);
+
+        let host_config = HostConfig {
+            binds: Some(vec!["/etc/csfx/dns:/zones:ro".to_string()]),
+            ..Default::default()
+        };
+
+        let networking_config = NetworkingConfig {
+            endpoints_config: Some(HashMap::from([(
+                network_name,
+                EndpointSettings {
+                    ipam_config: Some(bollard::models::EndpointIpamConfig {
+                        ipv4_address: Some(dns_ip.clone()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )])),
+        };
+
+        let corefile_container_path = format!(
+            "/zones/{}.Corefile",
+            resource_group_id
+        );
+
+        let config = ContainerCreateBody {
+            image: Some("coredns/coredns:latest".to_string()),
+            cmd: Some(vec!["-conf".to_string(), corefile_container_path]),
+            host_config: Some(host_config),
+            networking_config: Some(networking_config),
+            labels: Some(HashMap::from([(
+                "csfx.resource_group_id".to_string(),
+                resource_group_id.to_string(),
+            )])),
+            ..Default::default()
+        };
+
+        let options = CreateContainerOptionsBuilder::default()
+            .name(&container_name)
+            .build();
+
+        self.docker
+            .create_container(Some(options), config)
+            .await
+            .context("Failed to create resource group dns container")?;
+
+        let start_options = StartContainerOptionsBuilder::default().build();
+        self.docker
+            .start_container(&container_name, Some(start_options))
+            .await
+            .context("Failed to start resource group dns container")?;
+
+        info!(resource_group_id = %resource_group_id, dns_ip = %dns_ip, "Resource group dns container started");
+
+        Ok(())
+    }
+
+    pub async fn teardown_rg_dns_container(&self, resource_group_id: &str) -> Result<()> {
+        let container_name = rg_dns_container_name(resource_group_id);
+
+        let remove_options = bollard::query_parameters::RemoveContainerOptionsBuilder::default()
+            .force(true)
+            .build();
+
+        let _ = self
+            .docker
+            .remove_container(&container_name, Some(remove_options))
+            .await;
+
+        crate::rg_dns::remove_zone_files(resource_group_id)
+            .await
+            .context("Failed to remove dns zone files")?;
+
+        Ok(())
     }
 
     async fn ensure_rg_wireguard(
@@ -276,6 +405,8 @@ impl DockerRuntime {
         let network_name = rg_network_name(resource_group_id);
         let iface_name = rg_bridge_iface_name(resource_group_id);
 
+        self.teardown_rg_dns_container(resource_group_id).await?;
+
         self.docker
             .remove_network(&network_name)
             .await
@@ -303,7 +434,8 @@ impl DockerRuntime {
             .as_ref()
             .map(|vars| vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
-        let (port_bindings, exposed_ports) = build_port_config(spec.ports.as_deref());
+        let (port_bindings, exposed_ports) =
+            build_port_config(spec.ports.as_deref(), spec.resource_group_cidr.as_deref());
 
         let binds = spec.volume_mounts.as_deref().map(|mounts| {
             mounts
@@ -343,6 +475,12 @@ impl DockerRuntime {
                 let network_name = self
                     .ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
                     .await?;
+
+                if let Some(cidr) = spec.resource_group_cidr.as_deref() {
+                    self.ensure_rg_dns_container(resource_group_id, cidr)
+                        .await?;
+                }
+
                 let aliases = spec.service_name.clone().map(|name| vec![name]);
                 Some(NetworkingConfig {
                     endpoints_config: Some(HashMap::from([(
@@ -398,6 +536,30 @@ impl DockerRuntime {
         );
 
         Ok(container.id)
+    }
+
+    pub async fn inspect_network_ip(
+        &self,
+        container_id: &str,
+        network_name: &str,
+    ) -> Result<Option<String>> {
+        let options = InspectContainerOptionsBuilder::default().build();
+
+        let inspect = self
+            .docker
+            .inspect_container(container_id, Some(options))
+            .await
+            .context("Failed to inspect container")?;
+
+        let networks = inspect
+            .network_settings
+            .and_then(|settings| settings.networks)
+            .unwrap_or_default();
+
+        Ok(networks
+            .get(network_name)
+            .and_then(|endpoint| endpoint.ip_address.clone())
+            .filter(|ip| !ip.is_empty()))
     }
 
     pub async fn inspect_status(&self, container_id: &str) -> Result<String> {
@@ -594,6 +756,15 @@ impl crate::runtime::Runtime for DockerRuntime {
     async fn stats(&self, workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
         self.collect_stats(workload_handle).await
     }
+
+    async fn service_network_ip(
+        &self,
+        workload_handle: &str,
+        network_name: &str,
+    ) -> Result<Option<String>> {
+        self.inspect_network_ip(workload_handle, network_name)
+            .await
+    }
 }
 
 async fn start_docker_unit() -> Result<()> {
@@ -639,6 +810,7 @@ async fn wait_for_socket() -> Result<()> {
 
 fn build_port_config(
     ports: Option<&[PortMapping]>,
+    resource_group_cidr: Option<&str>,
 ) -> (
     HashMap<String, Option<Vec<bollard::models::PortBinding>>>,
     Vec<String>,
@@ -647,20 +819,32 @@ fn build_port_config(
         HashMap::new();
     let mut exposed_ports: Vec<String> = Vec::new();
 
+    let rg_bind_ip = resource_group_cidr.and_then(second_host_ip);
+
     if let Some(ports) = ports {
         for p in ports {
             let proto = p.protocol.as_deref().unwrap_or("tcp");
             let container_key = format!("{}/{}", p.container_port, proto);
             exposed_ports.push(container_key.clone());
 
+            let mut bindings: Vec<bollard::models::PortBinding> = Vec::new();
+
             if let Some(node_port) = p.node_port {
-                port_bindings.insert(
-                    container_key,
-                    Some(vec![bollard::models::PortBinding {
-                        host_ip: Some("0.0.0.0".to_string()),
-                        host_port: Some(node_port.to_string()),
-                    }]),
-                );
+                bindings.push(bollard::models::PortBinding {
+                    host_ip: Some("0.0.0.0".to_string()),
+                    host_port: Some(node_port.to_string()),
+                });
+            }
+
+            if let (Some(rg_port), Some(bind_ip)) = (p.rg_port, rg_bind_ip.as_deref()) {
+                bindings.push(bollard::models::PortBinding {
+                    host_ip: Some(bind_ip.to_string()),
+                    host_port: Some(rg_port.to_string()),
+                });
+            }
+
+            if !bindings.is_empty() {
+                port_bindings.insert(container_key, Some(bindings));
             }
         }
     }

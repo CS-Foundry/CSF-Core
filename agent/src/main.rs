@@ -6,6 +6,7 @@ mod firecracker;
 mod nftables;
 mod pki;
 mod rbd;
+mod rg_dns;
 mod runtime;
 mod server;
 mod ssh_keys;
@@ -139,6 +140,11 @@ async fn main() -> Result<()> {
 
     let restart_counts: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
 
+    let service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
+    let rg_dns_registry = rg_dns::RgDnsRegistry::new();
+
     if let Some(port) = std::env::var("CSFX_AGENT_PORT")
         .ok()
         .and_then(|v| v.parse::<u16>().ok())
@@ -169,6 +175,8 @@ async fn main() -> Result<()> {
         workload_phases,
         mounted_volumes,
         restart_counts,
+        service_dns_registry,
+        rg_dns_registry,
         assignment_signal,
         &wg_identity.private_key_b64,
     )
@@ -258,12 +266,14 @@ async fn reconcile_tick(
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
+    rg_dns_registry: &rg_dns::RgDnsRegistry,
     wg_private_key_b64: &str,
     failure_count: &mut u32,
     current_flake_rev: &mut String,
 ) {
     process_volumes(client, agent_id, api_key, mounted_volumes).await;
-    let resource_group_ids = process_workloads(client, api_key, docker, running_containers, workload_phases, mounted_volumes, restart_counts, wg_private_key_b64).await;
+    let resource_group_ids = process_workloads(client, api_key, docker, running_containers, workload_phases, mounted_volumes, restart_counts, service_dns_registry, rg_dns_registry, wg_private_key_b64).await;
     sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
     sync_vpn_peers(client, api_key, &resource_group_ids).await;
     cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
@@ -329,6 +339,8 @@ async fn run_heartbeat_loop(
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
+    service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>>,
+    rg_dns_registry: rg_dns::RgDnsRegistry,
     mut assignment_signal: tokio::sync::mpsc::UnboundedReceiver<()>,
     wg_private_key_b64: &str,
 ) {
@@ -339,7 +351,7 @@ async fn run_heartbeat_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
             }
             signal = assignment_signal.recv() => {
                 if signal.is_none() {
@@ -348,7 +360,7 @@ async fn run_heartbeat_loop(
                 }
                 info!(agent_id = %agent_id, "assignment push received, reconciling immediately");
                 interval.reset();
-                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &docker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutdown signal received");
@@ -417,11 +429,15 @@ async fn process_volumes(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 async fn reap_stale_containers(
     docker: &dyn runtime::Runtime,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
+    rg_dns_registry: &rg_dns::RgDnsRegistry,
     desired: &[client::AssignedWorkload],
 ) {
     let desired_ids: std::collections::HashSet<&str> =
@@ -446,6 +462,13 @@ async fn reap_stale_containers(
         running_containers.lock().await.remove(&workload_id);
         workload_phases.lock().await.remove(&workload_id);
         restart_counts.lock().await.remove(&workload_id);
+
+        let dns_entry = service_dns_registry.lock().await.remove(&workload_id);
+        if let Some((resource_group_id, service_name)) = dns_entry {
+            if let Err(e) = rg_dns_registry.remove(&resource_group_id, &service_name).await {
+                warn!(workload_id = %workload_id, error = %e, "Failed to remove service dns record");
+            }
+        }
     }
 }
 
@@ -486,6 +509,7 @@ async fn should_restart_after_crash(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
@@ -494,6 +518,8 @@ async fn process_workloads(
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
+    rg_dns_registry: &rg_dns::RgDnsRegistry,
     wg_private_key_b64: &str,
 ) -> Vec<String> {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
@@ -536,6 +562,8 @@ async fn process_workloads(
         running_containers,
         workload_phases,
         restart_counts,
+        service_dns_registry,
+        rg_dns_registry,
         &workloads,
     )
     .await;
@@ -576,6 +604,8 @@ async fn process_workloads(
             workload_phases,
             mounted_volumes,
             restart_counts,
+            service_dns_registry,
+            rg_dns_registry,
         )
         .await;
 
@@ -589,6 +619,7 @@ async fn process_workloads(
     resource_group_ids
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_or_restart_workload(
     runtime: &dyn runtime::Runtime,
     workload: client::AssignedWorkload,
@@ -596,6 +627,8 @@ async fn start_or_restart_workload(
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
+    service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
+    rg_dns_registry: &rg_dns::RgDnsRegistry,
 ) -> bool {
     let existing_container_id = running_containers.lock().await.get(&workload.id).cloned();
     let restart_requested = workload.restart_requested;
@@ -677,6 +710,24 @@ async fn start_or_restart_workload(
                 container_id = %container_id,
                 "Workload started"
             );
+
+            if let (Some(resource_group_id), Some(service_name)) =
+                (&spec.resource_group_id, &spec.service_name)
+            {
+                service_dns_registry.lock().await.insert(
+                    workload.id.clone(),
+                    (resource_group_id.clone(), service_name.clone()),
+                );
+                register_service_dns(
+                    rg_dns_registry,
+                    runtime,
+                    &container_id,
+                    resource_group_id,
+                    service_name,
+                )
+                .await;
+            }
+
             restart_requested
         }
         Err(e) => {
@@ -684,6 +735,35 @@ async fn start_or_restart_workload(
             warn!(workload_id = %workload.id, error = %e, "Failed to start workload");
             false
         }
+    }
+}
+
+async fn register_service_dns(
+    rg_dns_registry: &rg_dns::RgDnsRegistry,
+    runtime: &dyn runtime::Runtime,
+    container_id: &str,
+    resource_group_id: &str,
+    service_name: &str,
+) {
+    let network_name = docker::rg_network_name(resource_group_id);
+
+    let ip_address = match runtime.service_network_ip(container_id, &network_name).await {
+        Ok(Some(ip)) => ip,
+        Ok(None) => {
+            warn!(container_id = %container_id, network = %network_name, "No network ip found for service dns registration");
+            return;
+        }
+        Err(e) => {
+            warn!(container_id = %container_id, error = %e, "Failed to inspect network ip for service dns registration");
+            return;
+        }
+    };
+
+    if let Err(e) = rg_dns_registry
+        .upsert(resource_group_id, service_name, &ip_address)
+        .await
+    {
+        warn!(resource_group_id = %resource_group_id, service_name = %service_name, error = %e, "Failed to write service dns record");
     }
 }
 

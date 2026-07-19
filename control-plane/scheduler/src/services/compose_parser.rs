@@ -104,6 +104,7 @@ fn parse_compose_port(entry: &str) -> Option<PortMapping> {
     Some(PortMapping {
         container_port: container_port.parse().ok()?,
         protocol: None,
+        rg_port: None,
         node_port,
     })
 }

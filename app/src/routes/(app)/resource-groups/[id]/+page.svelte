@@ -22,6 +22,7 @@
         type PortMapping,
         type VolumeMount,
     } from "$lib/api/resource-groups";
+    import { getNode } from "$lib/api/nodes";
     import { resolveImageIcon } from "$lib/utils/image-icon";
     import { parseComposePreview } from "$lib/utils/compose-preview";
     import { highlightYaml } from "$lib/utils/yaml-highlight";
@@ -42,6 +43,35 @@
 
     let activeTab = $state<"all" | "container" | "volume">("all");
     let filterText = $state("");
+
+    let nodeIpCache = $state<Record<string, string | null>>({});
+
+    async function resolveNodeIp(agentId: string | null): Promise<string | null> {
+        if (!agentId || !auth.token) return null;
+        if (agentId in nodeIpCache) return nodeIpCache[agentId];
+        try {
+            const node = await getNode(auth.token, agentId);
+            nodeIpCache = { ...nodeIpCache, [agentId]: node.ip_address };
+            return node.ip_address;
+        } catch {
+            nodeIpCache = { ...nodeIpCache, [agentId]: null };
+            return null;
+        }
+    }
+
+    let copiedKey = $state<string | null>(null);
+
+    async function copyToClipboard(value: string, key: string) {
+        try {
+            await navigator.clipboard.writeText(value);
+            copiedKey = key;
+            setTimeout(() => {
+                if (copiedKey === key) copiedKey = null;
+            }, 1500);
+        } catch {
+            copiedKey = null;
+        }
+    }
 
     let deployDialog = $state<HTMLDialogElement | null>(null);
     let volumeDialog = $state<HTMLDialogElement | null>(null);
@@ -67,8 +97,9 @@
     let formMemory = $state("512");
     let formDisk = $state("1024");
     let formEnv = $state("");
-    let formPorts = $state("");
-    let formNodePort = $state("");
+    let formPortRows = $state<
+        { containerPort: string; rgPort: string; nodePort: string; protocol: "tcp" | "udp" }[]
+    >([]);
     let formVolumeMounts = $state("");
 
     let composeStackName = $state("");
@@ -93,7 +124,7 @@
     let volFormSize = $state("10");
 
     let containerDialog = $state<HTMLDialogElement | null>(null);
-    let containerDialogTab = $state<"logs" | "shell" | "insights">("logs");
+    let containerDialogTab = $state<"logs" | "shell" | "insights" | "network">("logs");
     let activeContainer = $state<Workload | null>(null);
     let containerActionError = $state<string | null>(null);
     let containerActionBusy = $state(false);
@@ -134,24 +165,27 @@
         return Object.keys(result).length ? result : null;
     }
 
-    function parsePorts(raw: string, nodePortRaw: string): PortMapping[] | null {
-        if (!raw.trim()) return null;
+    function addPortRow() {
+        formPortRows = [...formPortRows, { containerPort: "", rgPort: "", nodePort: "", protocol: "tcp" }];
+    }
+
+    function removePortRow(index: number) {
+        formPortRows = formPortRows.filter((_, i) => i !== index);
+    }
+
+    function buildPortMappings(): PortMapping[] | null {
         const result: PortMapping[] = [];
-        for (const part of raw.trim().split(",")) {
-            const t = part.trim();
-            const match = t.match(/^(\d+)(?:\/(tcp|udp))?$/);
-            if (match) {
-                result.push({
-                    container_port: parseInt(match[1]),
-                    protocol: match[2] ?? null,
-                    node_port: null,
-                });
-            }
-        }
-        const nodePortTrimmed = String(nodePortRaw).trim();
-        const nodePort = nodePortTrimmed ? parseInt(nodePortTrimmed) : null;
-        if (nodePort !== null && result.length > 0) {
-            result[0].node_port = nodePort;
+        for (const row of formPortRows) {
+            const containerPort = parseInt(row.containerPort.trim());
+            if (!containerPort) continue;
+            const rgPortTrimmed = row.rgPort.trim();
+            const nodePortTrimmed = row.nodePort.trim();
+            result.push({
+                container_port: containerPort,
+                protocol: row.protocol,
+                rg_port: rgPortTrimmed ? parseInt(rgPortTrimmed) : null,
+                node_port: nodePortTrimmed ? parseInt(nodePortTrimmed) : null,
+            });
         }
         return result.length ? result : null;
     }
@@ -183,7 +217,7 @@
                 memory_bytes: parseInt(formMemory) * 1024 * 1024,
                 disk_bytes: parseInt(formDisk) * 1024 * 1024,
                 env_vars: parseEnvVars(formEnv),
-                ports: parsePorts(formPorts, formNodePort),
+                ports: buildPortMappings(),
                 volume_mounts: parseVolumeMounts(formVolumeMounts),
                 resource_group_id: rgId,
             });
@@ -278,6 +312,7 @@
         containerActionError = null;
         containerDialog?.showModal();
         startLogsStream(workload);
+        resolveNodeIp(workload.assigned_agent_id);
     }
 
     function closeContainer() {
@@ -287,7 +322,7 @@
         activeContainer = null;
     }
 
-    function switchTab(tab: "logs" | "shell" | "insights") {
+    function switchTab(tab: "logs" | "shell" | "insights" | "network") {
         if (containerDialogTab === tab || !activeContainer) return;
 
         if (containerDialogTab === "logs") stopLogsStream();
@@ -503,8 +538,7 @@
         formMemory = "512";
         formDisk = "1024";
         formEnv = "";
-        formPorts = "";
-        formNodePort = "";
+        formPortRows = [];
         formVolumeMounts = "";
         deployError = null;
     }
@@ -664,17 +698,89 @@
                 <label class="text-xs text-muted-foreground" for="d-disk">Disk (MB)</label>
                 <input id="d-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="1024" bind:value={formDisk} />
             </div>
-            <div class="flex flex-col gap-1 sm:col-span-2">
-                <label class="text-xs text-muted-foreground" for="d-ports">
-                    Ports — container ports, internal mesh only
-                </label>
-                <input id="d-ports" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="80, 443" bind:value={formPorts} />
-            </div>
-            <div class="flex flex-col gap-1 sm:col-span-2">
-                <label class="text-xs text-muted-foreground" for="d-node-port">
-                    Node Port (optional) — expose the first port above externally on the node
-                </label>
-                <input id="d-node-port" type="number" class="border rounded px-3 py-1.5 text-sm bg-background font-mono" placeholder="8080" bind:value={formNodePort} />
+            <div class="flex flex-col gap-2 sm:col-span-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-muted-foreground">Ports</span>
+                    <button
+                        type="button"
+                        class="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                        onclick={addPortRow}
+                    >
+                        <Icon icon="mdi:plus" width={14} height={14} />
+                        Add port
+                    </button>
+                </div>
+                {#if formPortRows.length === 0}
+                    <p class="text-xs text-muted-foreground">No ports exposed. Container is only reachable via RG-internal DNS on its default port.</p>
+                {:else}
+                    <div class="flex items-center gap-3 pl-0.5">
+                        <span class="text-xs text-muted-foreground w-20">Container port</span>
+                        <span class="w-4 shrink-0"></span>
+                        <span class="text-xs text-muted-foreground w-20">RG port</span>
+                        <span class="w-px h-3 bg-border shrink-0"></span>
+                        <span class="text-xs text-muted-foreground w-20">Node port</span>
+                    </div>
+                    <div class="space-y-2">
+                        {#each formPortRows as row, i}
+                            {@const cPort = row.containerPort.trim()}
+                            {@const rPort = row.rgPort.trim()}
+                            {@const nPort = row.nodePort.trim()}
+                            <div class="flex items-center gap-3">
+                                <input
+                                    type="number"
+                                    class="border rounded px-2 py-1.5 text-sm bg-background font-mono w-20"
+                                    placeholder="80"
+                                    aria-label="Container port"
+                                    bind:value={row.containerPort}
+                                />
+                                <Icon icon="mdi:arrow-right" width={16} height={16} class="text-muted-foreground shrink-0" />
+                                <input
+                                    type="number"
+                                    class="border rounded px-2 py-1.5 text-sm bg-background font-mono w-20"
+                                    placeholder="8080"
+                                    aria-label="RG port"
+                                    bind:value={row.rgPort}
+                                />
+                                <span class="w-px h-5 bg-border shrink-0"></span>
+                                <input
+                                    type="number"
+                                    class="border rounded px-2 py-1.5 text-sm bg-background font-mono w-20"
+                                    placeholder="35000"
+                                    aria-label="Node port"
+                                    bind:value={row.nodePort}
+                                />
+                                <select
+                                    class="border rounded px-2 py-1.5 text-sm bg-background"
+                                    aria-label="Protocol"
+                                    bind:value={row.protocol}
+                                >
+                                    <option value="tcp">TCP</option>
+                                    <option value="udp">UDP</option>
+                                </select>
+                                <button
+                                    type="button"
+                                    class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                                    onclick={() => removePortRow(i)}
+                                    aria-label="Remove port"
+                                    title="Remove"
+                                >
+                                    <Icon icon="mdi:close" width={16} height={16} />
+                                </button>
+                            </div>
+                            {#if cPort}
+                                <p class="text-xs text-muted-foreground font-mono pl-0.5">
+                                    RG mesh: {rPort || cPort}/{row.protocol} → container:{cPort}
+                                    {#if nPort}
+                                        &nbsp;·&nbsp; external: node-ip:{nPort} → container:{cPort}
+                                    {/if}
+                                </p>
+                            {/if}
+                        {/each}
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                        RG port maps to the container port inside the RG mesh (optional, defaults to container port). Node port separately exposes it externally on the node's IP, like a Kubernetes NodePort.
+                    </p>
+                {/if}
             </div>
         </div>
         {#if volumes.length > 0}
@@ -941,7 +1047,7 @@
             {/if}
             <div class="px-6 py-2 border-b shrink-0">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"]] as [tab, label]}
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"]] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => switchTab(tab as typeof containerDialogTab)}
@@ -972,7 +1078,7 @@
                             <div class="flex-1 overflow-hidden bg-black p-2" bind:this={execTerminalEl}></div>
                         {/if}
                     </div>
-                {:else}
+                {:else if containerDialogTab === "insights"}
                     <div class="h-full overflow-y-auto p-6">
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div class="border rounded-lg p-4">
@@ -1009,6 +1115,76 @@
                             <p class="text-xs text-muted-foreground mt-1">
                                 Restarted {activeContainer.restart_count} time{activeContainer.restart_count === 1 ? "" : "s"}{activeContainer.max_restarts !== null ? ` (max ${activeContainer.max_restarts})` : ""}
                             </p>
+                        {/if}
+                    </div>
+                {:else}
+                    <div class="h-full overflow-y-auto p-6 space-y-6">
+                        {#if activeContainer.ports && activeContainer.ports.length > 0}
+                            <div>
+                                <p class="text-xs font-medium text-muted-foreground mb-2">Ports</p>
+                                <div class="border rounded-lg divide-y">
+                                    {#each activeContainer.ports as port}
+                                        {@const rgHost = `${activeContainer.service_name ?? activeContainer.name}.svc.${rgId}.internal`}
+                                        {@const rgAddress = `${rgHost}:${port.container_port}`}
+                                        {@const rgPortAddress = port.rg_port ? `rg-gateway:${port.rg_port}` : null}
+                                        {@const nodeIp = nodeIpCache[activeContainer.assigned_agent_id ?? ""]}
+                                        {@const extAddress = port.node_port ? `${nodeIp ?? "node-ip"}:${port.node_port}` : null}
+                                        <div class="p-3 space-y-2">
+                                            <div class="flex items-center justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <p class="text-xs text-muted-foreground">RG-internal (DNS)</p>
+                                                    <p class="font-mono text-sm truncate">{rgAddress}</p>
+                                                </div>
+                                                <button
+                                                    class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                                                    onclick={() => copyToClipboard(rgAddress, `rg-${port.container_port}`)}
+                                                    aria-label="Copy"
+                                                    title="Copy"
+                                                >
+                                                    <Icon icon={copiedKey === `rg-${port.container_port}` ? "mdi:check" : "mdi:content-copy"} width={16} height={16} />
+                                                </button>
+                                            </div>
+                                            {#if rgPortAddress}
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <p class="text-xs text-muted-foreground">RG port (mesh gateway)</p>
+                                                        <p class="font-mono text-sm truncate">{rgPortAddress}</p>
+                                                    </div>
+                                                    <button
+                                                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                                                        onclick={() => copyToClipboard(rgPortAddress, `rgp-${port.container_port}`)}
+                                                        aria-label="Copy"
+                                                        title="Copy"
+                                                    >
+                                                        <Icon icon={copiedKey === `rgp-${port.container_port}` ? "mdi:check" : "mdi:content-copy"} width={16} height={16} />
+                                                    </button>
+                                                </div>
+                                            {/if}
+                                            {#if extAddress}
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <p class="text-xs text-muted-foreground">External</p>
+                                                        <p class="font-mono text-sm truncate">{extAddress}</p>
+                                                    </div>
+                                                    <button
+                                                        class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                                                        onclick={() => copyToClipboard(extAddress, `ext-${port.container_port}`)}
+                                                        aria-label="Copy"
+                                                        title="Copy"
+                                                    >
+                                                        <Icon icon={copiedKey === `ext-${port.container_port}` ? "mdi:check" : "mdi:content-copy"} width={16} height={16} />
+                                                    </button>
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                            <p class="text-xs text-muted-foreground">
+                                Reachable over VPN via the RG-internal address, or externally via the node IP if a node port is set. Use "Connect VPN" to resolve RG-internal hostnames.
+                            </p>
+                        {:else}
+                            <p class="text-sm text-muted-foreground">No ports configured for this container.</p>
                         {/if}
                     </div>
                 {/if}
@@ -1139,10 +1315,7 @@
                                         <div class="flex w-5 shrink-0 items-center justify-center">
                                             <Icon icon={resolveImageIcon(w.image)} width={20} height={20} />
                                         </div>
-                                        <div>
-                                            <p class="font-medium leading-tight">{w.service_name ?? w.name}</p>
-                                            <p class="text-xs text-muted-foreground font-mono">{w.image}</p>
-                                        </div>
+                                        <p class="font-medium leading-tight">{w.service_name ?? w.name}</p>
                                     </div>
                                 </td>
                                 <td class="px-4 py-3">

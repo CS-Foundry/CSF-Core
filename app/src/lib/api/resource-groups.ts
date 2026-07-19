@@ -20,6 +20,7 @@ export interface CreateResourceGroupRequest {
 export interface PortMapping {
     container_port: number;
     protocol: string | null;
+    rg_port: number | null;
     node_port: number | null;
 }
 
@@ -49,6 +50,7 @@ export interface Workload {
     status: string;
     assigned_agent_id: string | null;
     container_id: string | null;
+    ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string | null;
     stack_id: string | null;

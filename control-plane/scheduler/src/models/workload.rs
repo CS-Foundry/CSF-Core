@@ -164,6 +164,7 @@ pub struct CreateWorkloadRequest {
 pub struct PortMapping {
     pub container_port: u16,
     pub protocol: Option<String>,
+    pub rg_port: Option<u16>,
     pub node_port: Option<u16>,
 }
 
