@@ -264,7 +264,7 @@ impl DockerRuntime {
         let network_name = rg_network_name(resource_group_id);
 
         let host_config = HostConfig {
-            binds: Some(vec!["/etc/csfx/dns:/zones:ro".to_string()]),
+            binds: Some(vec!["/var/lib/csfx-agent/dns:/zones:ro".to_string()]),
             ..Default::default()
         };
 
@@ -667,6 +667,33 @@ impl DockerRuntime {
         Ok(())
     }
 
+    pub async fn list_managed_containers(&self) -> Result<Vec<(String, String)>> {
+        let mut filters = HashMap::new();
+        filters.insert("label".to_string(), vec!["csfx.managed=true".to_string()]);
+
+        let options = bollard::query_parameters::ListContainersOptionsBuilder::default()
+            .all(true)
+            .filters(&filters)
+            .build();
+
+        let containers = self
+            .docker
+            .list_containers(Some(options))
+            .await
+            .context("Failed to list managed containers")?;
+
+        let managed = containers
+            .into_iter()
+            .filter_map(|c| {
+                let container_id = c.id?;
+                let workload_id = c.labels?.get("csfx.workload_id")?.clone();
+                Some((workload_id, container_id))
+            })
+            .collect();
+
+        Ok(managed)
+    }
+
     pub async fn collect_stats(
         &self,
         container_id: &str,
@@ -764,6 +791,10 @@ impl crate::runtime::Runtime for DockerRuntime {
     ) -> Result<Option<String>> {
         self.inspect_network_ip(workload_handle, network_name)
             .await
+    }
+
+    async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
+        self.list_managed_containers().await
     }
 }
 

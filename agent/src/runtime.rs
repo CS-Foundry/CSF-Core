@@ -86,4 +86,8 @@ pub trait Runtime: Send + Sync {
     ) -> Result<Option<String>> {
         Ok(None)
     }
+
+    async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
+        Ok(Vec::new())
+    }
 }

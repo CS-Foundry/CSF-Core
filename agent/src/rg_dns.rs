@@ -5,7 +5,7 @@ use tokio::fs;
 use tokio::sync::Mutex;
 use tracing::info;
 
-const DNS_DIR: &str = "/etc/csfx/dns";
+const DNS_DIR: &str = "/var/lib/csfx-agent/dns";
 const ZONE_TTL_SECS: u32 = 30;
 const ZONE_SERIAL_BASE: u32 = 1;
 

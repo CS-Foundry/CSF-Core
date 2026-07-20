@@ -541,6 +541,7 @@ async fn process_workloads(
     };
 
     let mut docker_guard = docker.lock().await;
+    let freshly_initialized = docker_guard.is_none();
     if docker_guard.is_none() {
         match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
             Ok(dm) => {
@@ -556,6 +557,21 @@ async fn process_workloads(
     let docker_runtime: &dyn runtime::Runtime = docker_guard
         .as_deref()
         .expect("docker manager initialized above");
+
+    if freshly_initialized {
+        match docker_runtime.list_managed_workloads().await {
+            Ok(existing) => {
+                let mut containers = running_containers.lock().await;
+                for (workload_id, container_id) in existing {
+                    containers.insert(workload_id, container_id);
+                }
+                info!(count = containers.len(), "Reconciled running containers from docker state");
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to reconcile running containers from docker state");
+            }
+        }
+    }
 
     reap_stale_containers(
         docker_runtime,
