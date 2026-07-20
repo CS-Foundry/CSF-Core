@@ -176,10 +176,10 @@
     function buildPortMappings(): PortMapping[] | null {
         const result: PortMapping[] = [];
         for (const row of formPortRows) {
-            const containerPort = parseInt(row.containerPort.trim());
+            const containerPort = parseInt(String(row.containerPort).trim());
             if (!containerPort) continue;
-            const rgPortTrimmed = row.rgPort.trim();
-            const nodePortTrimmed = row.nodePort.trim();
+            const rgPortTrimmed = String(row.rgPort).trim();
+            const nodePortTrimmed = String(row.nodePort).trim();
             result.push({
                 container_port: containerPort,
                 protocol: row.protocol,
@@ -722,9 +722,9 @@
                     </div>
                     <div class="space-y-2">
                         {#each formPortRows as row, i}
-                            {@const cPort = row.containerPort.trim()}
-                            {@const rPort = row.rgPort.trim()}
-                            {@const nPort = row.nodePort.trim()}
+                            {@const cPort = String(row.containerPort).trim()}
+                            {@const rPort = String(row.rgPort).trim()}
+                            {@const nPort = String(row.nodePort).trim()}
                             <div class="flex items-center gap-3">
                                 <input
                                     type="number"
