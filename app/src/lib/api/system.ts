@@ -1,3 +1,5 @@
+import { authedFetch } from './http';
+
 const API_BASE = '/api';
 
 export interface UpdateStatus {
@@ -11,7 +13,7 @@ export interface UpdateStatus {
 }
 
 export async function getUpdateStatus(token: string): Promise<UpdateStatus> {
-    const res = await fetch(`${API_BASE}/system/update/status`, {
+    const res = await authedFetch(`${API_BASE}/system/update/status`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`update status fetch failed: ${res.status}`);
@@ -19,7 +21,7 @@ export async function getUpdateStatus(token: string): Promise<UpdateStatus> {
 }
 
 export async function triggerUpdate(token: string, version: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/system/update`, {
+    const res = await authedFetch(`${API_BASE}/system/update`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${token}`,
@@ -31,7 +33,7 @@ export async function triggerUpdate(token: string, version: string): Promise<voi
 }
 
 export async function pauseUpdate(token: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/system/update/pause`, {
+    const res = await authedFetch(`${API_BASE}/system/update/pause`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -39,7 +41,7 @@ export async function pauseUpdate(token: string): Promise<void> {
 }
 
 export async function resumeUpdate(token: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/system/update/resume`, {
+    const res = await authedFetch(`${API_BASE}/system/update/resume`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -65,7 +67,7 @@ export interface ReleasesResponse {
 
 export async function getReleases(token: string, includePre = false): Promise<ReleasesResponse> {
     const url = `${API_BASE}/system/releases${includePre ? '?include_pre=true' : ''}`;
-    const res = await fetch(url, {
+    const res = await authedFetch(url, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`releases fetch failed: ${res.status}`);

@@ -231,16 +231,16 @@ async fn get_health_history(
 ) -> Result<Json<Vec<HealthHistoryPoint>>, StatusCode> {
     let range = params.range.as_deref().unwrap_or("1h");
 
-    let (interval_str, bucket_str, limit_n) = match range {
-        "7d" => ("7 days", "1 hour", 168usize),
-        "30d" => ("30 days", "6 hours", 120usize),
-        _ => ("1 hour", "5 minutes", 12usize),
+    let (interval_str, bucket_seconds, limit_n) = match range {
+        "7d" => ("7 days", 3600i64, 168usize),
+        "30d" => ("30 days", 21600i64, 120usize),
+        _ => ("1 hour", 300i64, 12usize),
     };
 
     let sql = format!(
         r#"
         SELECT
-            date_trunc('{bucket}', timestamp) AS bucket,
+            to_timestamp(floor(extract(epoch from timestamp) / {bucket_seconds}) * {bucket_seconds}) AS bucket,
             COUNT(DISTINCT agent_id) AS online_count
         FROM agent_metrics
         WHERE timestamp >= NOW() - INTERVAL '{interval}'
@@ -248,7 +248,7 @@ async fn get_health_history(
         ORDER BY bucket ASC
         LIMIT {limit}
         "#,
-        bucket = bucket_str,
+        bucket_seconds = bucket_seconds,
         interval = interval_str,
         limit = limit_n,
     );

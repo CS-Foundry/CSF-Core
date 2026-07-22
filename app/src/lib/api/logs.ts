@@ -1,3 +1,5 @@
+import { authedFetch } from './http';
+
 const API_BASE = '/api';
 
 export interface LogEntry {
@@ -48,7 +50,7 @@ function buildQuery(filter: LogsFilter): string {
 }
 
 export async function listLogs(token: string, filter: LogsFilter): Promise<LogsResponse> {
-    const res = await fetch(`${API_BASE}/logs${buildQuery(filter)}`, {
+    const res = await authedFetch(`${API_BASE}/logs${buildQuery(filter)}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to list logs: ${res.status}`);
@@ -56,7 +58,7 @@ export async function listLogs(token: string, filter: LogsFilter): Promise<LogsR
 }
 
 export async function getLogsRetention(token: string): Promise<LogsRetention> {
-    const res = await fetch(`${API_BASE}/admin/settings/logs-retention`, {
+    const res = await authedFetch(`${API_BASE}/admin/settings/logs-retention`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to get logs retention: ${res.status}`);
@@ -67,7 +69,7 @@ export async function updateLogsRetention(
     token: string,
     retentionDays: number,
 ): Promise<LogsRetention> {
-    const res = await fetch(`${API_BASE}/admin/settings/logs-retention`, {
+    const res = await authedFetch(`${API_BASE}/admin/settings/logs-retention`, {
         method: 'PUT',
         headers: {
             Authorization: `Bearer ${token}`,

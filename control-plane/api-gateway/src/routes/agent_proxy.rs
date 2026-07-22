@@ -28,27 +28,6 @@ use crate::{
 const CSFX_AGENT_PORT_ENV: &str = "CSFX_AGENT_PORT";
 const METRICS_TICKET_SCOPE: &str = "__node_metrics__";
 const POWER_TICKET_SCOPE: &str = "__power__";
-const MGMT_WG_INTERFACE: &str = "wgmgmt0";
-
-fn local_wg_tunnel_ip() -> Option<String> {
-    let output = std::process::Command::new("ip")
-        .args(["-4", "-o", "addr", "show", MGMT_WG_INTERFACE])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    let addr_field = stdout.split_whitespace().find(|s| s.contains('/'))?;
-    addr_field.split('/').next().map(|s| s.to_string())
-}
-
-fn proxy_host_for(tunnel_ip: &str) -> String {
-    match local_wg_tunnel_ip() {
-        Some(local_ip) if local_ip == tunnel_ip => "127.0.0.1".to_string(),
-        _ => tunnel_ip.to_string(),
-    }
-}
 
 async fn resolve_agent_tunnel_ip(
     state: &AppState,
@@ -195,12 +174,7 @@ pub async fn stream_workload_logs(
         .and_then(|v| v.parse().ok())
         .unwrap_or(7443);
 
-    let url = format!(
-        "http://{}:{}/logs/{}",
-        proxy_host_for(&tunnel_ip),
-        agent_port,
-        workload_id
-    );
+    let url = format!("http://{}:{}/logs/{}", tunnel_ip, agent_port, workload_id);
 
     let client = reqwest::Client::new();
     let resp = client
@@ -268,12 +242,7 @@ pub async fn exec_workload(
         .and_then(|v| v.parse().ok())
         .unwrap_or(7443);
 
-    let agent_url = format!(
-        "ws://{}:{}/exec/{}",
-        proxy_host_for(&tunnel_ip),
-        agent_port,
-        workload_id
-    );
+    let agent_url = format!("ws://{}:{}/exec/{}", tunnel_ip, agent_port, workload_id);
 
     let mut request = agent_url.into_client_request().map_err(|e| {
         (
@@ -386,11 +355,7 @@ pub async fn stream_node_metrics(
         .and_then(|v| v.parse().ok())
         .unwrap_or(7443);
 
-    let agent_url = format!(
-        "ws://{}:{}/metrics/stream",
-        proxy_host_for(&tunnel_ip),
-        agent_port
-    );
+    let agent_url = format!("ws://{}:{}/metrics/stream", tunnel_ip, agent_port);
 
     let mut request = agent_url.into_client_request().map_err(|e| {
         (
@@ -485,7 +450,7 @@ pub async fn power_agent(
         .and_then(|v| v.parse().ok())
         .unwrap_or(7443);
 
-    let url = format!("http://{}:{}/power", proxy_host_for(&tunnel_ip), agent_port);
+    let url = format!("http://{}:{}/power", tunnel_ip, agent_port);
 
     let client = reqwest::Client::new();
     let resp = client

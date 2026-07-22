@@ -1,3 +1,5 @@
+import { authedFetch } from './http';
+
 const API_BASE = '/api';
 
 export interface Node {
@@ -62,7 +64,7 @@ export interface ClusterStats {
 }
 
 export async function listNodes(token: string): Promise<Node[]> {
-    const res = await fetch(`${API_BASE}/agents`, {
+    const res = await authedFetch(`${API_BASE}/agents`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`agents fetch failed: ${res.status}`);
@@ -70,7 +72,7 @@ export async function listNodes(token: string): Promise<Node[]> {
 }
 
 export async function getClusterStats(token: string): Promise<ClusterStats> {
-    const res = await fetch(`${API_BASE}/system/stats`, {
+    const res = await authedFetch(`${API_BASE}/system/stats`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`system/stats fetch failed: ${res.status}`);
@@ -78,7 +80,7 @@ export async function getClusterStats(token: string): Promise<ClusterStats> {
 }
 
 export async function getNode(token: string, id: string): Promise<Node> {
-    const res = await fetch(`${API_BASE}/agents/${id}`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`agent fetch failed: ${res.status}`);
@@ -86,7 +88,7 @@ export async function getNode(token: string, id: string): Promise<Node> {
 }
 
 export async function getNodeMetricsLatest(token: string, id: string): Promise<NodeMetricsLatest> {
-    const res = await fetch(`${API_BASE}/agents/${id}/metrics/latest`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}/metrics/latest`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`metrics fetch failed: ${res.status}`);
@@ -106,7 +108,7 @@ export interface LiveNodeMetrics {
 }
 
 export async function openNodeMetricsSocket(token: string, agentId: string): Promise<WebSocket> {
-    const res = await fetch(`${API_BASE}/agents/${agentId}/metrics/ticket`, {
+    const res = await authedFetch(`${API_BASE}/agents/${agentId}/metrics/ticket`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -127,7 +129,7 @@ export interface HealthHistoryPoint {
 }
 
 export async function getHealthHistory(token: string, range: '1h' | '7d' | '30d'): Promise<HealthHistoryPoint[]> {
-    const res = await fetch(`${API_BASE}/system/stats/history?range=${range}`, {
+    const res = await authedFetch(`${API_BASE}/system/stats/history?range=${range}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`health history fetch failed: ${res.status}`);
@@ -135,7 +137,7 @@ export async function getHealthHistory(token: string, range: '1h' | '7d' | '30d'
 }
 
 export async function rebootNode(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/agents/${id}/power`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}/power`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reboot' }),
@@ -147,7 +149,7 @@ export async function rebootNode(token: string, id: string): Promise<void> {
 }
 
 export async function powerOffNode(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/agents/${id}/power`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}/power`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'poweroff' }),
@@ -159,7 +161,7 @@ export async function powerOffNode(token: string, id: string): Promise<void> {
 }
 
 export async function drainNode(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/agents/${id}/drain`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}/drain`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -170,7 +172,7 @@ export async function drainNode(token: string, id: string): Promise<void> {
 }
 
 export async function uncordonNode(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/agents/${id}/uncordon`, {
+    const res = await authedFetch(`${API_BASE}/agents/${id}/uncordon`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });

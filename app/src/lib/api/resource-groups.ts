@@ -1,3 +1,5 @@
+import { authedFetch } from './http';
+
 const API_BASE = '/api';
 
 export interface ResourceGroup {
@@ -107,7 +109,7 @@ export interface CreateStackResponse {
 }
 
 export async function listResourceGroups(token: string): Promise<ResourceGroup[]> {
-    const res = await fetch(`${API_BASE}/resource-groups`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to list resource groups: ${res.status}`);
@@ -115,7 +117,7 @@ export async function listResourceGroups(token: string): Promise<ResourceGroup[]
 }
 
 export async function getResourceGroup(token: string, id: string): Promise<ResourceGroup> {
-    const res = await fetch(`${API_BASE}/resource-groups/${id}`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to get resource group: ${res.status}`);
@@ -126,7 +128,7 @@ export async function createResourceGroup(
     token: string,
     req: CreateResourceGroupRequest,
 ): Promise<ResourceGroup> {
-    const res = await fetch(`${API_BASE}/resource-groups`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${token}`,
@@ -139,7 +141,7 @@ export async function createResourceGroup(
 }
 
 export async function deleteResourceGroup(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/resource-groups/${id}`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -147,7 +149,7 @@ export async function deleteResourceGroup(token: string, id: string): Promise<vo
 }
 
 export async function listResourceGroupWorkloads(token: string, rgId: string): Promise<Workload[]> {
-    const res = await fetch(`${API_BASE}/resource-groups/${rgId}/workloads`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${rgId}/workloads`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to list workloads: ${res.status}`);
@@ -155,7 +157,7 @@ export async function listResourceGroupWorkloads(token: string, rgId: string): P
 }
 
 export async function createWorkload(token: string, req: CreateWorkloadRequest): Promise<{ workload_id: string; status: string; assigned_agent_id: string | null; message: string }> {
-    const res = await fetch(`${API_BASE}/workloads`, {
+    const res = await authedFetch(`${API_BASE}/workloads`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${token}`,
@@ -174,7 +176,7 @@ export async function createWorkloadStack(
     token: string,
     req: CreateStackRequest,
 ): Promise<CreateStackResponse> {
-    const res = await fetch(`${API_BASE}/workload-stacks`, {
+    const res = await authedFetch(`${API_BASE}/workload-stacks`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${token}`,
@@ -190,7 +192,7 @@ export async function createWorkloadStack(
 }
 
 export async function deleteWorkload(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/workloads/${id}`, {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -198,7 +200,7 @@ export async function deleteWorkload(token: string, id: string): Promise<void> {
 }
 
 export async function stopWorkload(token: string, id: string): Promise<Workload> {
-    const res = await fetch(`${API_BASE}/workloads/${id}/stop`, {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}/stop`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -207,7 +209,7 @@ export async function stopWorkload(token: string, id: string): Promise<Workload>
 }
 
 export async function restartWorkload(token: string, id: string): Promise<Workload> {
-    const res = await fetch(`${API_BASE}/workloads/${id}/restart`, {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}/restart`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -220,7 +222,7 @@ export async function streamWorkloadLogs(
     id: string,
     signal: AbortSignal,
 ): Promise<ReadableStream<Uint8Array>> {
-    const res = await fetch(`${API_BASE}/workloads/${id}/logs`, {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}/logs`, {
         headers: { Authorization: `Bearer ${token}` },
         signal,
     });
@@ -232,7 +234,7 @@ export async function streamWorkloadLogs(
 }
 
 export async function openWorkloadExecSocket(token: string, id: string): Promise<WebSocket> {
-    const res = await fetch(`${API_BASE}/workloads/${id}/exec/ticket`, {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}/exec/ticket`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -248,7 +250,7 @@ export async function openWorkloadExecSocket(token: string, id: string): Promise
 }
 
 export async function listResourceGroupVolumes(token: string, rgId: string): Promise<Volume[]> {
-    const res = await fetch(`${API_BASE}/resource-groups/${rgId}/volumes`, {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${rgId}/volumes`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to list volumes: ${res.status}`);
@@ -256,7 +258,7 @@ export async function listResourceGroupVolumes(token: string, rgId: string): Pro
 }
 
 export async function createVolume(token: string, req: CreateVolumeRequest): Promise<Volume> {
-    const res = await fetch(`${API_BASE}/volumes`, {
+    const res = await authedFetch(`${API_BASE}/volumes`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${token}`,
@@ -272,7 +274,7 @@ export async function createVolume(token: string, req: CreateVolumeRequest): Pro
 }
 
 export async function deleteVolume(token: string, id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/volumes/${id}`, {
+    const res = await authedFetch(`${API_BASE}/volumes/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
     });
