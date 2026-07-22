@@ -653,9 +653,10 @@ pub async fn get_vpn_config(
     })?;
 
     let dns = first_host_ip(&group.internal_cidr).unwrap_or_else(|| "1.1.1.1".to_string());
+    let search_domain = format!("svc.{}.internal", id);
 
     let config = format!(
-        "[Interface]\nPrivateKey = {client_private_key}\nAddress = {client_tunnel_ip}/32\nDNS = {dns}\n\n[Peer]\nPublicKey = {server_pubkey}\nEndpoint = {endpoint}\nAllowedIPs = {cidr}\nPersistentKeepalive = 25\n",
+        "[Interface]\nPrivateKey = {client_private_key}\nAddress = {client_tunnel_ip}/32\nDNS = {dns}, {search_domain}\n\n[Peer]\nPublicKey = {server_pubkey}\nEndpoint = {endpoint}\nAllowedIPs = {cidr}\nPersistentKeepalive = 25\n",
         client_private_key = client_private_key,
         client_tunnel_ip = client_tunnel_ip,
         dns = dns,

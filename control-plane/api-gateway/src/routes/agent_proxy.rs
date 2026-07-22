@@ -504,9 +504,11 @@ pub async fn power_agent(
     if !resp.status().is_success() {
         let status =
             StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!(agent_id = %agent_id, status = %status, body = %body, "agent refused power action");
         return Err((
             status,
-            Json(json!({ "error": "agent refused power action" })),
+            Json(json!({ "error": "agent refused power action", "detail": body })),
         ));
     }
 
