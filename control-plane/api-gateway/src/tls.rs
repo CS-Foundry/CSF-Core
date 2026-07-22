@@ -1,10 +1,34 @@
 use axum_server::tls_rustls::RustlsConfig;
-use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+use rcgen::{CertificateParams, DistinguishedName, DnType, Issuer, KeyPair, SanType};
 
 fn detect_primary_ip() -> Option<std::net::IpAddr> {
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
     Some(socket.local_addr().ok()?.ip())
+}
+
+fn collect_sans() -> anyhow::Result<(String, Vec<SanType>)> {
+    let mut san_hosts =
+        std::env::var("TLS_SANS").unwrap_or_else(|_| "localhost,127.0.0.1".to_string());
+    if let Some(primary_ip) = detect_primary_ip() {
+        let primary_ip = primary_ip.to_string();
+        if !san_hosts.split(',').any(|s| s.trim() == primary_ip) {
+            san_hosts.push(',');
+            san_hosts.push_str(&primary_ip);
+        }
+    }
+
+    let mut sans = Vec::new();
+    for san in san_hosts.split(',') {
+        let san = san.trim();
+        if let Ok(ip) = san.parse::<std::net::IpAddr>() {
+            sans.push(SanType::IpAddress(ip));
+        } else {
+            sans.push(SanType::DnsName(san.try_into()?));
+        }
+    }
+
+    Ok((san_hosts, sans))
 }
 
 pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
@@ -27,32 +51,37 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
         .distinguished_name
         .push(DnType::CommonName, "csfx-gateway");
 
-    let mut san_hosts = std::env::var("TLS_SANS").unwrap_or_else(|_| "localhost,127.0.0.1".to_string());
-    if let Some(primary_ip) = detect_primary_ip() {
-        let primary_ip = primary_ip.to_string();
-        if !san_hosts.split(',').any(|s| s.trim() == primary_ip) {
-            san_hosts.push(',');
-            san_hosts.push_str(&primary_ip);
+    let (san_hosts, sans) = collect_sans()?;
+    params.subject_alt_names = sans;
+
+    match (
+        std::env::var("CSFX_CA_CERT_PEM"),
+        std::env::var("CSFX_CA_KEY_PEM"),
+    ) {
+        (Ok(ca_cert_pem), Ok(ca_key_pem)) => {
+            let ca_key_pair = KeyPair::from_pem(&ca_key_pem)?;
+            let issuer = Issuer::from_ca_cert_pem(&ca_cert_pem, ca_key_pair)?;
+            let cert = params.signed_by(&key_pair, &issuer)?;
+            let cert_pem = cert.pem().into_bytes();
+            let key_pem = key_pair.serialize_pem().into_bytes();
+
+            let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
+
+            tracing::info!(sans = %san_hosts, "TLS certificate signed by internal CA");
+            Ok(config)
+        }
+        _ => {
+            let cert = params.self_signed(&key_pair)?;
+            let cert_pem = cert.pem().into_bytes();
+            let key_pem = key_pair.serialize_pem().into_bytes();
+
+            let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
+
+            tracing::warn!(
+                sans = %san_hosts,
+                "CSFX_CA_CERT_PEM/CSFX_CA_KEY_PEM not set, using self-signed TLS certificate"
+            );
+            Ok(config)
         }
     }
-
-    for san in san_hosts.split(',') {
-        let san = san.trim();
-        if let Ok(ip) = san.parse::<std::net::IpAddr>() {
-            params.subject_alt_names.push(SanType::IpAddress(ip));
-        } else {
-            params
-                .subject_alt_names
-                .push(SanType::DnsName(san.try_into()?));
-        }
-    }
-
-    let cert = params.self_signed(&key_pair)?;
-    let cert_pem = cert.pem().into_bytes();
-    let key_pem = key_pair.serialize_pem().into_bytes();
-
-    let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
-
-    tracing::info!(sans = %san_hosts, "self-signed TLS certificate generated");
-    Ok(config)
 }

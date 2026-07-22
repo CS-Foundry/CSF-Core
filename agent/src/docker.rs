@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, ContainerStateStatusEnum, EndpointSettings, HostConfig, Ipam, IpamConfig,
-    NetworkCreateRequest, NetworkingConfig,
+    NetworkCreateRequest, NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, InspectContainerOptionsBuilder,
@@ -270,6 +270,10 @@ impl DockerRuntime {
 
         let host_config = HostConfig {
             binds: Some(vec!["/var/lib/csfx-agent/dns:/zones:ro".to_string()]),
+            restart_policy: Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
             ..Default::default()
         };
 
@@ -472,6 +476,10 @@ impl DockerRuntime {
             } else {
                 None
             },
+            restart_policy: Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
             ..Default::default()
         };
 

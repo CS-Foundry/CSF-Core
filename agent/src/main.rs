@@ -491,6 +491,9 @@ async fn should_restart_after_crash(
     }
 
     if workload.restart_policy == "never" {
+        if let Err(e) = docker.stop_workload(container_id).await {
+            warn!(workload_id = %workload.id, container_id = %container_id, error = %e, "Failed to stop container with restart_policy=never");
+        }
         return false;
     }
 
@@ -499,7 +502,11 @@ async fn should_restart_after_crash(
 
     if let Some(max) = workload.max_restarts {
         if *count as i32 >= max {
-            warn!(workload_id = %workload.id, restart_count = *count, max_restarts = max, "Crash-loop limit reached, not restarting");
+            warn!(workload_id = %workload.id, restart_count = *count, max_restarts = max, "Crash-loop limit reached, stopping container");
+            drop(counts);
+            if let Err(e) = docker.stop_workload(container_id).await {
+                warn!(workload_id = %workload.id, container_id = %container_id, error = %e, "Failed to stop container after crash-loop limit");
+            }
             return false;
         }
     }
