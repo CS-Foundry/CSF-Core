@@ -22,6 +22,9 @@ pub struct ProxyTicket {
 }
 
 const PROXY_TICKET_TTL_SECS: i64 = 60;
+const CA_STATE_DIR: &str = "/var/lib/csfx-cp";
+const CA_CERT_PATH: &str = "/var/lib/csfx-cp/ca.crt";
+const CA_KEY_PATH: &str = "/var/lib/csfx-cp/ca.key";
 
 struct CaState {
     ca_cert_pem: String,
@@ -46,29 +49,47 @@ impl PkiService {
     }
 
     fn load_or_generate_ca() -> Result<CaState> {
-        match (
+        if let (Ok(cert_pem), Ok(key_pem)) = (
             std::env::var("CSFX_CA_CERT_PEM"),
             std::env::var("CSFX_CA_KEY_PEM"),
         ) {
-            (Ok(cert_pem), Ok(key_pem)) => {
-                KeyPair::from_pem(&key_pem).map_err(|e| anyhow!("Failed to load CA key: {}", e))?;
-
-                crate::log_info!("pki", "CA loaded from environment");
-
-                Ok(CaState {
-                    ca_cert_pem: cert_pem,
-                    ca_key_pem: key_pem,
-                    serial_counter: AtomicI64::new(1),
-                })
-            }
-            _ => {
-                crate::log_warn!(
-                    "pki",
-                    "CSFX_CA_CERT_PEM/CSFX_CA_KEY_PEM not set, generating ephemeral CA"
-                );
-                Self::generate_ca()
-            }
+            KeyPair::from_pem(&key_pem).map_err(|e| anyhow!("Failed to load CA key: {}", e))?;
+            crate::log_info!("pki", "CA loaded from environment");
+            return Ok(CaState {
+                ca_cert_pem: cert_pem,
+                ca_key_pem: key_pem,
+                serial_counter: AtomicI64::new(1),
+            });
         }
+
+        if let (Ok(cert_pem), Ok(key_pem)) =
+            (std::fs::read_to_string(CA_CERT_PATH), std::fs::read_to_string(CA_KEY_PATH))
+        {
+            KeyPair::from_pem(&key_pem).map_err(|e| anyhow!("Failed to load CA key: {}", e))?;
+            crate::log_info!("pki", "CA loaded from disk");
+            return Ok(CaState {
+                ca_cert_pem: cert_pem,
+                ca_key_pem: key_pem,
+                serial_counter: AtomicI64::new(1),
+            });
+        }
+
+        crate::log_warn!("pki", "no persisted CA found, generating and persisting new CA");
+        let ca = Self::generate_ca()?;
+        std::fs::create_dir_all(CA_STATE_DIR)
+            .map_err(|e| anyhow!("Failed to create CA state dir: {}", e))?;
+        std::fs::write(CA_CERT_PATH, &ca.ca_cert_pem)
+            .map_err(|e| anyhow!("Failed to persist CA cert: {}", e))?;
+        std::fs::write(CA_KEY_PATH, &ca.ca_key_pem)
+            .map_err(|e| anyhow!("Failed to persist CA key: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(CA_KEY_PATH, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| anyhow!("Failed to set CA key permissions: {}", e))?;
+        }
+        crate::log_info!("pki", "CA generated and persisted to disk");
+        Ok(ca)
     }
 
     fn generate_ca() -> Result<CaState> {
@@ -94,8 +115,7 @@ impl PkiService {
         let ca_cert_pem = cert.pem();
         let ca_key_pem = key_pair.serialize_pem();
 
-        crate::log_info!("pki", "Ephemeral CA generated");
-        crate::log_info!("pki", &format!("CA cert PEM:\n{}", ca_cert_pem));
+        crate::log_info!("pki", "CA key pair generated");
 
         Ok(CaState {
             ca_cert_pem,
