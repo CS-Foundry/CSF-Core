@@ -253,8 +253,28 @@ impl DockerRuntime {
             .docker
             .inspect_container(&container_name, None::<InspectContainerOptionsBuilder>.map(|b| b.build()))
             .await;
-        if existing.is_ok() {
-            return Ok(());
+
+        match existing {
+            Ok(inspect) => {
+                let running = inspect
+                    .state
+                    .and_then(|s| s.status)
+                    .map(|status| status == ContainerStateStatusEnum::RUNNING)
+                    .unwrap_or(false);
+                if running {
+                    return Ok(());
+                }
+                info!(resource_group_id = %resource_group_id, "Resource group dns container exists but not running, recreating");
+                let remove_options =
+                    bollard::query_parameters::RemoveContainerOptionsBuilder::default()
+                        .force(true)
+                        .build();
+                self.docker
+                    .remove_container(&container_name, Some(remove_options))
+                    .await
+                    .context("Failed to remove stale resource group dns container")?;
+            }
+            Err(_) => {}
         }
 
         crate::rg_dns::write_corefile(resource_group_id, &dns_ip)
