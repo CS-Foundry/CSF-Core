@@ -190,11 +190,12 @@ pub async fn stream_workload_logs(
         })?;
 
     if !resp.status().is_success() {
-        let status =
-            StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        let agent_status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!(workload_id = %workload_id, agent_status = %agent_status, body = %body, "agent refused log stream request");
         return Err((
-            status,
-            Json(json!({ "error": "agent refused log stream request" })),
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": "agent refused log stream request", "detail": body })),
         ));
     }
 
@@ -467,12 +468,11 @@ pub async fn power_agent(
         })?;
 
     if !resp.status().is_success() {
-        let status =
-            StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        let agent_status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        tracing::warn!(agent_id = %agent_id, status = %status, body = %body, "agent refused power action");
+        tracing::warn!(agent_id = %agent_id, agent_status = %agent_status, body = %body, "agent refused power action");
         return Err((
-            status,
+            StatusCode::BAD_GATEWAY,
             Json(json!({ "error": "agent refused power action", "detail": body })),
         ));
     }
