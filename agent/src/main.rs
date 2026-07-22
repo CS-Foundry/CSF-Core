@@ -748,7 +748,7 @@ async fn start_or_restart_workload(
         }
         Err(e) => {
             workload_phases.lock().await.remove(&workload.id);
-            warn!(workload_id = %workload.id, error = %e, "Failed to start workload");
+            warn!(workload_id = %workload.id, error = ?e, "Failed to start workload");
             false
         }
     }

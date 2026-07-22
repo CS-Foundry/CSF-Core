@@ -1215,6 +1215,7 @@ dependencies = [
  "reqwest",
  "ring",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "sysinfo",

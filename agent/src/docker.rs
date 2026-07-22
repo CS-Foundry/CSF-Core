@@ -261,6 +261,11 @@ impl DockerRuntime {
             .await
             .context("Failed to write dns corefile")?;
 
+        const DNS_IMAGE: &str = "coredns/coredns:latest";
+        self.pull_image(DNS_IMAGE)
+            .await
+            .context("Failed to pull resource group dns image")?;
+
         let network_name = rg_network_name(resource_group_id);
 
         let host_config = HostConfig {
@@ -287,7 +292,7 @@ impl DockerRuntime {
         );
 
         let config = ContainerCreateBody {
-            image: Some("coredns/coredns:latest".to_string()),
+            image: Some(DNS_IMAGE.to_string()),
             cmd: Some(vec!["-conf".to_string(), corefile_container_path]),
             host_config: Some(host_config),
             networking_config: Some(networking_config),

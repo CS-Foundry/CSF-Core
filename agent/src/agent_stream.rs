@@ -1,10 +1,14 @@
 use futures_util::StreamExt;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::Connector;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+use crate::pki::AgentPki;
 
 const MIN_RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
@@ -26,9 +30,31 @@ pub fn spawn(gateway_url: String, api_key: String, agent_id: Uuid) -> mpsc::Unbo
     rx
 }
 
+fn build_connector() -> Result<Connector, anyhow::Error> {
+    let ca_pem = AgentPki::load_ca_pem()?;
+    let mut root_store = rustls::RootCertStore::empty();
+    for cert in rustls_pemfile::certs(&mut ca_pem.as_bytes()) {
+        root_store.add(cert?)?;
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    Ok(Connector::Rustls(Arc::new(config)))
+}
+
 async fn run(gateway_url: String, api_key: String, agent_id: Uuid, tx: mpsc::UnboundedSender<()>) {
     let url = stream_url(&gateway_url);
     let mut delay = MIN_RECONNECT_DELAY;
+
+    let connector = match build_connector() {
+        Ok(c) => Some(c),
+        Err(e) => {
+            warn!(agent_id = %agent_id, error = %e, "failed to build agent stream tls connector, using default");
+            None
+        }
+    };
 
     loop {
         let mut request = match url.clone().into_client_request() {
@@ -49,7 +75,7 @@ async fn run(gateway_url: String, api_key: String, agent_id: Uuid, tx: mpsc::Unb
             },
         );
 
-        match tokio_tungstenite::connect_async(request).await {
+        match tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector.clone()).await {
             Ok((socket, _)) => {
                 info!(agent_id = %agent_id, "agent stream connected");
                 delay = MIN_RECONNECT_DELAY;
