@@ -5,6 +5,7 @@
     import { auth } from "$lib/auth/store.svelte";
     import {
         getResourceGroup,
+        updateResourceGroup,
         listResourceGroupWorkloads,
         listResourceGroupVolumes,
         createWorkload,
@@ -38,6 +39,7 @@
     import Icon from "@iconify/svelte";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
+    import IconPicker from "$lib/components/icon-picker.svelte";
 
     const rgId: string = $page.params.id;
 
@@ -46,6 +48,12 @@
     let volumes = $state<Volume[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+
+    let appearanceDialog = $state<HTMLDialogElement | null>(null);
+    let editIcon = $state("mdi:cube-outline");
+    let editColor = $state("#6366f1");
+    let savingAppearance = $state(false);
+    let appearanceError = $state<string | null>(null);
 
     let activeTab = $state<"all" | "container" | "volume">("all");
     let filterText = $state("");
@@ -754,8 +762,35 @@
         return `${bytes} B`;
     }
 
-    function initials(name: string): string {
-        return name.slice(0, 2).toUpperCase();
+    function openAppearanceDialog() {
+        if (!group) return;
+        editIcon = group.icon;
+        editColor = group.color;
+        appearanceError = null;
+        appearanceDialog?.showModal();
+    }
+
+    async function handleSaveAppearance() {
+        if (!auth.token || !group) return;
+        savingAppearance = true;
+        appearanceError = null;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, { icon: editIcon, color: editColor });
+            appearanceDialog?.close();
+        } catch (e) {
+            appearanceError = e instanceof Error ? e.message : "Failed to update appearance";
+        } finally {
+            savingAppearance = false;
+        }
+    }
+
+    async function handleTogglePin() {
+        if (!auth.token || !group) return;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, { pinned: !group.pinned });
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to update resource group";
+        }
     }
 
     let totalCpu = $derived(workloads.reduce((s, w) => s + w.cpu_millicores, 0));
@@ -1057,6 +1092,36 @@
                 {:else}
                     {editingStackId ? "Redeploy" : "Deploy Stack"}
                 {/if}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={appearanceDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { appearanceError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Edit Appearance</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => appearanceDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <IconPicker bind:icon={editIcon} bind:color={editColor} />
+        {#if appearanceError}
+            <p class="text-xs text-destructive">{appearanceError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => appearanceDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleSaveAppearance} disabled={savingAppearance}>
+                {savingAppearance ? "Saving..." : "Save"}
             </Button>
         </div>
     </div>
@@ -1383,9 +1448,15 @@
         <p class="text-sm text-destructive">{error}</p>
     {:else if group}
         <div class="flex items-start gap-4">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border bg-muted font-semibold text-sm">
-                {initials(group.name)}
-            </div>
+            <button
+                class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-opacity hover:opacity-80"
+                style="background-color: {group.color}20; color: {group.color};"
+                onclick={openAppearanceDialog}
+                aria-label="Edit appearance"
+                title="Edit appearance"
+            >
+                <Icon icon={group.icon} width={24} height={24} />
+            </button>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 flex-wrap">
                     <h1 class="text-xl font-semibold tracking-tight">{group.name}</h1>
@@ -1397,6 +1468,14 @@
                 <p class="text-xs text-muted-foreground font-mono mt-1">{group.internal_cidr}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full transition-colors {group.pinned ? 'text-amber-500 hover:bg-amber-500/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                    onclick={handleTogglePin}
+                    aria-label={group.pinned ? "Unpin" : "Pin"}
+                    title={group.pinned ? "Unpin" : "Pin"}
+                >
+                    <Icon icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"} width={18} height={18} />
+                </button>
                 <Button size="sm" variant="outline" onclick={downloadVpnConfig} disabled={downloadingVpn}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     {downloadingVpn ? "Generating..." : "Connect VPN"}

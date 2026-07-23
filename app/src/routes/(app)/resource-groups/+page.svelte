@@ -4,11 +4,14 @@
     import {
         listResourceGroups,
         createResourceGroup,
+        updateResourceGroup,
         deleteResourceGroup,
         type ResourceGroup,
     } from "$lib/api/resource-groups";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
+    import Icon from "@iconify/svelte";
+    import IconPicker from "$lib/components/icon-picker.svelte";
 
     let groups = $state<ResourceGroup[]>([]);
     let loading = $state(true);
@@ -19,6 +22,8 @@
     let newName = $state("");
     let newCidr = $state("10.100.0.0/24");
     let newDescription = $state("");
+    let newIcon = $state("mdi:cube-outline");
+    let newColor = $state("#6366f1");
     let createError = $state<string | null>(null);
 
     async function load() {
@@ -41,12 +46,16 @@
                 name: newName,
                 description: newDescription || undefined,
                 internal_cidr: newCidr,
+                icon: newIcon,
+                color: newColor,
             });
             groups = [...groups, created];
             createDialog?.close();
             newName = "";
             newCidr = "10.100.0.0/24";
             newDescription = "";
+            newIcon = "mdi:cube-outline";
+            newColor = "#6366f1";
         } catch (e) {
             createError = e instanceof Error ? e.message : "Failed to create resource group";
         } finally {
@@ -61,6 +70,18 @@
             groups = groups.filter((g) => g.id !== id);
         } catch (e) {
             error = e instanceof Error ? e.message : "Failed to delete resource group";
+        }
+    }
+
+    async function handleTogglePin(group: ResourceGroup) {
+        if (!auth.token) return;
+        try {
+            const updated = await updateResourceGroup(auth.token, group.id, { pinned: !group.pinned });
+            groups = groups
+                .map((g) => (g.id === updated.id ? updated : g))
+                .sort((a, b) => (a.pinned === b.pinned ? a.name.localeCompare(b.name) : a.pinned ? -1 : 1));
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to update resource group";
         }
     }
 
@@ -127,6 +148,9 @@
                     bind:value={newDescription}
                 />
             </div>
+            <div class="flex flex-col gap-2 border-t pt-3">
+                <IconPicker bind:icon={newIcon} bind:color={newColor} />
+            </div>
         </div>
         {#if createError}
             <p class="text-xs text-destructive">{createError}</p>
@@ -171,7 +195,6 @@
         <table class="w-full text-sm">
             <thead class="bg-muted/50">
                 <tr>
-                    <th class="text-left px-4 py-3 font-medium text-muted-foreground">ID</th>
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">CIDR</th>
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">Description</th>
@@ -183,11 +206,11 @@
             <tbody>
                 {#if loading}
                     <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
+                        <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
                     </tr>
                 {:else if groups.length === 0}
                     <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-muted-foreground">
+                        <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">
                             No resource groups. Create one to get started.
                         </td>
                     </tr>
@@ -197,8 +220,17 @@
                             class="border-t hover:bg-muted/30 transition-colors cursor-pointer"
                             onclick={() => goto(`/resource-groups/${group.id}`)}
                         >
-                            <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{group.id.slice(0, 8)}</td>
-                            <td class="px-4 py-3 font-medium">{group.name}</td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center gap-2.5">
+                                    <div
+                                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                                        style="background-color: {group.color}20; color: {group.color};"
+                                    >
+                                        <Icon icon={group.icon} width={16} height={16} />
+                                    </div>
+                                    <span class="font-medium">{group.name}</span>
+                                </div>
+                            </td>
                             <td class="px-4 py-3 font-mono text-xs">{group.internal_cidr}</td>
                             <td class="px-4 py-3 text-muted-foreground">{group.description ?? "-"}</td>
                             <td class="px-4 py-3">
@@ -206,14 +238,24 @@
                             </td>
                             <td class="px-4 py-3 text-xs text-muted-foreground">{group.created_at.slice(0, 10)}</td>
                             <td class="px-4 py-3 text-right">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    class="text-destructive hover:text-destructive"
-                                    onclick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
-                                >
-                                    Delete
-                                </Button>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button
+                                        class="flex items-center justify-center w-7 h-7 rounded-full transition-colors {group.pinned ? 'text-amber-500 hover:bg-amber-500/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                                        onclick={(e) => { e.stopPropagation(); handleTogglePin(group); }}
+                                        aria-label={group.pinned ? "Unpin" : "Pin"}
+                                        title={group.pinned ? "Unpin" : "Pin"}
+                                    >
+                                        <Icon icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"} width={16} height={16} />
+                                    </button>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        class="text-destructive hover:text-destructive"
+                                        onclick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
+                                    >
+                                        Delete
+                                    </Button>
+                                </div>
                             </td>
                         </tr>
                     {/each}

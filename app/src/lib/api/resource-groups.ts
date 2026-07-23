@@ -9,6 +9,9 @@ export interface ResourceGroup {
     description: string | null;
     internal_cidr: string;
     status: string;
+    icon: string;
+    color: string;
+    pinned: boolean;
     created_at: string;
     updated_at: string | null;
 }
@@ -17,6 +20,16 @@ export interface CreateResourceGroupRequest {
     name: string;
     description?: string;
     internal_cidr: string;
+    icon?: string;
+    color?: string;
+}
+
+export interface UpdateResourceGroupRequest {
+    name?: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    pinned?: boolean;
 }
 
 export interface PortMapping {
@@ -146,6 +159,26 @@ export async function createResourceGroup(
         body: JSON.stringify(req),
     });
     if (!res.ok) throw new Error(`Failed to create resource group: ${res.status}`);
+    return res.json();
+}
+
+export async function updateResourceGroup(
+    token: string,
+    id: string,
+    req: UpdateResourceGroupRequest,
+): Promise<ResourceGroup> {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to update resource group: ${res.status}`);
+    }
     return res.json();
 }
 

@@ -11,6 +11,9 @@ pub struct Model {
     pub description: Option<String>,
     pub internal_cidr: String,
     pub status: String,
+    pub icon: String,
+    pub color: String,
+    pub pinned: bool,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }

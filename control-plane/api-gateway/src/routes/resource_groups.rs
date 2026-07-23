@@ -25,11 +25,25 @@ use crate::{
     AppState,
 };
 
+const DEFAULT_ICON: &str = "mdi:cube-outline";
+const DEFAULT_COLOR: &str = "#6366f1";
+
 #[derive(Debug, Deserialize)]
 pub struct CreateResourceGroupRequest {
     pub name: String,
     pub description: Option<String>,
     pub internal_cidr: String,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateResourceGroupRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub pinned: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,6 +54,9 @@ pub struct ResourceGroupResponse {
     pub description: Option<String>,
     pub internal_cidr: String,
     pub status: String,
+    pub icon: String,
+    pub color: String,
+    pub pinned: bool,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -53,6 +70,9 @@ impl From<resource_groups::Model> for ResourceGroupResponse {
             description: m.description,
             internal_cidr: m.internal_cidr,
             status: m.status,
+            icon: m.icon,
+            color: m.color,
+            pinned: m.pinned,
             created_at: m.created_at,
             updated_at: m.updated_at,
         }
@@ -73,6 +93,8 @@ pub async fn list_resource_groups(
 
     let groups = ResourceGroups::find()
         .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .order_by_desc(resource_groups::Column::Pinned)
+        .order_by_asc(resource_groups::Column::Name)
         .all(&state.db_conn)
         .await
         .map_err(|e| {
@@ -136,6 +158,9 @@ pub async fn create_resource_group(
         description: Set(req.description),
         internal_cidr: Set(req.internal_cidr),
         status: Set("active".to_string()),
+        icon: Set(req.icon.unwrap_or_else(|| DEFAULT_ICON.to_string())),
+        color: Set(req.color.unwrap_or_else(|| DEFAULT_COLOR.to_string())),
+        pinned: Set(false),
         created_at: Set(now),
         updated_at: Set(None),
     };
@@ -182,6 +207,64 @@ pub async fn get_resource_group(
     Ok((
         StatusCode::OK,
         Json(json!(ResourceGroupResponse::from(group))),
+    ))
+}
+
+pub async fn update_resource_group(
+    CanManageResourceGroups(_claims): CanManageResourceGroups,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateResourceGroupRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = get_org_id(&state);
+
+    let group = ResourceGroups::find_by_id(id)
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to find resource group");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "resource group not found" })),
+            )
+        })?;
+
+    let mut active: resource_groups::ActiveModel = group.into();
+    if let Some(name) = req.name {
+        active.name = Set(name);
+    }
+    if let Some(description) = req.description {
+        active.description = Set(Some(description));
+    }
+    if let Some(icon) = req.icon {
+        active.icon = Set(icon);
+    }
+    if let Some(color) = req.color {
+        active.color = Set(color);
+    }
+    if let Some(pinned) = req.pinned {
+        active.pinned = Set(pinned);
+    }
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    let updated = active.update(&state.db_conn).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to update resource group");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "database error" })),
+        )
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!(ResourceGroupResponse::from(updated))),
     ))
 }
 
@@ -789,7 +872,9 @@ pub fn resource_groups_routes() -> Router<AppState> {
         )
         .route(
             "/resource-groups/{id}",
-            get(get_resource_group).delete(delete_resource_group),
+            get(get_resource_group)
+                .patch(update_resource_group)
+                .delete(delete_resource_group),
         )
         .route(
             "/resource-groups/{id}/workloads",
