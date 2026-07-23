@@ -1,15 +1,16 @@
 use anyhow::{Context, Result};
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::firecracker::api::FirecrackerApiClient;
 use crate::firecracker::rootfs::RootfsBuilder;
+use crate::rg_dns_process::RgDnsProcessSupervisor;
 use crate::runtime::{ExecSession, LogStream};
-use crate::spec::{rg_bridge_iface_name, WorkloadSpec};
+use crate::spec::{rg_wireguard_port, WorkloadSpec};
 
 const JAILER_BASE_DIR: &str = "/var/lib/csfx-agent/firecracker";
 const GUEST_KERNEL_PATH: &str = "/var/lib/csfx-agent/vmlinux";
@@ -24,18 +25,52 @@ struct VmHandle {
 }
 
 pub struct FirecrackerRuntime {
-    docker: crate::docker::DockerRuntime,
+    wg_private_key_b64: String,
+    dns_supervisor: RgDnsProcessSupervisor,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
 }
 
 impl FirecrackerRuntime {
-    pub fn new(docker: crate::docker::DockerRuntime) -> Self {
+    pub fn new(wg_private_key_b64: String) -> Self {
         Self {
-            docker,
+            wg_private_key_b64,
+            dns_supervisor: RgDnsProcessSupervisor::new(),
             handles: Mutex::new(HashMap::new()),
             next_cid: Mutex::new(GUEST_CID_BASE),
         }
+    }
+
+    async fn ensure_rg_network(
+        &self,
+        resource_group_id: &str,
+        resource_group_cidr: Option<&str>,
+    ) -> Result<String> {
+        let iface = crate::rg_network::ensure_bridge(resource_group_id, resource_group_cidr)
+            .await
+            .context("Failed to ensure resource group bridge")?;
+
+        if let Some(cidr) = resource_group_cidr {
+            self.dns_supervisor
+                .ensure_running(resource_group_id, cidr)
+                .await
+                .context("Failed to ensure resource group dns process")?;
+
+            let listen_port = rg_wireguard_port(resource_group_id);
+            let wg_iface = crate::wireguard::ensure_interface(
+                resource_group_id,
+                &self.wg_private_key_b64,
+                listen_port,
+            )
+            .await
+            .context("Failed to bring up resource group WireGuard interface")?;
+
+            crate::wireguard::set_route(&wg_iface, cidr)
+                .await
+                .context("Failed to route resource group CIDR over WireGuard interface")?;
+        }
+
+        Ok(iface)
     }
 
     async fn allocate_cid(&self) -> u32 {
@@ -43,6 +78,31 @@ impl FirecrackerRuntime {
         let cid = *next;
         *next += 1;
         cid
+    }
+
+    pub async fn check_dns_liveness(&self) {
+        self.dns_supervisor.check_liveness().await;
+    }
+
+    pub async fn teardown_rg_network(&self, resource_group_id: &str) -> Result<()> {
+        self.dns_supervisor.stop(resource_group_id).await;
+
+        crate::rg_network::teardown_bridge(resource_group_id)
+            .await
+            .context("Failed to tear down resource group bridge")?;
+
+        crate::nftables::remove_bridge_rules(&crate::spec::rg_bridge_iface_name(
+            resource_group_id,
+        ))
+        .await
+        .context("Failed to remove nftables rules for resource group")?;
+
+        let wg_iface = crate::wireguard::rg_interface_name(resource_group_id);
+        crate::wireguard::remove_interface(&wg_iface)
+            .await
+            .context("Failed to remove resource group WireGuard interface")?;
+
+        Ok(())
     }
 }
 
@@ -69,12 +129,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .to_string();
 
         let bridge_iface = match &spec.resource_group_id {
-            Some(resource_group_id) => {
-                self.docker
-                    .ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
-                    .await?;
-                Some(rg_bridge_iface_name(resource_group_id))
-            }
+            Some(resource_group_id) => Some(
+                self.ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
+                    .await?,
+            ),
             None => None,
         };
 
@@ -214,7 +272,7 @@ fn vsock_log_stream(
     }
 }
 
-async fn spawn_jailer(workload_id: &str, chroot_dir: &PathBuf, api_socket: &str) -> Result<u32> {
+async fn spawn_jailer(workload_id: &str, chroot_dir: &Path, api_socket: &str) -> Result<u32> {
     let child = Command::new("jailer")
         .args([
             "--id",

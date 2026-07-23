@@ -29,6 +29,7 @@ pub const POWER_TICKET_SCOPE: &str = "__power__";
 #[derive(Clone)]
 pub struct ServerState {
     pub docker: Arc<Mutex<Option<Box<dyn Runtime>>>>,
+    pub firecracker: Arc<crate::firecracker::runtime::FirecrackerRuntime>,
     pub running_containers: Arc<Mutex<HashMap<String, String>>>,
     pub agent_id: uuid::Uuid,
 }
@@ -179,12 +180,14 @@ async fn logs_handler(
         ))?;
 
     let docker_guard = state.docker.lock().await;
-    let docker: &dyn Runtime = docker_guard.as_deref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "docker unavailable".to_string(),
-    ))?;
+    if let Some(docker) = docker_guard.as_deref() {
+        if docker.inspect_status(&container_id).await.is_ok() {
+            return Ok(axum::body::Body::from_stream(docker.logs(&container_id)));
+        }
+    }
+    drop(docker_guard);
 
-    let stream = docker.logs(&container_id);
+    let stream = state.firecracker.logs(&container_id);
     Ok(axum::body::Body::from_stream(stream))
 }
 
@@ -217,24 +220,29 @@ async fn exec_handler(
     Ok(ws.on_upgrade(move |socket| handle_exec_socket(socket, state, container_id)))
 }
 
-async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id: String) {
+async fn resolve_exec_session(
+    state: &ServerState,
+    container_id: &str,
+) -> Option<crate::runtime::ExecSession> {
     let docker_guard = state.docker.lock().await;
-    let docker: &dyn Runtime = match docker_guard.as_deref() {
-        Some(d) => d,
-        None => {
-            warn!("docker unavailable for exec session");
-            return;
+    if let Some(docker) = docker_guard.as_deref() {
+        if docker.inspect_status(container_id).await.is_ok() {
+            return docker.exec(container_id).await.ok();
         }
-    };
-
-    let exec_session = match docker.exec(&container_id).await {
-        Ok(s) => s,
-        Err(e) => {
-            warn!(container_id = %container_id, error = %e, "failed to start exec session");
-            return;
-        }
-    };
+    }
     drop(docker_guard);
+
+    state.firecracker.exec(container_id).await.ok()
+}
+
+async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id: String) {
+    let exec_session = match resolve_exec_session(&state, &container_id).await {
+        Some(session) => session,
+        None => {
+            warn!(container_id = %container_id, "no runtime owns this workload for exec");
+            return;
+        }
+    };
 
     let mut output = exec_session.output;
     let mut input = exec_session.input;
