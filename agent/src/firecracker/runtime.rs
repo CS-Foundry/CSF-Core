@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::firecracker::api::FirecrackerApiClient;
+use crate::firecracker::jailer_ids::JailerIdAllocator;
 use crate::firecracker::rootfs::RootfsBuilder;
 use crate::rg_dns_process::RgDnsProcessSupervisor;
 use crate::runtime::{ExecSession, LogStream};
@@ -23,6 +24,7 @@ struct VmHandle {
     tap_device: String,
     vsock_cid: u32,
     resource_group_id: Option<String>,
+    jailer_uid: u32,
 }
 
 struct GuestNetwork {
@@ -34,6 +36,7 @@ struct GuestNetwork {
 pub struct FirecrackerRuntime {
     wg_private_key_b64: String,
     dns_supervisor: RgDnsProcessSupervisor,
+    jailer_ids: JailerIdAllocator,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
 }
@@ -43,6 +46,7 @@ impl FirecrackerRuntime {
         Self {
             wg_private_key_b64,
             dns_supervisor: RgDnsProcessSupervisor::new(),
+            jailer_ids: JailerIdAllocator::new(),
             handles: Mutex::new(HashMap::new()),
             next_cid: Mutex::new(GUEST_CID_BASE),
         }
@@ -155,7 +159,20 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             _ => None,
         };
 
-        let jailer_pid = spawn_jailer(&spec.workload_id, &chroot_dir, &api_socket).await?;
+        let jailer_uid = self
+            .jailer_ids
+            .allocate()
+            .await
+            .context("Failed to allocate jailer uid")?;
+
+        let jailer_pid =
+            match spawn_jailer(&spec.workload_id, &chroot_dir, &api_socket, jailer_uid).await {
+                Ok(pid) => pid,
+                Err(e) => {
+                    self.jailer_ids.release(jailer_uid).await;
+                    return Err(e);
+                }
+            };
 
         configure_and_boot_vm(
             &api_socket,
@@ -177,6 +194,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 tap_device,
                 vsock_cid,
                 resource_group_id: spec.resource_group_id.clone(),
+                jailer_uid,
             },
         );
 
@@ -258,6 +276,8 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             crate::rg_ipam::release(resource_group_id, &handle.workload_id).await;
         }
 
+        self.jailer_ids.release(handle.jailer_uid).await;
+
         info!(workload_id = %handle.workload_id, "Firecracker microVM stopped");
 
         Ok(())
@@ -296,7 +316,13 @@ fn vsock_log_stream(
     }
 }
 
-async fn spawn_jailer(workload_id: &str, chroot_dir: &Path, api_socket: &str) -> Result<u32> {
+async fn spawn_jailer(
+    workload_id: &str,
+    chroot_dir: &Path,
+    api_socket: &str,
+    jailer_uid: u32,
+) -> Result<u32> {
+    let uid_arg = jailer_uid.to_string();
     let child = Command::new("jailer")
         .args([
             "--id",
@@ -304,9 +330,9 @@ async fn spawn_jailer(workload_id: &str, chroot_dir: &Path, api_socket: &str) ->
             "--exec-file",
             "/usr/bin/firecracker",
             "--uid",
-            "0",
+            &uid_arg,
             "--gid",
-            "0",
+            &uid_arg,
             "--chroot-base-dir",
             chroot_dir.to_string_lossy().as_ref(),
             "--",
