@@ -187,6 +187,27 @@ impl SchedulerService {
         Ok(())
     }
 
+    pub async fn stop_stack(&self, stack_id: Uuid) -> Result<(), String> {
+        let workloads = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to fetch stack workloads: {}", e))?;
+
+        for workload in &workloads {
+            let model = crate::db::workloads::set_desired_state(
+                &self.db,
+                workload.id,
+                crate::models::workload::DesiredState::Stopped,
+            )
+            .await
+            .map_err(|e| format!("Failed to stop workload: {}", e))?;
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn restart_stack(&self, stack_id: Uuid) -> Result<(), String> {
         let workloads = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
             .await

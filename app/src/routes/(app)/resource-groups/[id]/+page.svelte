@@ -11,6 +11,7 @@
         createWorkloadStack,
         getStack,
         deleteStack,
+        stopStack,
         restartStack,
         redeployStack,
         deleteWorkload,
@@ -289,6 +290,16 @@
             composeYaml = stack.compose_source ?? "";
         } catch (e) {
             composeError = e instanceof Error ? e.message : "Failed to load stack";
+        }
+    }
+
+    async function handleStopStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await stopStack(auth.token, stackId);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to stop stack";
         }
     }
 
@@ -1152,7 +1163,7 @@
             {/if}
             <div class="px-6 py-2 border-b shrink-0">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"], ["settings", "Settings"]] as [tab, label]}
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"], ...(activeContainer.stack_id ? [] : [["settings", "Settings"]])] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => switchTab(tab as typeof containerDialogTab)}
@@ -1292,7 +1303,7 @@
                             <p class="text-sm text-muted-foreground">No ports configured for this container.</p>
                         {/if}
                     </div>
-                {:else}
+                {:else if !activeContainer.stack_id}
                     <div class="h-full overflow-y-auto p-6 space-y-5">
                         <div class="flex flex-col gap-1">
                             <label class="text-xs text-muted-foreground" for="s-image">Image</label>
@@ -1558,7 +1569,7 @@
                                                 <Icon icon={expanded ? "mdi:chevron-up" : "mdi:chevron-down"} width={16} height={16} class="text-muted-foreground" />
                                             </button>
                                             <div class="flex w-5 shrink-0 items-center justify-center">
-                                                <Icon icon="mdi:layers-outline" width={20} height={20} />
+                                                <Icon icon="logos:docker-icon" width={20} height={20} />
                                             </div>
                                             <div>
                                                 <p class="font-medium leading-tight">{stack.stack_name}</p>
@@ -1587,6 +1598,14 @@
                                                 title="Restart stack"
                                             >
                                                 <Icon icon="mdi:restart" width={16} height={16} />
+                                            </button>
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleStopStack(stack.stack_id); }}
+                                                aria-label="Stop stack"
+                                                title="Stop stack"
+                                            >
+                                                <Icon icon="mdi:stop-circle-outline" width={16} height={16} />
                                             </button>
                                             <button
                                                 class="flex items-center justify-center w-7 h-7 rounded-full text-destructive hover:bg-destructive/10 transition-colors"

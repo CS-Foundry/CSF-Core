@@ -59,6 +59,10 @@ pub fn create_router(state: AppState) -> Router {
             axum::routing::delete(stacks::delete_stack),
         )
         .route(
+            "/workload-stacks/{id}/stop",
+            axum::routing::post(stacks::stop_stack),
+        )
+        .route(
             "/workload-stacks/{id}/restart",
             axum::routing::post(stacks::restart_stack),
         )

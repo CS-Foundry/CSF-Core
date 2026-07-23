@@ -226,6 +226,14 @@ export async function deleteStack(token: string, id: string): Promise<void> {
     if (!res.ok) throw new Error(`Failed to delete stack: ${res.status}`);
 }
 
+export async function stopStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to stop stack: ${res.status}`);
+}
+
 export async function restartStack(token: string, id: string): Promise<void> {
     const res = await authedFetch(`${API_BASE}/workload-stacks/${id}/restart`, {
         method: 'POST',

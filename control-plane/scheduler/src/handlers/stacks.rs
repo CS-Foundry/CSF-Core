@@ -66,6 +66,20 @@ pub async fn delete_stack(
     }
 }
 
+pub async fn stop_stack(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    match state.scheduler.stop_stack(id).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn restart_stack(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
