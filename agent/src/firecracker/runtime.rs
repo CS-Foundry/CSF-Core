@@ -22,6 +22,13 @@ struct VmHandle {
     chroot_dir: PathBuf,
     tap_device: String,
     vsock_cid: u32,
+    resource_group_id: Option<String>,
+}
+
+struct GuestNetwork {
+    ip: String,
+    prefix: String,
+    gateway: Option<String>,
 }
 
 pub struct FirecrackerRuntime {
@@ -136,6 +143,18 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             None => None,
         };
 
+        let guest_network = match (&spec.resource_group_id, &spec.resource_group_cidr) {
+            (Some(resource_group_id), Some(cidr)) => {
+                let ip = crate::rg_ipam::allocate(resource_group_id, cidr, &spec.workload_id)
+                    .await
+                    .context("Failed to allocate resource group ip address")?;
+                let prefix = cidr.split('/').nth(1).unwrap_or("24").to_string();
+                let gateway = crate::spec::second_host_ip(cidr);
+                Some(GuestNetwork { ip, prefix, gateway })
+            }
+            _ => None,
+        };
+
         let jailer_pid = spawn_jailer(&spec.workload_id, &chroot_dir, &api_socket).await?;
 
         configure_and_boot_vm(
@@ -145,6 +164,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             bridge_iface.as_deref(),
             vsock_cid,
             spec,
+            guest_network.as_ref(),
         )
         .await?;
 
@@ -156,6 +176,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 chroot_dir,
                 tap_device,
                 vsock_cid,
+                resource_group_id: spec.resource_group_id.clone(),
             },
         );
 
@@ -233,6 +254,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         let _ = tokio::fs::remove_dir_all(&handle.chroot_dir).await;
 
+        if let Some(resource_group_id) = &handle.resource_group_id {
+            crate::rg_ipam::release(resource_group_id, &handle.workload_id).await;
+        }
+
         info!(workload_id = %handle.workload_id, "Firecracker microVM stopped");
 
         Ok(())
@@ -301,6 +326,7 @@ async fn configure_and_boot_vm(
     bridge_iface: Option<&str>,
     vsock_cid: u32,
     spec: &WorkloadSpec,
+    guest_network: Option<&GuestNetwork>,
 ) -> Result<()> {
     create_tap_device(tap_device, bridge_iface).await?;
 
@@ -367,7 +393,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
-    configure_mmds(&client, &mounted_volumes).await?;
+    configure_mmds(&client, &mounted_volumes, guest_network).await?;
 
     client
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
@@ -417,7 +443,11 @@ fn guest_device_letter(index: usize) -> String {
     format!("/dev/vd{}", letter)
 }
 
-async fn configure_mmds(client: &FirecrackerApiClient, volumes: &[MountedVolume]) -> Result<()> {
+async fn configure_mmds(
+    client: &FirecrackerApiClient,
+    volumes: &[MountedVolume],
+    guest_network: Option<&GuestNetwork>,
+) -> Result<()> {
     client
         .put(
             "/mmds/config",
@@ -439,11 +469,20 @@ async fn configure_mmds(client: &FirecrackerApiClient, volumes: &[MountedVolume]
         })
         .collect();
 
+    let network_payload = guest_network.map(|net| {
+        json!({
+            "ip": net.ip,
+            "prefix": net.prefix,
+            "gateway": net.gateway,
+        })
+    });
+
     client
         .put(
             "/mmds",
             &json!({
                 "volumes": volumes_payload,
+                "network": network_payload,
             }),
         )
         .await

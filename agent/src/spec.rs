@@ -42,7 +42,7 @@ pub fn second_host_ip(cidr: &str) -> Option<String> {
     nth_host_ip(cidr, 2)
 }
 
-fn nth_host_ip(cidr: &str, offset: u32) -> Option<String> {
+pub fn nth_host_ip(cidr: &str, offset: u32) -> Option<String> {
     let parts: Vec<&str> = cidr.split('/').collect();
     if parts.len() != 2 {
         return None;
@@ -55,6 +55,14 @@ fn nth_host_ip(cidr: &str, offset: u32) -> Option<String> {
     let host = n + offset;
     let [a, b, c, d] = host.to_be_bytes();
     Some(format!("{}.{}.{}.{}", a, b, c, d))
+}
+
+pub fn cidr_host_count(cidr: &str) -> Option<u32> {
+    let prefix: u32 = cidr.split('/').nth(1)?.parse().ok()?;
+    if prefix > 32 {
+        return None;
+    }
+    Some(1u32 << (32 - prefix))
 }
 
 pub fn rg_wireguard_port(resource_group_id: &str) -> u16 {

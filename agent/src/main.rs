@@ -8,6 +8,7 @@ mod pki;
 mod rbd;
 mod rg_dns;
 mod rg_dns_process;
+mod rg_ipam;
 mod rg_network;
 mod runtime;
 mod server;

@@ -24,10 +24,18 @@ struct MmdsVolume {
     mount_path: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct MmdsNetwork {
+    ip: String,
+    prefix: String,
+    gateway: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct MmdsData {
     #[serde(default)]
     volumes: Vec<MmdsVolume>,
+    network: Option<MmdsNetwork>,
 }
 
 #[tokio::main]
@@ -52,6 +60,12 @@ async fn main() -> Result<()> {
         warn!(error = %e, "Failed to fetch mmds data, continuing without volumes");
         MmdsData::default()
     });
+
+    if let Some(network) = &mmds_data.network {
+        if let Err(e) = configure_network("eth0", network) {
+            error!(error = %e, "Failed to configure guest network");
+        }
+    }
 
     for volume in &mmds_data.volumes {
         if let Err(e) = mount_volume(volume) {
@@ -108,6 +122,119 @@ fn bring_up_interface(name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn configure_network(iface: &str, network: &MmdsNetwork) -> Result<()> {
+    let ip: std::net::Ipv4Addr = network.ip.parse().context("invalid guest ip")?;
+    let prefix: u32 = network.prefix.parse().context("invalid guest prefix")?;
+    let netmask = prefix_to_netmask(prefix)?;
+
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if socket_fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let result = (|| -> Result<()> {
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFADDR, ip)?;
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFNETMASK, netmask)?;
+        Ok(())
+    })();
+
+    unsafe {
+        libc::close(socket_fd);
+    }
+    result?;
+
+    if let Some(gateway) = &network.gateway {
+        let gateway: std::net::Ipv4Addr = gateway.parse().context("invalid gateway ip")?;
+        add_default_route(gateway)?;
+    }
+
+    info!(iface = %iface, ip = %ip, prefix = prefix, "Guest network configured");
+    Ok(())
+}
+
+fn prefix_to_netmask(prefix: u32) -> Result<std::net::Ipv4Addr> {
+    if prefix > 32 {
+        anyhow::bail!("invalid prefix length {}", prefix);
+    }
+    let bits: u32 = if prefix == 0 { 0 } else { !0u32 << (32 - prefix) };
+    Ok(std::net::Ipv4Addr::from(bits))
+}
+
+fn set_ifreq_addr(
+    socket_fd: libc::c_int,
+    iface: &str,
+    request_code: libc::c_ulong,
+    addr: std::net::Ipv4Addr,
+) -> Result<()> {
+    let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
+    for (dest, src) in request.ifr_name.iter_mut().zip(iface.as_bytes()) {
+        *dest = *src as libc::c_char;
+    }
+
+    let sockaddr = ipv4_to_sockaddr(addr);
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            &sockaddr as *const libc::sockaddr_in as *const u8,
+            &mut request.ifr_ifru.ifru_addr as *mut libc::sockaddr as *mut u8,
+            std::mem::size_of::<libc::sockaddr_in>(),
+        );
+
+        if libc::ioctl(socket_fd, request_code as _, &request) < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
+
+    Ok(())
+}
+
+fn add_default_route(gateway: std::net::Ipv4Addr) -> Result<()> {
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if socket_fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let mut route: libc::rtentry = unsafe { std::mem::zeroed() };
+    route.rt_dst = ipv4_to_sockaddr_storage(std::net::Ipv4Addr::UNSPECIFIED);
+    route.rt_genmask = ipv4_to_sockaddr_storage(std::net::Ipv4Addr::UNSPECIFIED);
+    route.rt_gateway = ipv4_to_sockaddr_storage(gateway);
+    route.rt_flags = (libc::RTF_UP | libc::RTF_GATEWAY) as libc::c_ushort;
+
+    let result = unsafe { libc::ioctl(socket_fd, libc::SIOCADDRT as _, &route) };
+    unsafe {
+        libc::close(socket_fd);
+    }
+
+    if result < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    Ok(())
+}
+
+fn ipv4_to_sockaddr(addr: std::net::Ipv4Addr) -> libc::sockaddr_in {
+    libc::sockaddr_in {
+        sin_family: libc::AF_INET as libc::sa_family_t,
+        sin_port: 0,
+        sin_addr: libc::in_addr {
+            s_addr: u32::from_be_bytes(addr.octets()),
+        },
+        sin_zero: [0; 8],
+    }
+}
+
+fn ipv4_to_sockaddr_storage(addr: std::net::Ipv4Addr) -> libc::sockaddr {
+    let sockaddr_in = ipv4_to_sockaddr(addr);
+    let mut sockaddr: libc::sockaddr = unsafe { std::mem::zeroed() };
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            &sockaddr_in as *const libc::sockaddr_in as *const u8,
+            &mut sockaddr as *mut libc::sockaddr as *mut u8,
+            std::mem::size_of::<libc::sockaddr_in>(),
+        );
+    }
+    sockaddr
 }
 
 async fn fetch_mmds_data() -> Result<MmdsData> {
