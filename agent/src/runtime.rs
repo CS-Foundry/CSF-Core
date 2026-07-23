@@ -2,63 +2,15 @@ use anyhow::Result;
 use axum::body::Bytes;
 use futures_util::Stream;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::docker::WorkloadSpec;
+use crate::spec::WorkloadSpec;
 
 pub type LogStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
 
 pub struct ExecSession {
     pub input: Pin<Box<dyn AsyncWrite + Send>>,
     pub output: Pin<Box<dyn AsyncRead + Send>>,
-}
-
-pub struct StreamAsyncRead<S> {
-    stream: Pin<Box<S>>,
-    pending: Bytes,
-}
-
-impl<S> StreamAsyncRead<S>
-where
-    S: Stream<Item = Result<Bytes, std::io::Error>>,
-{
-    pub fn new(stream: S) -> Self {
-        Self {
-            stream: Box::pin(stream),
-            pending: Bytes::new(),
-        }
-    }
-}
-
-impl<S> AsyncRead for StreamAsyncRead<S>
-where
-    S: Stream<Item = Result<Bytes, std::io::Error>>,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        loop {
-            if !self.pending.is_empty() {
-                let take = self.pending.len().min(buf.remaining());
-                let chunk = self.pending.split_to(take);
-                buf.put_slice(&chunk);
-                return Poll::Ready(Ok(()));
-            }
-
-            match self.stream.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(chunk))) => {
-                    self.pending = chunk;
-                    continue;
-                }
-                Poll::Ready(Some(Err(e))) => return Poll::Ready(Err(e)),
-                Poll::Ready(None) => return Poll::Ready(Ok(())),
-                Poll::Pending => return Poll::Pending,
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

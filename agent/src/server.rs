@@ -28,7 +28,7 @@ pub const POWER_TICKET_SCOPE: &str = "__power__";
 
 #[derive(Clone)]
 pub struct ServerState {
-    pub docker: Arc<Mutex<Option<Box<dyn Runtime>>>>,
+    pub firecracker: Arc<crate::firecracker::runtime::FirecrackerRuntime>,
     pub running_containers: Arc<Mutex<HashMap<String, String>>>,
     pub agent_id: uuid::Uuid,
 }
@@ -178,13 +178,7 @@ async fn logs_handler(
             "workload not running here".to_string(),
         ))?;
 
-    let docker_guard = state.docker.lock().await;
-    let docker: &dyn Runtime = docker_guard.as_deref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "docker unavailable".to_string(),
-    ))?;
-
-    let stream = docker.logs(&container_id);
+    let stream = state.firecracker.logs(&container_id);
     Ok(axum::body::Body::from_stream(stream))
 }
 
@@ -218,23 +212,13 @@ async fn exec_handler(
 }
 
 async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id: String) {
-    let docker_guard = state.docker.lock().await;
-    let docker: &dyn Runtime = match docker_guard.as_deref() {
-        Some(d) => d,
-        None => {
-            warn!("docker unavailable for exec session");
-            return;
-        }
-    };
-
-    let exec_session = match docker.exec(&container_id).await {
-        Ok(s) => s,
+    let exec_session = match state.firecracker.exec(&container_id).await {
+        Ok(session) => session,
         Err(e) => {
             warn!(container_id = %container_id, error = %e, "failed to start exec session");
             return;
         }
     };
-    drop(docker_guard);
 
     let mut output = exec_session.output;
     let mut input = exec_session.input;

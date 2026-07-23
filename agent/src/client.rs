@@ -97,14 +97,13 @@ pub struct AssignedWorkload {
     pub cpu_millicores: i32,
     pub memory_bytes: i64,
     pub env_vars: Option<HashMap<String, String>>,
-    pub ports: Option<Vec<crate::docker::PortMapping>>,
+    pub ports: Option<Vec<crate::spec::PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub service_name: Option<String>,
     pub restart_policy: String,
     pub max_restarts: Option<i32>,
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
-    pub runtime_class: String,
     #[serde(default)]
     pub restart_requested: bool,
 }

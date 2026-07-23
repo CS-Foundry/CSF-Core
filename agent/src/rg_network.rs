@@ -1,0 +1,146 @@
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
+use tokio::process::Command;
+use tracing::info;
+
+use crate::spec::{rg_bridge_iface_name, second_host_ip};
+
+const RG_REGISTRY_DIR: &str = "/var/lib/csfx-agent/rg-networks";
+
+pub async fn ensure_bridge(resource_group_id: &str, cidr: Option<&str>) -> Result<String> {
+    let iface = rg_bridge_iface_name(resource_group_id);
+
+    write_registry_entry(resource_group_id).await?;
+
+    if interface_exists(&iface).await? {
+        return Ok(iface);
+    }
+
+    run_ip(&["link", "add", "name", &iface, "type", "bridge"]).await?;
+
+    if let Some(cidr) = cidr {
+        if let Some(gateway) = second_host_ip(cidr) {
+            let prefix = cidr.split('/').nth(1).unwrap_or("24");
+            run_ip(&[
+                "addr",
+                "add",
+                &format!("{}/{}", gateway, prefix),
+                "dev",
+                &iface,
+            ])
+            .await?;
+        }
+    }
+
+    run_ip(&["link", "set", "dev", &iface, "up"]).await?;
+
+    let other_bridges = list_other_bridge_ifaces(resource_group_id).await?;
+    crate::nftables::isolate_bridge(&iface, &other_bridges)
+        .await
+        .context("Failed to apply nftables isolation for resource group bridge")?;
+
+    info!(resource_group_id = %resource_group_id, iface = %iface, "Resource group bridge ready");
+
+    Ok(iface)
+}
+
+async fn list_other_bridge_ifaces(exclude_resource_group_id: &str) -> Result<Vec<String>> {
+    Ok(list_rg_ids()
+        .await?
+        .into_iter()
+        .filter(|id| id != exclude_resource_group_id)
+        .map(|id| rg_bridge_iface_name(&id))
+        .collect())
+}
+
+pub async fn teardown_bridge(resource_group_id: &str) -> Result<()> {
+    let iface = rg_bridge_iface_name(resource_group_id);
+
+    let output = Command::new("ip")
+        .args(["link", "delete", &iface])
+        .output()
+        .await
+        .context("failed to execute ip link delete")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.contains("Cannot find device") {
+            anyhow::bail!("ip link delete failed iface={} stderr={}", iface, stderr);
+        }
+    }
+
+    remove_registry_entry(resource_group_id).await;
+
+    info!(resource_group_id = %resource_group_id, iface = %iface, "Resource group bridge removed");
+
+    Ok(())
+}
+
+pub async fn list_rg_ids() -> Result<Vec<String>> {
+    let mut entries = match tokio::fs::read_dir(RG_REGISTRY_DIR).await {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).context("failed to read resource group registry directory"),
+    };
+
+    let mut ids = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .context("failed to read resource group registry entry")?
+    {
+        if let Some(id) = entry.file_name().to_str() {
+            if interface_exists(&rg_bridge_iface_name(id)).await? {
+                ids.push(id.to_string());
+            }
+        }
+    }
+
+    Ok(ids)
+}
+
+fn registry_entry_path(resource_group_id: &str) -> PathBuf {
+    Path::new(RG_REGISTRY_DIR).join(resource_group_id)
+}
+
+async fn write_registry_entry(resource_group_id: &str) -> Result<()> {
+    tokio::fs::create_dir_all(RG_REGISTRY_DIR)
+        .await
+        .context("failed to create resource group registry directory")?;
+    tokio::fs::write(registry_entry_path(resource_group_id), b"")
+        .await
+        .context("failed to write resource group registry entry")?;
+    Ok(())
+}
+
+async fn remove_registry_entry(resource_group_id: &str) {
+    let _ = tokio::fs::remove_file(registry_entry_path(resource_group_id)).await;
+}
+
+async fn interface_exists(iface: &str) -> Result<bool> {
+    let output = Command::new("ip")
+        .args(["link", "show", iface])
+        .output()
+        .await
+        .context("failed to execute ip link show")?;
+
+    Ok(output.status.success())
+}
+
+async fn run_ip(args: &[&str]) -> Result<()> {
+    let output = Command::new("ip")
+        .args(args)
+        .output()
+        .await
+        .context("failed to execute ip")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("File exists") {
+            return Ok(());
+        }
+        anyhow::bail!("ip command failed args={:?} stderr={}", args, stderr);
+    }
+
+    Ok(())
+}
