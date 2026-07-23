@@ -104,7 +104,6 @@ pub struct AssignedWorkload {
     pub max_restarts: Option<i32>,
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
-    pub runtime_class: String,
     #[serde(default)]
     pub restart_requested: bool,
 }

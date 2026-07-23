@@ -312,7 +312,7 @@ impl SchedulerService {
                 service_name: Some(service.service_name.clone()),
                 restart_policy: crate::models::workload::RestartPolicy::Always,
                 max_restarts: None,
-                runtime_class: crate::models::workload::RuntimeClass::Docker,
+                runtime_class: crate::models::workload::RuntimeClass::Firecracker,
             };
 
             let workload = crate::db::workloads::create(&self.db, &req)

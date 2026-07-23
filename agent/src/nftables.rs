@@ -4,6 +4,8 @@ use tracing::info;
 
 const TABLE_NAME: &str = "csfx";
 const CHAIN_NAME: &str = "rg_isolation";
+const NAT_TABLE_NAME: &str = "csfx_nat";
+const NAT_CHAIN_NAME: &str = "node_port_dnat";
 
 pub async fn ensure_table_and_chain() -> Result<()> {
     run_nft(&["add", "table", "inet", TABLE_NAME]).await?;
@@ -23,6 +25,25 @@ pub async fn ensure_table_and_chain() -> Result<()> {
         chain = CHAIN_NAME,
         "nftables RG isolation chain ready"
     );
+
+    run_nft(&["add", "table", "ip", NAT_TABLE_NAME]).await?;
+
+    run_nft(&[
+        "add",
+        "chain",
+        "ip",
+        NAT_TABLE_NAME,
+        NAT_CHAIN_NAME,
+        "{ type nat hook prerouting priority -100 ; policy accept ; }",
+    ])
+    .await?;
+
+    info!(
+        table = NAT_TABLE_NAME,
+        chain = NAT_CHAIN_NAME,
+        "nftables node port dnat chain ready"
+    );
+
     Ok(())
 }
 
@@ -53,6 +74,70 @@ async fn add_drop_rule(from_bridge: &str, to_bridge: &str) -> Result<()> {
         "drop",
     ])
     .await
+}
+
+pub async fn add_node_port_dnat(
+    workload_id: &str,
+    protocol: &str,
+    node_port: u16,
+    guest_ip: &str,
+    container_port: u16,
+) -> Result<()> {
+    run_nft(&[
+        "add",
+        "rule",
+        "ip",
+        NAT_TABLE_NAME,
+        NAT_CHAIN_NAME,
+        protocol,
+        "dport",
+        &node_port.to_string(),
+        "dnat",
+        "to",
+        &format!("{}:{}", guest_ip, container_port),
+        "comment",
+        &format!("\"{}\"", workload_id),
+    ])
+    .await
+}
+
+pub async fn remove_node_port_rules(workload_id: &str) -> Result<()> {
+    let output = Command::new("nft")
+        .args(["-a", "list", "chain", "ip", NAT_TABLE_NAME, NAT_CHAIN_NAME])
+        .output()
+        .await
+        .context("failed to list nftables nat rules")?;
+
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let mut handles = Vec::new();
+
+    for line in listing.lines() {
+        if !line.contains(&format!("\"{}\"", workload_id)) {
+            continue;
+        }
+        if let Some(handle) = line
+            .rsplit("handle ")
+            .next()
+            .and_then(|h| h.trim().parse::<u32>().ok())
+        {
+            handles.push(handle);
+        }
+    }
+
+    for handle in handles {
+        run_nft(&[
+            "delete",
+            "rule",
+            "ip",
+            NAT_TABLE_NAME,
+            NAT_CHAIN_NAME,
+            "handle",
+            &handle.to_string(),
+        ])
+        .await?;
+    }
+
+    Ok(())
 }
 
 pub async fn remove_bridge_rules(bridge_name: &str) -> Result<()> {

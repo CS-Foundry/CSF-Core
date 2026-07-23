@@ -22,12 +22,10 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
 sysinfo = { workspace = true }
 rcgen = { workspace = true }
-bollard = { workspace = true }
 futures-util = { workspace = true }
 oci-client = "0.17"
 tar = "0.4"
 flate2 = "1"
-zbus = { workspace = true }
 x25519-dalek = { workspace = true }
 base64 = { workspace = true }
 axum = { workspace = true, features = ["ws"] }

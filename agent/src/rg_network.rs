@@ -34,9 +34,23 @@ pub async fn ensure_bridge(resource_group_id: &str, cidr: Option<&str>) -> Resul
 
     run_ip(&["link", "set", "dev", &iface, "up"]).await?;
 
+    let other_bridges = list_other_bridge_ifaces(resource_group_id).await?;
+    crate::nftables::isolate_bridge(&iface, &other_bridges)
+        .await
+        .context("Failed to apply nftables isolation for resource group bridge")?;
+
     info!(resource_group_id = %resource_group_id, iface = %iface, "Resource group bridge ready");
 
     Ok(iface)
+}
+
+async fn list_other_bridge_ifaces(exclude_resource_group_id: &str) -> Result<Vec<String>> {
+    Ok(list_rg_ids()
+        .await?
+        .into_iter()
+        .filter(|id| id != exclude_resource_group_id)
+        .map(|id| rg_bridge_iface_name(&id))
+        .collect())
 }
 
 pub async fn teardown_bridge(resource_group_id: &str) -> Result<()> {

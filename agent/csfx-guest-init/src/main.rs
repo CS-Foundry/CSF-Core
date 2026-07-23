@@ -36,6 +36,8 @@ struct MmdsData {
     #[serde(default)]
     volumes: Vec<MmdsVolume>,
     network: Option<MmdsNetwork>,
+    #[serde(default)]
+    env: std::collections::HashMap<String, String>,
 }
 
 #[tokio::main]
@@ -78,7 +80,7 @@ async fn main() -> Result<()> {
     let exec_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, EXEC_PORT))
         .context("Failed to bind vsock exec port")?;
 
-    let mut child = spawn_entrypoint().await?;
+    let mut child = spawn_entrypoint(&mmds_data.env).await?;
     let stdout = child.stdout.take().context("child has no stdout")?;
     let stderr = child.stderr.take().context("child has no stderr")?;
 
@@ -310,8 +312,11 @@ fn power_off() -> ! {
     }
 }
 
-async fn spawn_entrypoint() -> Result<tokio::process::Child> {
+async fn spawn_entrypoint(
+    env: &std::collections::HashMap<String, String>,
+) -> Result<tokio::process::Child> {
     Command::new(ENTRYPOINT_PATH)
+        .envs(env)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

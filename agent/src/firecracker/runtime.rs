@@ -27,6 +27,7 @@ struct VmHandle {
     tap_device: String,
     vsock_cid: u32,
     resource_group_id: Option<String>,
+    guest_ip: Option<String>,
     jailer_uid: u32,
     cgroup_path: PathBuf,
     metrics_path: PathBuf,
@@ -215,16 +216,25 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         configure_and_boot_vm(&boot_config, bridge_iface.as_deref(), spec, guest_network.as_ref())
             .await?;
 
+        let guest_ip = guest_network.as_ref().map(|net| net.ip.clone());
+
         let sidecar = VmSidecarMetadata {
             workload_id: spec.workload_id.clone(),
             vsock_cid,
             tap_device: tap_device.clone(),
             jailer_uid,
             resource_group_id: spec.resource_group_id.clone(),
+            guest_ip: guest_ip.clone(),
         };
         write_sidecar_metadata(&chroot_dir, &sidecar)
             .await
             .context("Failed to write vm sidecar metadata")?;
+
+        if let Some(guest_ip) = &guest_ip {
+            if let Err(e) = apply_node_port_dnat(&spec.workload_id, guest_ip, spec).await {
+                warn!(workload_id = %spec.workload_id, error = %e, "Failed to apply node port forwarding");
+            }
+        }
 
         self.handles.lock().await.insert(
             spec.workload_id.clone(),
@@ -237,6 +247,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 tap_device,
                 vsock_cid,
                 resource_group_id: spec.resource_group_id.clone(),
+                guest_ip,
                 jailer_uid,
                 previous_cpu_sample: Mutex::new(None),
             },
@@ -320,6 +331,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             crate::rg_ipam::release(resource_group_id, &handle.workload_id).await;
         }
 
+        if let Err(e) = crate::nftables::remove_node_port_rules(&handle.workload_id).await {
+            warn!(workload_id = %handle.workload_id, error = %e, "Failed to remove node port forwarding rules");
+        }
+
         self.jailer_ids.release(handle.jailer_uid).await;
 
         info!(workload_id = %handle.workload_id, "Firecracker microVM stopped");
@@ -344,6 +359,15 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             network_rx_bytes,
             network_tx_bytes,
         })
+    }
+
+    async fn service_network_ip(
+        &self,
+        workload_handle: &str,
+        _network_name: &str,
+    ) -> Result<Option<String>> {
+        let handles = self.handles.lock().await;
+        Ok(handles.get(workload_handle).and_then(|h| h.guest_ip.clone()))
     }
 
     async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
@@ -387,6 +411,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 tap_device: sidecar.tap_device,
                 vsock_cid: sidecar.vsock_cid,
                 resource_group_id: sidecar.resource_group_id,
+                guest_ip: sidecar.guest_ip,
                 jailer_uid: sidecar.jailer_uid,
                 previous_cpu_sample: Mutex::new(None),
             };
@@ -525,6 +550,31 @@ fn cgroup_path(workload_id: &str) -> PathBuf {
         .join(workload_id)
 }
 
+async fn apply_node_port_dnat(workload_id: &str, guest_ip: &str, spec: &WorkloadSpec) -> Result<()> {
+    let Some(ports) = &spec.ports else {
+        return Ok(());
+    };
+
+    for port in ports {
+        let Some(node_port) = port.node_port else {
+            continue;
+        };
+
+        let protocol = port.protocol.as_deref().unwrap_or("tcp");
+        crate::nftables::add_node_port_dnat(
+            workload_id,
+            protocol,
+            node_port,
+            guest_ip,
+            port.container_port,
+        )
+        .await
+        .context("Failed to add node port dnat rule")?;
+    }
+
+    Ok(())
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct VmSidecarMetadata {
     workload_id: String,
@@ -532,6 +582,7 @@ struct VmSidecarMetadata {
     tap_device: String,
     jailer_uid: u32,
     resource_group_id: Option<String>,
+    guest_ip: Option<String>,
 }
 
 fn sidecar_metadata_path(chroot_dir: &Path) -> PathBuf {
@@ -679,7 +730,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
-    configure_mmds(&client, &mounted_volumes, guest_network).await?;
+    configure_mmds(&client, &mounted_volumes, guest_network, spec.env_vars.as_ref()).await?;
 
     client
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
@@ -733,6 +784,7 @@ async fn configure_mmds(
     client: &FirecrackerApiClient,
     volumes: &[MountedVolume],
     guest_network: Option<&GuestNetwork>,
+    env_vars: Option<&HashMap<String, String>>,
 ) -> Result<()> {
     client
         .put(
@@ -769,6 +821,7 @@ async fn configure_mmds(
             &json!({
                 "volumes": volumes_payload,
                 "network": network_payload,
+                "env": env_vars.cloned().unwrap_or_default(),
             }),
         )
         .await
@@ -832,6 +885,7 @@ mod tests {
             tap_device: "fctap1234".to_string(),
             jailer_uid: 60001,
             resource_group_id: Some("rg-1".to_string()),
+            guest_ip: Some("10.0.0.3".to_string()),
         };
 
         write_sidecar_metadata(&dir, &metadata).await.unwrap();
@@ -842,6 +896,7 @@ mod tests {
         assert_eq!(read_back.tap_device, metadata.tap_device);
         assert_eq!(read_back.jailer_uid, metadata.jailer_uid);
         assert_eq!(read_back.resource_group_id, metadata.resource_group_id);
+        assert_eq!(read_back.guest_ip, metadata.guest_ip);
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }

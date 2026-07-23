@@ -83,7 +83,6 @@ fn default_restart_policy() -> RestartPolicy {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeClass {
-    Docker,
     Firecracker,
     Vm,
 }
@@ -91,7 +90,6 @@ pub enum RuntimeClass {
 impl RuntimeClass {
     pub fn as_str(&self) -> &'static str {
         match self {
-            RuntimeClass::Docker => "docker",
             RuntimeClass::Firecracker => "firecracker",
             RuntimeClass::Vm => "vm",
         }
@@ -99,19 +97,18 @@ impl RuntimeClass {
 
     pub fn from_str(s: &str) -> Self {
         match s {
-            "firecracker" => RuntimeClass::Firecracker,
             "vm" => RuntimeClass::Vm,
-            _ => RuntimeClass::Docker,
+            _ => RuntimeClass::Firecracker,
         }
     }
 
     pub fn requires_kvm(&self) -> bool {
-        matches!(self, RuntimeClass::Firecracker | RuntimeClass::Vm)
+        true
     }
 }
 
 fn default_runtime_class() -> RuntimeClass {
-    RuntimeClass::Docker
+    RuntimeClass::Firecracker
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

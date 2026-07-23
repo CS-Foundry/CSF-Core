@@ -1,7 +1,6 @@
 mod agent_stream;
 mod client;
 mod config;
-mod docker;
 mod firecracker;
 mod nftables;
 mod pki;
@@ -20,6 +19,7 @@ mod wg_identity;
 mod wireguard;
 
 use anyhow::{Context, Result};
+use runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,6 +57,10 @@ async fn main() -> Result<()> {
     }
 
     info!(version = env!("CARGO_PKG_VERSION"), "csfx-agent starting");
+
+    if !system::is_kvm_capable() {
+        error!("no /dev/kvm found, this host cannot schedule any workloads");
+    }
 
     let heartbeat_interval_secs: u64 = std::env::var("CSFX_HEARTBEAT_INTERVAL")
         .ok()
@@ -133,8 +137,6 @@ async fn main() -> Result<()> {
         warn!(error = %e, "Failed to initialize nftables resource group isolation");
     }
 
-    let docker_manager: Arc<Mutex<Option<Box<dyn runtime::Runtime>>>> = Arc::new(Mutex::new(None));
-
     let firecracker_runtime = Arc::new(firecracker::runtime::FirecrackerRuntime::new(
         wg_identity.private_key_b64.clone(),
     ));
@@ -158,7 +160,6 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse::<u16>().ok())
     {
         let server_state = server::ServerState {
-            docker: docker_manager.clone(),
             firecracker: firecracker_runtime.clone(),
             running_containers: running_containers.clone(),
             agent_id,
@@ -179,7 +180,6 @@ async fn main() -> Result<()> {
         agent_id,
         &api_key,
         heartbeat_interval_secs,
-        docker_manager,
         firecracker_runtime,
         running_containers,
         workload_phases,
@@ -188,7 +188,6 @@ async fn main() -> Result<()> {
         service_dns_registry,
         rg_dns_registry,
         assignment_signal,
-        &wg_identity.private_key_b64,
     )
     .await;
 
@@ -271,7 +270,6 @@ async fn reconcile_tick(
     client: &client::ApiClient,
     agent_id: uuid::Uuid,
     api_key: &str,
-    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     firecracker: &Arc<firecracker::runtime::FirecrackerRuntime>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
@@ -279,7 +277,6 @@ async fn reconcile_tick(
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
     service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
     rg_dns_registry: &rg_dns::RgDnsRegistry,
-    wg_private_key_b64: &str,
     failure_count: &mut u32,
     current_flake_rev: &mut String,
 ) {
@@ -287,7 +284,6 @@ async fn reconcile_tick(
     let resource_group_ids = process_workloads(
         client,
         api_key,
-        docker,
         firecracker,
         running_containers,
         workload_phases,
@@ -295,16 +291,15 @@ async fn reconcile_tick(
         restart_counts,
         service_dns_registry,
         rg_dns_registry,
-        wg_private_key_b64,
     )
     .await;
     sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
     sync_vpn_peers(client, api_key, &resource_group_ids).await;
     firecracker.check_dns_liveness().await;
-    cleanup_stale_resource_groups(client, api_key, wg_private_key_b64, firecracker).await;
+    cleanup_stale_resource_groups(client, api_key, firecracker).await;
 
-    let statuses = build_container_statuses(docker, running_containers, workload_phases).await;
-    push_workload_stats(client, api_key, docker, running_containers).await;
+    let statuses = build_container_statuses(firecracker, running_containers, workload_phases).await;
+    push_workload_stats(client, api_key, firecracker, running_containers).await;
     let metrics = system::collect_metrics();
 
     match client
@@ -362,7 +357,6 @@ async fn run_heartbeat_loop(
     agent_id: uuid::Uuid,
     api_key: &str,
     interval_secs: u64,
-    docker: Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     firecracker: Arc<firecracker::runtime::FirecrackerRuntime>,
     running_containers: Arc<Mutex<HashMap<String, String>>>,
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
@@ -371,7 +365,6 @@ async fn run_heartbeat_loop(
     service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>>,
     rg_dns_registry: rg_dns::RgDnsRegistry,
     mut assignment_signal: tokio::sync::mpsc::UnboundedReceiver<()>,
-    wg_private_key_b64: &str,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
     let mut failure_count: u32 = 0;
@@ -380,7 +373,7 @@ async fn run_heartbeat_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                reconcile_tick(client, agent_id, api_key, &docker, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
             }
             signal = assignment_signal.recv() => {
                 if signal.is_none() {
@@ -389,7 +382,7 @@ async fn run_heartbeat_loop(
                 }
                 info!(agent_id = %agent_id, "assignment push received, reconciling immediately");
                 interval.reset();
-                reconcile_tick(client, agent_id, api_key, &docker, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, wg_private_key_b64, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutdown signal received");
@@ -552,7 +545,6 @@ async fn should_restart_after_crash(
 async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
-    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
     firecracker: &Arc<firecracker::runtime::FirecrackerRuntime>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
@@ -560,7 +552,6 @@ async fn process_workloads(
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
     service_dns_registry: &Arc<Mutex<HashMap<String, (String, String)>>>,
     rg_dns_registry: &rg_dns::RgDnsRegistry,
-    wg_private_key_b64: &str,
 ) -> Vec<String> {
     let workloads = match client.fetch_assigned_workloads(api_key).await {
         Ok(w) => w,
@@ -580,41 +571,6 @@ async fn process_workloads(
         ids
     };
 
-    let mut docker_guard = docker.lock().await;
-    let freshly_initialized = docker_guard.is_none();
-    if docker_guard.is_none() {
-        match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
-            Ok(dm) => {
-                info!("Docker ready");
-                *docker_guard = Some(Box::new(dm));
-            }
-            Err(e) => {
-                warn!(error = %e, "Docker unavailable, deferring docker workloads");
-            }
-        }
-    }
-    let docker_runtime: Option<&dyn runtime::Runtime> = docker_guard.as_deref();
-
-    if freshly_initialized {
-        if let Some(docker_runtime) = docker_runtime {
-            match docker_runtime.list_managed_workloads().await {
-                Ok(existing) => {
-                    let mut containers = running_containers.lock().await;
-                    for (workload_id, container_id) in existing {
-                        containers.insert(workload_id, container_id);
-                    }
-                    info!(
-                        count = containers.len(),
-                        "Reconciled running containers from docker state"
-                    );
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to reconcile running containers from docker state");
-                }
-            }
-        }
-    }
-
     let recovered_microvms = firecracker.reconcile_once().await;
     if !recovered_microvms.is_empty() {
         let mut containers = running_containers.lock().await;
@@ -623,38 +579,22 @@ async fn process_workloads(
         }
     }
 
-    if let Some(docker_runtime) = docker_runtime {
-        reap_stale_containers(
-            docker_runtime,
-            running_containers,
-            workload_phases,
-            restart_counts,
-            service_dns_registry,
-            rg_dns_registry,
-            &workloads,
-        )
-        .await;
-    }
+    reap_stale_containers(
+        firecracker.as_ref(),
+        running_containers,
+        workload_phases,
+        restart_counts,
+        service_dns_registry,
+        rg_dns_registry,
+        &workloads,
+    )
+    .await;
 
     for workload in workloads {
         let workload_id = workload.id.clone();
-        let selected_runtime: &dyn runtime::Runtime = match workload.runtime_class.as_str() {
-            "docker" => match docker_runtime {
-                Some(runtime) => runtime,
-                None => {
-                    warn!(workload_id = %workload.id, "Docker unavailable, deferring workload");
-                    continue;
-                }
-            },
-            "firecracker" => firecracker.as_ref(),
-            other => {
-                warn!(workload_id = %workload.id, runtime_class = %other, "Unsupported runtime class, skipping");
-                continue;
-            }
-        };
 
         let restart_fulfilled = start_or_restart_workload(
-            selected_runtime,
+            firecracker.as_ref(),
             workload,
             running_containers,
             workload_phases,
@@ -918,7 +858,6 @@ async fn sync_vpn_peers(client: &client::ApiClient, api_key: &str, resource_grou
 async fn cleanup_stale_resource_groups(
     client: &client::ApiClient,
     api_key: &str,
-    wg_private_key_b64: &str,
     firecracker: &firecracker::runtime::FirecrackerRuntime,
 ) {
     let active_ids = match client.fetch_active_resource_group_ids(api_key).await {
@@ -929,38 +868,7 @@ async fn cleanup_stale_resource_groups(
         }
     };
 
-    cleanup_stale_docker_resource_groups(&active_ids, wg_private_key_b64).await;
     cleanup_stale_firecracker_resource_groups(&active_ids, firecracker).await;
-}
-
-async fn cleanup_stale_docker_resource_groups(active_ids: &[String], wg_private_key_b64: &str) {
-    let docker = match docker::DockerRuntime::ensure_running(wg_private_key_b64.to_string()).await {
-        Ok(d) => d,
-        Err(e) => {
-            warn!(error = %e, "Docker unavailable, deferring docker resource group cleanup");
-            return;
-        }
-    };
-
-    let local_ids = match docker.list_rg_ids().await {
-        Ok(ids) => ids,
-        Err(e) => {
-            warn!(error = %e, "Failed to list local docker resource group networks");
-            return;
-        }
-    };
-
-    for local_id in local_ids {
-        if active_ids.iter().any(|id| id == &local_id) {
-            continue;
-        }
-
-        info!(resource_group_id = %local_id, "Tearing down stale docker resource group network");
-
-        if let Err(e) = docker.teardown_rg_network(&local_id).await {
-            warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale docker resource group network");
-        }
-    }
 }
 
 async fn cleanup_stale_firecracker_resource_groups(
@@ -989,24 +897,20 @@ async fn cleanup_stale_firecracker_resource_groups(
 }
 
 async fn build_container_statuses(
-    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
+    firecracker: &firecracker::runtime::FirecrackerRuntime,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
 ) -> Vec<client::ContainerStatus> {
     let containers = running_containers.lock().await.clone();
     let mut statuses = Vec::with_capacity(containers.len());
 
-    let docker_guard = docker.lock().await;
     for (workload_id, container_id) in containers.iter() {
-        let status = match docker_guard.as_ref() {
-            Some(dm) => match dm.inspect_status(container_id).await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to inspect container");
-                    "failed".to_string()
-                }
-            },
-            None => "failed".to_string(),
+        let status = match firecracker.inspect_status(container_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to inspect workload");
+                "failed".to_string()
+            }
         };
 
         if status != "creating" {
@@ -1019,7 +923,6 @@ async fn build_container_statuses(
             status,
         });
     }
-    drop(docker_guard);
 
     let phases = workload_phases.lock().await;
     for (workload_id, phase) in phases.iter() {
@@ -1038,7 +941,7 @@ async fn build_container_statuses(
 async fn push_workload_stats(
     client: &client::ApiClient,
     api_key: &str,
-    docker: &Arc<Mutex<Option<Box<dyn runtime::Runtime>>>>,
+    firecracker: &firecracker::runtime::FirecrackerRuntime,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
 ) {
     let containers = running_containers.lock().await.clone();
@@ -1046,14 +949,9 @@ async fn push_workload_stats(
         return;
     }
 
-    let docker_guard = docker.lock().await;
-    let Some(runtime) = docker_guard.as_ref() else {
-        return;
-    };
-
     let mut stats = Vec::with_capacity(containers.len());
     for (workload_id, container_id) in containers.iter() {
-        match runtime.stats(container_id).await {
+        match firecracker.stats(container_id).await {
             Ok(s) => stats.push(client::WorkloadStatsUpdate {
                 workload_id: workload_id.clone(),
                 cpu_usage_percent: s.cpu_usage_percent,
@@ -1066,7 +964,6 @@ async fn push_workload_stats(
             }
         }
     }
-    drop(docker_guard);
 
     if let Err(e) = client.push_workload_stats(api_key, stats).await {
         warn!(error = %e, "Failed to push workload stats");
