@@ -179,6 +179,55 @@ pub async fn create_resource_group(
     ))
 }
 
+const SUGGESTED_CIDR_BASE: u32 = 0x0A640000;
+const SUGGESTED_CIDR_PREFIX: u8 = 24;
+const SUGGESTED_CIDR_MAX_SUBNETS: u32 = 256;
+
+pub async fn suggest_cidr(
+    CanViewResourceGroups(_claims): CanViewResourceGroups,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = get_org_id(&state);
+
+    let existing_groups = ResourceGroups::find()
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list resource groups for cidr suggestion");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    let existing_cidrs: Vec<Cidr> = existing_groups
+        .iter()
+        .filter_map(|g| parse_cidr(&g.internal_cidr))
+        .collect();
+
+    for subnet_index in 0..SUGGESTED_CIDR_MAX_SUBNETS {
+        let network = SUGGESTED_CIDR_BASE + (subnet_index << (32 - SUGGESTED_CIDR_PREFIX));
+        let candidate = Cidr {
+            network,
+            prefix_len: SUGGESTED_CIDR_PREFIX,
+        };
+
+        if !existing_cidrs.iter().any(|c| c.overlaps(&candidate)) {
+            let [a, b, c, d] = network.to_be_bytes();
+            return Ok((
+                StatusCode::OK,
+                Json(json!({ "internal_cidr": format!("{}.{}.{}.{}/{}", a, b, c, d, SUGGESTED_CIDR_PREFIX) })),
+            ));
+        }
+    }
+
+    Err((
+        StatusCode::CONFLICT,
+        Json(json!({ "error": "no free cidr subnet available" })),
+    ))
+}
+
 pub async fn get_resource_group(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
     State(state): State<AppState>,
@@ -870,6 +919,7 @@ pub fn resource_groups_routes() -> Router<AppState> {
             "/resource-groups",
             get(list_resource_groups).post(create_resource_group),
         )
+        .route("/resource-groups/suggest-cidr", get(suggest_cidr))
         .route(
             "/resource-groups/{id}",
             get(get_resource_group)

@@ -5,7 +5,7 @@
         listResourceGroups,
         createResourceGroup,
         updateResourceGroup,
-        deleteResourceGroup,
+        suggestCidr,
         type ResourceGroup,
     } from "$lib/api/resource-groups";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
@@ -18,6 +18,12 @@
     let error = $state<string | null>(null);
     let creating = $state(false);
     let createDialog = $state<HTMLDialogElement | null>(null);
+    let searchText = $state("");
+    let pinnedScroller = $state<HTMLDivElement | null>(null);
+
+    function scrollPinned(direction: -1 | 1) {
+        pinnedScroller?.scrollBy({ left: direction * 280, behavior: "smooth" });
+    }
 
     let newName = $state("");
     let newCidr = $state("10.100.0.0/24");
@@ -35,6 +41,17 @@
         } finally {
             loading = false;
         }
+    }
+
+    async function openCreateDialog() {
+        if (auth.token) {
+            try {
+                newCidr = await suggestCidr(auth.token);
+            } catch {
+                // keep default fallback below
+            }
+        }
+        createDialog?.showModal();
     }
 
     async function handleCreate() {
@@ -63,23 +80,11 @@
         }
     }
 
-    async function handleDelete(id: string) {
-        if (!auth.token) return;
-        try {
-            await deleteResourceGroup(auth.token, id);
-            groups = groups.filter((g) => g.id !== id);
-        } catch (e) {
-            error = e instanceof Error ? e.message : "Failed to delete resource group";
-        }
-    }
-
     async function handleTogglePin(group: ResourceGroup) {
         if (!auth.token) return;
         try {
             const updated = await updateResourceGroup(auth.token, group.id, { pinned: !group.pinned });
-            groups = groups
-                .map((g) => (g.id === updated.id ? updated : g))
-                .sort((a, b) => (a.pinned === b.pinned ? a.name.localeCompare(b.name) : a.pinned ? -1 : 1));
+            groups = groups.map((g) => (g.id === updated.id ? updated : g));
         } catch (e) {
             error = e instanceof Error ? e.message : "Failed to update resource group";
         }
@@ -93,6 +98,11 @@
             default: return "text-muted-foreground";
         }
     }
+
+    let pinnedGroups = $derived(groups.filter((g) => g.pinned));
+    let filteredGroups = $derived(
+        groups.filter((g) => !searchText || g.name.toLowerCase().includes(searchText.toLowerCase())),
+    );
 
     let loadStarted = false;
 
@@ -170,7 +180,7 @@
     <span class="text-sm font-medium">Resource Groups</span>
 </header>
 
-<div class="flex flex-col gap-6 p-6">
+<div class="flex flex-col gap-6 p-6 min-w-0 overflow-x-hidden">
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-xl font-semibold tracking-tight">Resource Groups</h1>
@@ -178,7 +188,7 @@
                 Isolated namespaces with dedicated internal networks
             </p>
         </div>
-        <Button size="sm" onclick={() => createDialog?.showModal()}>
+        <Button size="sm" onclick={openCreateDialog}>
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
@@ -191,6 +201,59 @@
         <p class="text-sm text-destructive">{error}</p>
     {/if}
 
+    {#if pinnedGroups.length > 0}
+        <div class="flex flex-col gap-2 min-w-0">
+            <div
+                bind:this={pinnedScroller}
+                class="flex gap-3 overflow-x-auto min-w-0 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+                {#each pinnedGroups as group (group.id)}
+                    <button
+                        class="flex items-center gap-3 shrink-0 w-64 border rounded-lg p-3 hover:bg-muted/30 transition-colors text-left"
+                        onclick={() => goto(`/resource-groups/${group.id}`)}
+                    >
+                        <div
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                            style="background-color: {group.color}20; color: {group.color};"
+                        >
+                            <Icon icon={group.icon} width={18} height={18} />
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5">
+                                <p class="font-medium text-sm truncate">{group.name}</p>
+                                <span class="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 {statusClass(group.status)}">{group.status}</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground font-mono truncate">{group.internal_cidr}</p>
+                        </div>
+                    </button>
+                {/each}
+            </div>
+            <div class="flex items-center gap-1.5">
+                <button
+                    class="flex items-center justify-center w-6 h-6 rounded-full border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={() => scrollPinned(-1)}
+                    aria-label="Scroll left"
+                    title="Scroll left"
+                >
+                    <Icon icon="mdi:chevron-left" width={14} height={14} />
+                </button>
+                <button
+                    class="flex items-center justify-center w-6 h-6 rounded-full border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={() => scrollPinned(1)}
+                    aria-label="Scroll right"
+                    title="Scroll right"
+                >
+                    <Icon icon="mdi:chevron-right" width={14} height={14} />
+                </button>
+            </div>
+        </div>
+    {/if}
+
+    <div class="flex items-center gap-2 border rounded px-3 py-1.5 text-sm max-w-xs">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground shrink-0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="bg-transparent outline-none flex-1 text-sm" placeholder="Search resource groups..." bind:value={searchText} />
+    </div>
+
     <div class="border rounded-lg overflow-hidden">
         <table class="w-full text-sm">
             <thead class="bg-muted/50">
@@ -200,22 +263,21 @@
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">Description</th>
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
                     <th class="text-left px-4 py-3 font-medium text-muted-foreground">Created</th>
-                    <th class="px-4 py-3"></th>
                 </tr>
             </thead>
             <tbody>
                 {#if loading}
                     <tr>
-                        <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
+                        <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
                     </tr>
-                {:else if groups.length === 0}
+                {:else if filteredGroups.length === 0}
                     <tr>
-                        <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">
-                            No resource groups. Create one to get started.
+                        <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">
+                            {groups.length === 0 ? "No resource groups. Create one to get started." : "No resource groups match search."}
                         </td>
                     </tr>
                 {:else}
-                    {#each groups as group (group.id)}
+                    {#each filteredGroups as group (group.id)}
                         <tr
                             class="border-t hover:bg-muted/30 transition-colors cursor-pointer"
                             onclick={() => goto(`/resource-groups/${group.id}`)}
@@ -237,26 +299,6 @@
                                 <span class="font-medium {statusClass(group.status)}">{group.status}</span>
                             </td>
                             <td class="px-4 py-3 text-xs text-muted-foreground">{group.created_at.slice(0, 10)}</td>
-                            <td class="px-4 py-3 text-right">
-                                <div class="flex items-center justify-end gap-1">
-                                    <button
-                                        class="flex items-center justify-center w-7 h-7 rounded-full transition-colors {group.pinned ? 'text-amber-500 hover:bg-amber-500/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                                        onclick={(e) => { e.stopPropagation(); handleTogglePin(group); }}
-                                        aria-label={group.pinned ? "Unpin" : "Pin"}
-                                        title={group.pinned ? "Unpin" : "Pin"}
-                                    >
-                                        <Icon icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"} width={16} height={16} />
-                                    </button>
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        class="text-destructive hover:text-destructive"
-                                        onclick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
-                                    >
-                                        Delete
-                                    </Button>
-                                </div>
-                            </td>
                         </tr>
                     {/each}
                 {/if}

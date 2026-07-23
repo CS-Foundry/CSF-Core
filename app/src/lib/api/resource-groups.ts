@@ -138,6 +138,15 @@ export async function listResourceGroups(token: string): Promise<ResourceGroup[]
     return res.json();
 }
 
+export async function suggestCidr(token: string): Promise<string> {
+    const res = await authedFetch(`${API_BASE}/resource-groups/suggest-cidr`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to suggest cidr: ${res.status}`);
+    const data = await res.json();
+    return data.internal_cidr;
+}
+
 export async function getResourceGroup(token: string, id: string): Promise<ResourceGroup> {
     const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` },

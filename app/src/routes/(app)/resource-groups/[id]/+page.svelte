@@ -6,6 +6,7 @@
     import {
         getResourceGroup,
         updateResourceGroup,
+        deleteResourceGroup,
         listResourceGroupWorkloads,
         listResourceGroupVolumes,
         createWorkload,
@@ -54,6 +55,12 @@
     let editColor = $state("#6366f1");
     let savingAppearance = $state(false);
     let appearanceError = $state<string | null>(null);
+
+    let rgSettingsDialog = $state<HTMLDialogElement | null>(null);
+    let editName = $state("");
+    let editDescription = $state("");
+    let savingRgSettings = $state(false);
+    let rgSettingsError = $state<string | null>(null);
 
     let activeTab = $state<"all" | "container" | "volume">("all");
     let filterText = $state("");
@@ -793,6 +800,41 @@
         }
     }
 
+    function openSettingsDialog() {
+        if (!group) return;
+        editName = group.name;
+        editDescription = group.description ?? "";
+        rgSettingsError = null;
+        rgSettingsDialog?.showModal();
+    }
+
+    async function handleSaveSettings() {
+        if (!auth.token || !group || !editName) return;
+        savingRgSettings = true;
+        rgSettingsError = null;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, {
+                name: editName,
+                description: editDescription,
+            });
+            rgSettingsDialog?.close();
+        } catch (e) {
+            rgSettingsError = e instanceof Error ? e.message : "Failed to update resource group";
+        } finally {
+            savingRgSettings = false;
+        }
+    }
+
+    async function handleDeleteGroup() {
+        if (!auth.token || !group) return;
+        try {
+            await deleteResourceGroup(auth.token, group.id);
+            goto("/resource-groups");
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete resource group";
+        }
+    }
+
     let totalCpu = $derived(workloads.reduce((s, w) => s + w.cpu_millicores, 0));
     let totalMem = $derived(workloads.reduce((s, w) => s + w.memory_bytes, 0));
     let totalDisk = $derived(volumes.reduce((s, v) => s + v.size_gb, 0));
@@ -1122,6 +1164,45 @@
             <Button size="sm" variant="outline" onclick={() => appearanceDialog?.close()}>Cancel</Button>
             <Button size="sm" onclick={handleSaveAppearance} disabled={savingAppearance}>
                 {savingAppearance ? "Saving..." : "Save"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={rgSettingsDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { rgSettingsError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Resource Group Settings</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => rgSettingsDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-edit-name">Name</label>
+                <input id="rg-edit-name" class="border rounded px-3 py-1.5 text-sm bg-background" bind:value={editName} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-edit-desc">Description</label>
+                <input id="rg-edit-desc" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="Optional" bind:value={editDescription} />
+            </div>
+        </div>
+        {#if rgSettingsError}
+            <p class="text-xs text-destructive">{rgSettingsError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => rgSettingsDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleSaveSettings} disabled={savingRgSettings || !editName}>
+                {savingRgSettings ? "Saving..." : "Save"}
             </Button>
         </div>
     </div>
@@ -1469,12 +1550,33 @@
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                 <button
-                    class="flex items-center justify-center w-9 h-9 rounded-full transition-colors {group.pinned ? 'text-amber-500 hover:bg-amber-500/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                     onclick={handleTogglePin}
                     aria-label={group.pinned ? "Unpin" : "Pin"}
                     title={group.pinned ? "Unpin" : "Pin"}
                 >
-                    <Icon icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"} width={18} height={18} />
+                    <Icon
+                        icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"}
+                        width={18}
+                        height={18}
+                        class="transition-transform duration-200 {group.pinned ? 'scale-110' : 'scale-100'}"
+                    />
+                </button>
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={openSettingsDialog}
+                    aria-label="Settings"
+                    title="Settings"
+                >
+                    <Icon icon="mdi:cog-outline" width={18} height={18} />
+                </button>
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-destructive hover:bg-destructive/10 transition-colors"
+                    onclick={handleDeleteGroup}
+                    aria-label="Delete"
+                    title="Delete"
+                >
+                    <Icon icon="mdi:trash-can-outline" width={18} height={18} />
                 </button>
                 <Button size="sm" variant="outline" onclick={downloadVpnConfig} disabled={downloadingVpn}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
