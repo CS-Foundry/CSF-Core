@@ -16,6 +16,8 @@ use crate::spec::{rg_wireguard_port, WorkloadSpec};
 const JAILER_BASE_DIR: &str = "/var/lib/csfx-agent/firecracker";
 const GUEST_KERNEL_PATH: &str = "/var/lib/csfx-agent/vmlinux";
 const GUEST_CID_BASE: u32 = 1000;
+const CGROUP_ROOT: &str = "/sys/fs/cgroup";
+const CGROUP_PARENT: &str = "csfx-firecracker";
 
 struct VmHandle {
     workload_id: String,
@@ -25,6 +27,9 @@ struct VmHandle {
     vsock_cid: u32,
     resource_group_id: Option<String>,
     jailer_uid: u32,
+    cgroup_path: PathBuf,
+    metrics_path: PathBuf,
+    previous_cpu_sample: Mutex<Option<(std::time::Instant, u64)>>,
 }
 
 struct GuestNetwork {
@@ -174,27 +179,32 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 }
             };
 
-        configure_and_boot_vm(
-            &api_socket,
-            &rootfs_path,
-            &tap_device,
-            bridge_iface.as_deref(),
+        let metrics_path = chroot_dir.join("metrics.fifo");
+
+        let boot_config = VmBootConfig {
+            api_socket: api_socket.clone(),
+            rootfs_path: rootfs_path.clone(),
+            tap_device: tap_device.clone(),
+            metrics_path: metrics_path.clone(),
             vsock_cid,
-            spec,
-            guest_network.as_ref(),
-        )
-        .await?;
+        };
+
+        configure_and_boot_vm(&boot_config, bridge_iface.as_deref(), spec, guest_network.as_ref())
+            .await?;
 
         self.handles.lock().await.insert(
             spec.workload_id.clone(),
             VmHandle {
                 workload_id: spec.workload_id.clone(),
                 jailer_pid,
+                cgroup_path: cgroup_path(&spec.workload_id),
+                metrics_path,
                 chroot_dir,
                 tap_device,
                 vsock_cid,
                 resource_group_id: spec.resource_group_id.clone(),
                 jailer_uid,
+                previous_cpu_sample: Mutex::new(None),
             },
         );
 
@@ -283,9 +293,79 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         Ok(())
     }
 
-    async fn stats(&self, _workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
-        Ok(crate::runtime::ContainerStats::default())
+    async fn stats(&self, workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
+        let handles = self.handles.lock().await;
+        let Some(handle) = handles.get(workload_handle) else {
+            return Ok(crate::runtime::ContainerStats::default());
+        };
+
+        let cpu_usage_percent = read_cpu_usage_percent(handle).await;
+        let memory_usage_bytes = read_memory_usage_bytes(&handle.cgroup_path).await;
+        let (network_rx_bytes, network_tx_bytes) =
+            read_network_bytes(&handle.metrics_path).await.unzip();
+
+        Ok(crate::runtime::ContainerStats {
+            cpu_usage_percent,
+            memory_usage_bytes,
+            network_rx_bytes,
+            network_tx_bytes,
+        })
     }
+}
+
+async fn read_cpu_usage_percent(handle: &VmHandle) -> Option<f64> {
+    let usage_usec = read_cgroup_u64(&handle.cgroup_path, "cpu.stat", "usage_usec").await?;
+    let now = std::time::Instant::now();
+
+    let mut previous = handle.previous_cpu_sample.lock().await;
+    let percent = match *previous {
+        Some((previous_time, previous_usage)) => {
+            let elapsed_usec = now.duration_since(previous_time).as_micros() as u64;
+            if elapsed_usec == 0 || usage_usec < previous_usage {
+                None
+            } else {
+                let delta_usec = usage_usec - previous_usage;
+                Some((delta_usec as f64 / elapsed_usec as f64) * 100.0)
+            }
+        }
+        None => None,
+    };
+
+    *previous = Some((now, usage_usec));
+    percent
+}
+
+async fn read_memory_usage_bytes(cgroup_path: &Path) -> Option<i64> {
+    let content = tokio::fs::read_to_string(cgroup_path.join("memory.current"))
+        .await
+        .ok()?;
+    content.trim().parse::<i64>().ok()
+}
+
+async fn read_cgroup_u64(cgroup_path: &Path, file: &str, key: &str) -> Option<u64> {
+    let content = tokio::fs::read_to_string(cgroup_path.join(file))
+        .await
+        .ok()?;
+
+    content.lines().find_map(|line| {
+        let (line_key, value) = line.split_once(' ')?;
+        if line_key == key {
+            value.trim().parse::<u64>().ok()
+        } else {
+            None
+        }
+    })
+}
+
+async fn read_network_bytes(metrics_path: &Path) -> Option<(i64, i64)> {
+    let content = tokio::fs::read_to_string(metrics_path).await.ok()?;
+    let last_line = content.lines().last()?;
+    let sample: serde_json::Value = serde_json::from_str(last_line).ok()?;
+
+    let rx = sample.get("net")?.get("rx_bytes_count")?.as_i64()?;
+    let tx = sample.get("net")?.get("tx_bytes_count")?.as_i64()?;
+
+    Some((rx, tx))
 }
 
 fn vsock_log_stream(
@@ -335,6 +415,10 @@ async fn spawn_jailer(
             &uid_arg,
             "--chroot-base-dir",
             chroot_dir.to_string_lossy().as_ref(),
+            "--cgroup-version",
+            "2",
+            "--parent-cgroup",
+            CGROUP_PARENT,
             "--",
             "--api-sock",
             api_socket,
@@ -345,18 +429,29 @@ async fn spawn_jailer(
     child.id().context("jailer process has no pid")
 }
 
-async fn configure_and_boot_vm(
-    api_socket: &str,
-    rootfs_path: &std::path::Path,
-    tap_device: &str,
-    bridge_iface: Option<&str>,
+fn cgroup_path(workload_id: &str) -> PathBuf {
+    Path::new(CGROUP_ROOT)
+        .join(CGROUP_PARENT)
+        .join(workload_id)
+}
+
+struct VmBootConfig {
+    api_socket: String,
+    rootfs_path: PathBuf,
+    tap_device: String,
+    metrics_path: PathBuf,
     vsock_cid: u32,
+}
+
+async fn configure_and_boot_vm(
+    boot_config: &VmBootConfig,
+    bridge_iface: Option<&str>,
     spec: &WorkloadSpec,
     guest_network: Option<&GuestNetwork>,
 ) -> Result<()> {
-    create_tap_device(tap_device, bridge_iface).await?;
+    create_tap_device(&boot_config.tap_device, bridge_iface).await?;
 
-    let client = FirecrackerApiClient::new(api_socket.to_string());
+    let client = FirecrackerApiClient::new(boot_config.api_socket.clone());
 
     let vcpu_count = ((spec.cpu_millicores.max(100)) as f64 / 1000.0).ceil() as i64;
     let mem_size_mib = (spec.memory_bytes / 1024 / 1024).max(128);
@@ -373,6 +468,16 @@ async fn configure_and_boot_vm(
 
     client
         .put(
+            "/metrics",
+            &json!({
+                "metrics_path": boot_config.metrics_path.to_string_lossy(),
+            }),
+        )
+        .await
+        .context("Failed to configure metrics")?;
+
+    client
+        .put(
             "/boot-source",
             &json!({
                 "kernel_image_path": GUEST_KERNEL_PATH,
@@ -386,7 +491,7 @@ async fn configure_and_boot_vm(
             "/drives/rootfs",
             &json!({
                 "drive_id": "rootfs",
-                "path_on_host": rootfs_path.to_string_lossy(),
+                "path_on_host": boot_config.rootfs_path.to_string_lossy(),
                 "is_root_device": true,
                 "is_read_only": false,
             }),
@@ -404,7 +509,7 @@ async fn configure_and_boot_vm(
             "/network-interfaces/eth0",
             &json!({
                 "iface_id": "eth0",
-                "host_dev_name": tap_device,
+                "host_dev_name": boot_config.tap_device,
             }),
         )
         .await?;
@@ -413,8 +518,8 @@ async fn configure_and_boot_vm(
         .put(
             "/vsock",
             &json!({
-                "guest_cid": vsock_cid,
-                "uds_path": format!("{}.vsock", api_socket),
+                "guest_cid": boot_config.vsock_cid,
+                "uds_path": format!("{}.vsock", boot_config.api_socket),
             }),
         )
         .await?;
