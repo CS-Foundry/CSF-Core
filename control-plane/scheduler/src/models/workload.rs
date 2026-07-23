@@ -139,6 +139,7 @@ impl DesiredState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateWorkloadRequest {
+    pub image: Option<String>,
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub restart_policy: Option<RestartPolicy>,

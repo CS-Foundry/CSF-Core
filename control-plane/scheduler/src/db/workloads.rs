@@ -112,6 +112,9 @@ pub async fn update_spec(
 
     let mut active: workloads::ActiveModel = workload.into();
 
+    if let Some(ref image) = req.image {
+        active.image = Set(image.clone());
+    }
     if let Some(ref env_vars) = req.env_vars {
         active.env_vars = Set(serde_json::to_value(env_vars).ok());
     }
@@ -135,6 +138,24 @@ pub async fn update_spec(
 pub async fn get_all(db: &DatabaseConnection) -> Result<Vec<WorkloadResponse>, sea_orm::DbErr> {
     let rows = workloads::Entity::find().all(db).await?;
     Ok(rows.into_iter().map(into_response).collect())
+}
+
+pub async fn get_by_stack_id(
+    db: &DatabaseConnection,
+    stack_id: Uuid,
+) -> Result<Vec<workloads::Model>, sea_orm::DbErr> {
+    workloads::Entity::find()
+        .filter(workloads::Column::StackId.eq(stack_id))
+        .all(db)
+        .await
+}
+
+pub async fn delete_by_stack_id(db: &DatabaseConnection, stack_id: Uuid) -> Result<(), sea_orm::DbErr> {
+    workloads::Entity::delete_many()
+        .filter(workloads::Column::StackId.eq(stack_id))
+        .exec(db)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_pending(db: &DatabaseConnection) -> Result<Vec<workloads::Model>, sea_orm::DbErr> {

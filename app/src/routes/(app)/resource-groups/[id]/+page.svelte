@@ -9,6 +9,10 @@
         listResourceGroupVolumes,
         createWorkload,
         createWorkloadStack,
+        getStack,
+        deleteStack,
+        restartStack,
+        redeployStack,
         deleteWorkload,
         stopWorkload,
         restartWorkload,
@@ -105,6 +109,7 @@
 
     let composeStackName = $state("");
     let composeYaml = $state("");
+    let editingStackId = $state<string | null>(null);
     let composePreview = $derived(parseComposePreview(composeYaml));
     let composeLineCount = $derived(Math.max(composeYaml.split("\n").length, 1));
     let composeGutter = $state<HTMLDivElement | null>(null);
@@ -130,6 +135,7 @@
     let containerActionError = $state<string | null>(null);
     let containerActionBusy = $state(false);
 
+    let settingsImage = $state("");
     let settingsEnvText = $state("");
     let settingsRestartPolicy = $state<"always" | "on-failure" | "never">("always");
     let settingsMaxRestarts = $state("");
@@ -239,15 +245,20 @@
     }
 
     async function handleDeployStack() {
-        if (!auth.token || !composeYaml.trim() || !composeStackName) return;
+        if (!auth.token || !composeYaml.trim()) return;
+        if (!editingStackId && !composeStackName) return;
         deployingStack = true;
         composeError = null;
         try {
-            await createWorkloadStack(auth.token, {
-                name: composeStackName,
-                resource_group_id: rgId,
-                compose_yaml: composeYaml,
-            });
+            if (editingStackId) {
+                await redeployStack(auth.token, editingStackId, composeYaml);
+            } else {
+                await createWorkloadStack(auth.token, {
+                    name: composeStackName,
+                    resource_group_id: rgId,
+                    compose_yaml: composeYaml,
+                });
+            }
             composeDialog?.close();
             resetComposeForm();
             workloads = await listResourceGroupWorkloads(auth.token, rgId);
@@ -262,6 +273,43 @@
         composeStackName = "";
         composeYaml = "";
         composeError = null;
+        editingStackId = null;
+    }
+
+    async function openStackEditor(stackId: string) {
+        if (!auth.token) return;
+        composeError = null;
+        editingStackId = stackId;
+        composeStackName = "";
+        composeYaml = "";
+        composeDialog?.showModal();
+        try {
+            const stack = await getStack(auth.token, stackId);
+            composeStackName = stack.name;
+            composeYaml = stack.compose_source ?? "";
+        } catch (e) {
+            composeError = e instanceof Error ? e.message : "Failed to load stack";
+        }
+    }
+
+    async function handleRestartStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await restartStack(auth.token, stackId);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to restart stack";
+        }
+    }
+
+    async function handleDeleteStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await deleteStack(auth.token, stackId);
+            workloads = workloads.filter((w) => w.stack_id !== stackId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete stack";
+        }
     }
 
     function handleComposeFileUpload(event: Event) {
@@ -314,6 +362,7 @@
     }
 
     function loadSettingsForm(workload: Workload) {
+        settingsImage = workload.image;
         settingsEnvText = Object.entries(workload.env_vars ?? {})
             .map(([k, v]) => `${k}=${v}`)
             .join("\n");
@@ -466,11 +515,12 @@
         }
     }
 
-    async function handleSaveSettings() {
+    async function handleRedeployContainer() {
         if (!auth.token || !activeContainer) return;
         settingsSaving = true;
         settingsError = null;
         try {
+            if (!settingsImage.trim()) throw new Error("Image cannot be empty");
             const env_vars: Record<string, string> = {};
             for (const line of settingsEnvText.split("\n")) {
                 const trimmed = line.trim();
@@ -485,6 +535,7 @@
             }
 
             await updateWorkload(auth.token, activeContainer.id, {
+                image: settingsImage.trim(),
                 env_vars,
                 restart_policy: settingsRestartPolicy,
                 max_restarts,
@@ -906,7 +957,7 @@
 >
     <div class="flex flex-col gap-4 p-6">
         <div class="flex items-center justify-between">
-            <h2 class="text-base font-semibold">Deploy Docker Compose Stack</h2>
+            <h2 class="text-base font-semibold">{editingStackId ? "Edit Compose Stack" : "Deploy Docker Compose Stack"}</h2>
             <button
                 class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => composeDialog?.close()}
@@ -918,7 +969,7 @@
         </div>
         <div class="flex flex-col gap-1">
             <label class="text-xs text-muted-foreground" for="c-name">Stack Name</label>
-            <input id="c-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-stack" bind:value={composeStackName} />
+            <input id="c-name" class="border rounded px-3 py-1.5 text-sm bg-background disabled:opacity-60" placeholder="my-stack" bind:value={composeStackName} disabled={!!editingStackId} />
         </div>
         <div class="grid grid-cols-5 gap-4">
             <div class="col-span-2 flex flex-col gap-1">
@@ -989,8 +1040,12 @@
         {/if}
         <div class="flex gap-2 justify-end">
             <Button size="sm" variant="outline" onclick={() => composeDialog?.close()}>Cancel</Button>
-            <Button size="sm" onclick={handleDeployStack} disabled={deployingStack || !composeStackName || !composeYaml.trim()}>
-                {deployingStack ? "Deploying..." : "Deploy Stack"}
+            <Button size="sm" onclick={handleDeployStack} disabled={deployingStack || (!editingStackId && !composeStackName) || !composeYaml.trim()}>
+                {#if deployingStack}
+                    {editingStackId ? "Redeploying..." : "Deploying..."}
+                {:else}
+                    {editingStackId ? "Redeploy" : "Deploy Stack"}
+                {/if}
             </Button>
         </div>
     </div>
@@ -1240,6 +1295,15 @@
                 {:else}
                     <div class="h-full overflow-y-auto p-6 space-y-5">
                         <div class="flex flex-col gap-1">
+                            <label class="text-xs text-muted-foreground" for="s-image">Image</label>
+                            <input
+                                id="s-image"
+                                class="border rounded px-3 py-1.5 text-sm bg-background font-mono"
+                                placeholder="nginx:latest"
+                                bind:value={settingsImage}
+                            />
+                        </div>
+                        <div class="flex flex-col gap-1">
                             <label class="text-xs text-muted-foreground" for="s-env">Environment variables</label>
                             <textarea
                                 id="s-env"
@@ -1271,14 +1335,14 @@
                             </div>
                         </div>
                         <p class="text-xs text-muted-foreground">
-                            Saving applies the new configuration by restarting the container.
+                            Redeploying applies the new configuration by recreating the container, pulling the image again if changed.
                         </p>
                         {#if settingsError}
                             <p class="text-xs text-destructive">{settingsError}</p>
                         {/if}
                         <div class="flex justify-end">
-                            <Button size="sm" onclick={handleSaveSettings} disabled={settingsSaving}>
-                                {settingsSaving ? "Saving..." : "Save"}
+                            <Button size="sm" onclick={handleRedeployContainer} disabled={settingsSaving}>
+                                {settingsSaving ? "Redeploying..." : "Redeploy"}
                             </Button>
                         </div>
                     </div>
@@ -1479,12 +1543,20 @@
                             {:else if item.kind === "stack"}
                                 {@const stack = item.data}
                                 {@const expanded = expandedStacks.has(stack.stack_id)}
-                                <tr class="border-t hover:bg-muted/20 transition-colors">
+                                <tr
+                                    class="border-t hover:bg-muted/20 transition-colors cursor-pointer"
+                                    onclick={() => openStackEditor(stack.stack_id)}
+                                >
                                     <td class="px-4 py-3">
-                                        <button
-                                            class="flex items-center gap-2.5 text-left"
-                                            onclick={() => toggleStack(stack.stack_id)}
-                                        >
+                                        <div class="flex items-center gap-2.5">
+                                            <button
+                                                class="flex items-center justify-center w-5 h-5 shrink-0 rounded hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); toggleStack(stack.stack_id); }}
+                                                aria-label={expanded ? "Collapse" : "Expand"}
+                                                title={expanded ? "Collapse" : "Expand"}
+                                            >
+                                                <Icon icon={expanded ? "mdi:chevron-up" : "mdi:chevron-down"} width={16} height={16} class="text-muted-foreground" />
+                                            </button>
                                             <div class="flex w-5 shrink-0 items-center justify-center">
                                                 <Icon icon="mdi:layers-outline" width={20} height={20} />
                                             </div>
@@ -1492,8 +1564,7 @@
                                                 <p class="font-medium leading-tight">{stack.stack_name}</p>
                                                 <p class="text-xs text-muted-foreground">{stack.children.length} services</p>
                                             </div>
-                                            <Icon icon={expanded ? "mdi:chevron-up" : "mdi:chevron-down"} width={16} height={16} class="text-muted-foreground" />
-                                        </button>
+                                        </div>
                                     </td>
                                     <td class="px-4 py-3">
                                         <span class="text-xs px-2 py-0.5 rounded border font-medium">Compose Stack</span>
@@ -1507,7 +1578,26 @@
                                             {stack.children.filter((c) => c.status === 'running').length}/{stack.children.length} running
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3"></td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleRestartStack(stack.stack_id); }}
+                                                aria-label="Restart stack"
+                                                title="Restart stack"
+                                            >
+                                                <Icon icon="mdi:restart" width={16} height={16} />
+                                            </button>
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-destructive hover:bg-destructive/10 transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleDeleteStack(stack.stack_id); }}
+                                                aria-label="Delete stack"
+                                                title="Delete stack"
+                                            >
+                                                <Icon icon="mdi:trash-can-outline" width={16} height={16} />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                                 {#if expanded}
                                     {#each stack.children as child (child.id)}

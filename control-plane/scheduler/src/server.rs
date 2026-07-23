@@ -51,6 +51,22 @@ pub fn create_router(state: AppState) -> Router {
             axum::routing::post(stacks::create_stack),
         )
         .route(
+            "/workload-stacks/{id}",
+            axum::routing::get(stacks::get_stack),
+        )
+        .route(
+            "/workload-stacks/{id}",
+            axum::routing::delete(stacks::delete_stack),
+        )
+        .route(
+            "/workload-stacks/{id}/restart",
+            axum::routing::post(stacks::restart_stack),
+        )
+        .route(
+            "/workload-stacks/{id}",
+            axum::routing::patch(stacks::redeploy_stack),
+        )
+        .route(
             "/internal/workloads/status",
             axum::routing::post(internal::update_container_statuses),
         )

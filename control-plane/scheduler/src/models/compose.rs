@@ -26,3 +26,19 @@ pub struct CreateStackResponse {
     pub stack_id: Uuid,
     pub workloads: Vec<crate::models::workload::CreateWorkloadResponse>,
 }
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct RedeployStackRequest {
+    pub compose_yaml: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StackResponse {
+    pub id: Uuid,
+    pub resource_group_id: Uuid,
+    pub name: String,
+    pub compose_source: Option<String>,
+    pub status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}

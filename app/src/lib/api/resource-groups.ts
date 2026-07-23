@@ -86,6 +86,7 @@ export interface CreateWorkloadRequest {
 }
 
 export interface UpdateWorkloadRequest {
+    image?: string;
     env_vars?: Record<string, string> | null;
     ports?: PortMapping[] | null;
     restart_policy?: 'always' | 'on-failure' | 'never';
@@ -197,6 +198,55 @@ export async function createWorkloadStack(
         throw new Error(err.error ?? `Failed to create stack: ${res.status}`);
     }
     return res.json();
+}
+
+export interface Stack {
+    id: string;
+    resource_group_id: string;
+    name: string;
+    compose_source: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string | null;
+}
+
+export async function getStack(token: string, id: string): Promise<Stack> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to get stack: ${res.status}`);
+    return res.json();
+}
+
+export async function deleteStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete stack: ${res.status}`);
+}
+
+export async function restartStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}/restart`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to restart stack: ${res.status}`);
+}
+
+export async function redeployStack(token: string, id: string, compose_yaml: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ compose_yaml }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to redeploy stack: ${res.status}`);
+    }
 }
 
 export async function deleteWorkload(token: string, id: string): Promise<void> {
