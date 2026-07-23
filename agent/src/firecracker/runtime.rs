@@ -6,10 +6,10 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::info;
 
-use crate::docker::WorkloadSpec;
 use crate::firecracker::api::FirecrackerApiClient;
 use crate::firecracker::rootfs::RootfsBuilder;
 use crate::runtime::{ExecSession, LogStream};
+use crate::spec::{rg_bridge_iface_name, WorkloadSpec};
 
 const JAILER_BASE_DIR: &str = "/var/lib/csfx-agent/firecracker";
 const GUEST_KERNEL_PATH: &str = "/var/lib/csfx-agent/vmlinux";
@@ -73,7 +73,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 self.docker
                     .ensure_rg_network(resource_group_id, spec.resource_group_cidr.as_deref())
                     .await?;
-                Some(crate::docker::rg_bridge_iface_name(resource_group_id))
+                Some(rg_bridge_iface_name(resource_group_id))
             }
             None => None,
         };

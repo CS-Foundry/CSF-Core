@@ -11,101 +11,24 @@ use bollard::query_parameters::{
 };
 use bollard::Docker;
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{info, warn};
 use zbus::Connection;
 
+use crate::spec::{
+    first_host_ip, rg_bridge_iface_name, rg_network_name, rg_wireguard_port, second_host_ip,
+    PortMapping, WorkloadSpec,
+};
+
 const DOCKER_SOCKET_PATH: &str = "/var/run/docker.sock";
 const DOCKER_UNIT_NAME: &str = "docker.service";
 const DOCKER_START_TIMEOUT: Duration = Duration::from_secs(30);
 const DOCKER_SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PortMapping {
-    pub container_port: u16,
-    pub protocol: Option<String>,
-    pub rg_port: Option<u16>,
-    pub node_port: Option<u16>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VolumeMount {
-    pub volume_id: String,
-    pub mount_path: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkloadSpec {
-    pub workload_id: String,
-    pub image: String,
-    pub cpu_millicores: i32,
-    pub memory_bytes: i64,
-    pub env_vars: Option<HashMap<String, String>>,
-    pub ports: Option<Vec<PortMapping>>,
-    pub volume_mounts: Option<Vec<VolumeMount>>,
-    pub service_name: Option<String>,
-    pub resource_group_id: Option<String>,
-    pub resource_group_cidr: Option<String>,
-}
-
-pub fn rg_network_name(resource_group_id: &str) -> String {
-    format!("csfx-rg-{}", resource_group_id)
-}
-
 fn rg_dns_container_name(resource_group_id: &str) -> String {
     format!("csfx-dns-{}", resource_group_id)
-}
-
-pub fn first_host_ip(cidr: &str) -> Option<String> {
-    nth_host_ip(cidr, 1)
-}
-
-fn second_host_ip(cidr: &str) -> Option<String> {
-    nth_host_ip(cidr, 2)
-}
-
-fn nth_host_ip(cidr: &str, offset: u32) -> Option<String> {
-    let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let octets: Vec<u8> = parts[0].split('.').filter_map(|o| o.parse().ok()).collect();
-    if octets.len() != 4 {
-        return None;
-    }
-    let n = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]);
-    let host = n + offset;
-    let [a, b, c, d] = host.to_be_bytes();
-    Some(format!("{}.{}.{}.{}", a, b, c, d))
-}
-
-pub fn rg_wireguard_port(resource_group_id: &str) -> u16 {
-    const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
-    const FNV_PRIME: u32 = 0x01000193;
-
-    let mut hash = FNV_OFFSET_BASIS;
-    for byte in resource_group_id.as_bytes() {
-        hash ^= *byte as u32;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-
-    49152u16 + (hash % (65535 - 49152)) as u16
-}
-
-pub fn rg_bridge_iface_name(resource_group_id: &str) -> String {
-    const FNV_OFFSET_BASIS: u32 = 0x811c9dc5;
-    const FNV_PRIME: u32 = 0x01000193;
-
-    let mut hash = FNV_OFFSET_BASIS;
-    for byte in resource_group_id.as_bytes() {
-        hash ^= *byte as u32;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-
-    format!("csfxrg{:08x}", hash)
 }
 
 pub struct DockerRuntime {

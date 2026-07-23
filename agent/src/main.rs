@@ -9,6 +9,7 @@ mod rbd;
 mod rg_dns;
 mod runtime;
 mod server;
+mod spec;
 mod ssh_keys;
 mod system;
 mod update_watch;
@@ -729,7 +730,7 @@ async fn start_or_restart_workload(
         .await
         .insert(workload.id.clone(), "creating".to_string());
 
-    let spec = docker::WorkloadSpec {
+    let spec = spec::WorkloadSpec {
         workload_id: workload.id.clone(),
         image: workload.image.clone(),
         cpu_millicores: workload.cpu_millicores,
@@ -739,7 +740,7 @@ async fn start_or_restart_workload(
         volume_mounts: workload.volume_mounts.map(|mounts| {
             mounts
                 .into_iter()
-                .map(|m| docker::VolumeMount {
+                .map(|m| spec::VolumeMount {
                     volume_id: m.volume_id,
                     mount_path: m.mount_path,
                 })
@@ -806,7 +807,7 @@ async fn register_service_dns(
     resource_group_id: &str,
     service_name: &str,
 ) {
-    let network_name = docker::rg_network_name(resource_group_id);
+    let network_name = spec::rg_network_name(resource_group_id);
 
     let ip_address = match runtime
         .service_network_ip(container_id, &network_name)
