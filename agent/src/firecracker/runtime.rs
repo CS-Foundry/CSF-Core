@@ -2,9 +2,10 @@ use anyhow::{Context, Result};
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::firecracker::api::FirecrackerApiClient;
 use crate::firecracker::jailer_ids::JailerIdAllocator;
@@ -44,6 +45,7 @@ pub struct FirecrackerRuntime {
     jailer_ids: JailerIdAllocator,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
+    reconciled: AtomicBool,
 }
 
 impl FirecrackerRuntime {
@@ -54,6 +56,27 @@ impl FirecrackerRuntime {
             jailer_ids: JailerIdAllocator::new(),
             handles: Mutex::new(HashMap::new()),
             next_cid: Mutex::new(GUEST_CID_BASE),
+            reconciled: AtomicBool::new(false),
+        }
+    }
+
+    pub async fn reconcile_once(&self) -> Vec<(String, String)> {
+        if self.reconciled.swap(true, Ordering::SeqCst) {
+            return Vec::new();
+        }
+
+        match crate::runtime::Runtime::list_managed_workloads(self).await {
+            Ok(recovered) => {
+                info!(
+                    count = recovered.len(),
+                    "Reconciled running microvms from disk state"
+                );
+                recovered
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to reconcile firecracker workloads from disk state");
+                Vec::new()
+            }
         }
     }
 
@@ -192,6 +215,17 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         configure_and_boot_vm(&boot_config, bridge_iface.as_deref(), spec, guest_network.as_ref())
             .await?;
 
+        let sidecar = VmSidecarMetadata {
+            workload_id: spec.workload_id.clone(),
+            vsock_cid,
+            tap_device: tap_device.clone(),
+            jailer_uid,
+            resource_group_id: spec.resource_group_id.clone(),
+        };
+        write_sidecar_metadata(&chroot_dir, &sidecar)
+            .await
+            .context("Failed to write vm sidecar metadata")?;
+
         self.handles.lock().await.insert(
             spec.workload_id.clone(),
             VmHandle {
@@ -310,6 +344,62 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             network_rx_bytes,
             network_tx_bytes,
         })
+    }
+
+    async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
+        let mut entries = match tokio::fs::read_dir(JAILER_BASE_DIR).await {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e).context("Failed to read jailer base directory"),
+        };
+
+        let mut recovered = Vec::new();
+
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .context("Failed to read jailer base directory entry")?
+        {
+            let chroot_dir = entry.path();
+            let Some(workload_id) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+
+            let Some(sidecar) = read_sidecar_metadata(&chroot_dir).await else {
+                let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
+                continue;
+            };
+
+            let Some(jailer_pid) = find_live_jailer_pid(&workload_id).await else {
+                let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
+                continue;
+            };
+
+            self.jailer_ids.mark_allocated(sidecar.jailer_uid).await;
+
+            let metrics_path = chroot_dir.join("metrics.fifo");
+            let handle = VmHandle {
+                workload_id: workload_id.clone(),
+                jailer_pid,
+                cgroup_path: cgroup_path(&workload_id),
+                metrics_path,
+                chroot_dir,
+                tap_device: sidecar.tap_device,
+                vsock_cid: sidecar.vsock_cid,
+                resource_group_id: sidecar.resource_group_id,
+                jailer_uid: sidecar.jailer_uid,
+                previous_cpu_sample: Mutex::new(None),
+            };
+
+            self.handles
+                .lock()
+                .await
+                .insert(workload_id.clone(), handle);
+
+            recovered.push((workload_id.clone(), workload_id));
+        }
+
+        Ok(recovered)
     }
 }
 
@@ -433,6 +523,71 @@ fn cgroup_path(workload_id: &str) -> PathBuf {
     Path::new(CGROUP_ROOT)
         .join(CGROUP_PARENT)
         .join(workload_id)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct VmSidecarMetadata {
+    workload_id: String,
+    vsock_cid: u32,
+    tap_device: String,
+    jailer_uid: u32,
+    resource_group_id: Option<String>,
+}
+
+fn sidecar_metadata_path(chroot_dir: &Path) -> PathBuf {
+    chroot_dir.join("csfx-meta.json")
+}
+
+async fn write_sidecar_metadata(chroot_dir: &Path, metadata: &VmSidecarMetadata) -> Result<()> {
+    let payload = serde_json::to_vec(metadata).context("Failed to serialize sidecar metadata")?;
+    tokio::fs::write(sidecar_metadata_path(chroot_dir), payload)
+        .await
+        .context("Failed to write sidecar metadata file")?;
+    Ok(())
+}
+
+async fn read_sidecar_metadata(chroot_dir: &Path) -> Option<VmSidecarMetadata> {
+    let content = tokio::fs::read(sidecar_metadata_path(chroot_dir))
+        .await
+        .ok()?;
+    serde_json::from_slice(&content).ok()
+}
+
+async fn find_live_jailer_pid(workload_id: &str) -> Option<u32> {
+    let mut proc_entries = tokio::fs::read_dir("/proc").await.ok()?;
+
+    while let Ok(Some(entry)) = proc_entries.next_entry().await {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+            continue;
+        };
+
+        let cmdline_path = entry.path().join("cmdline");
+        let Ok(cmdline_raw) = tokio::fs::read(&cmdline_path).await else {
+            continue;
+        };
+
+        let args: Vec<&str> = cmdline_raw
+            .split(|b| *b == 0)
+            .filter_map(|part| std::str::from_utf8(part).ok())
+            .filter(|part| !part.is_empty())
+            .collect();
+
+        let is_jailer = args.first().map(|a| a.ends_with("jailer")).unwrap_or(false);
+        if !is_jailer {
+            continue;
+        }
+
+        let matches_id = args
+            .iter()
+            .zip(args.iter().skip(1))
+            .any(|(flag, value)| *flag == "--id" && *value == workload_id);
+
+        if matches_id {
+            return Some(pid);
+        }
+    }
+
+    None
 }
 
 struct VmBootConfig {
@@ -660,4 +815,40 @@ async fn create_tap_device(tap_device: &str, bridge_iface: Option<&str>) -> Resu
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sidecar_metadata_round_trips() {
+        let dir = std::env::temp_dir().join(format!("csfx-sidecar-test-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+
+        let metadata = VmSidecarMetadata {
+            workload_id: "workload-1".to_string(),
+            vsock_cid: 1234,
+            tap_device: "fctap1234".to_string(),
+            jailer_uid: 60001,
+            resource_group_id: Some("rg-1".to_string()),
+        };
+
+        write_sidecar_metadata(&dir, &metadata).await.unwrap();
+        let read_back = read_sidecar_metadata(&dir).await.unwrap();
+
+        assert_eq!(read_back.workload_id, metadata.workload_id);
+        assert_eq!(read_back.vsock_cid, metadata.vsock_cid);
+        assert_eq!(read_back.tap_device, metadata.tap_device);
+        assert_eq!(read_back.jailer_uid, metadata.jailer_uid);
+        assert_eq!(read_back.resource_group_id, metadata.resource_group_id);
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_sidecar_metadata_returns_none() {
+        let dir = std::env::temp_dir().join(format!("csfx-sidecar-test-{}", uuid::Uuid::new_v4()));
+        assert!(read_sidecar_metadata(&dir).await.is_none());
+    }
 }

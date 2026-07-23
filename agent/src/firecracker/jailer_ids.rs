@@ -34,6 +34,10 @@ impl JailerIdAllocator {
         anyhow::bail!("no free jailer uid available in range")
     }
 
+    pub async fn mark_allocated(&self, id: u32) {
+        self.allocated.lock().await.insert(id);
+    }
+
     pub async fn release(&self, id: u32) {
         self.allocated.lock().await.remove(&id);
     }
@@ -62,5 +66,15 @@ mod tests {
         let second = allocator.allocate().await.unwrap();
 
         assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn mark_allocated_prevents_reuse() {
+        let allocator = JailerIdAllocator::new();
+
+        allocator.mark_allocated(JAILER_UID_RANGE_START).await;
+        let allocated = allocator.allocate().await.unwrap();
+
+        assert_ne!(allocated, JAILER_UID_RANGE_START);
     }
 }

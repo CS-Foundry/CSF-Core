@@ -615,6 +615,14 @@ async fn process_workloads(
         }
     }
 
+    let recovered_microvms = firecracker.reconcile_once().await;
+    if !recovered_microvms.is_empty() {
+        let mut containers = running_containers.lock().await;
+        for (workload_id, handle) in recovered_microvms {
+            containers.insert(workload_id, handle);
+        }
+    }
+
     if let Some(docker_runtime) = docker_runtime {
         reap_stale_containers(
             docker_runtime,
