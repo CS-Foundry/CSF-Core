@@ -2,10 +2,12 @@ use anyhow::{Context, Result};
 use nix::mount::{mount, MsFlags};
 use nix::pty::openpty;
 use nix::sys::reboot::{reboot, RebootMode};
+use serde::Deserialize;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::Stdio;
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::process::Command;
 use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
 use tracing::{error, info, warn};
@@ -14,6 +16,19 @@ const READY_PORT: u32 = 10000;
 const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
 const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
+const MMDS_ADDR: &str = "169.254.169.254:80";
+
+#[derive(Debug, Deserialize)]
+struct MmdsVolume {
+    device: String,
+    mount_path: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct MmdsData {
+    #[serde(default)]
+    volumes: Vec<MmdsVolume>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,6 +43,21 @@ async fn main() -> Result<()> {
     info!("csfx-guest-init starting");
 
     mount_pseudo_filesystems();
+
+    if let Err(e) = bring_up_interface("eth0") {
+        warn!(error = %e, "Failed to bring up network interface");
+    }
+
+    let mmds_data = fetch_mmds_data().await.unwrap_or_else(|e| {
+        warn!(error = %e, "Failed to fetch mmds data, continuing without volumes");
+        MmdsData::default()
+    });
+
+    for volume in &mmds_data.volumes {
+        if let Err(e) = mount_volume(volume) {
+            error!(device = %volume.device, mount_path = %volume.mount_path, error = %e, "Failed to mount volume");
+        }
+    }
 
     let log_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, LOG_PORT))
         .context("Failed to bind vsock log port")?;
@@ -47,6 +77,85 @@ async fn main() -> Result<()> {
     info!(code = ?status.code(), "entrypoint exited");
 
     power_off();
+}
+
+fn bring_up_interface(name: &str) -> Result<()> {
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if socket_fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
+    for (dest, src) in request.ifr_name.iter_mut().zip(name.as_bytes()) {
+        *dest = *src as libc::c_char;
+    }
+
+    let result = unsafe {
+        if libc::ioctl(socket_fd, libc::SIOCGIFFLAGS as _, &mut request) < 0 {
+            libc::close(socket_fd);
+            return Err(std::io::Error::last_os_error().into());
+        }
+
+        request.ifr_ifru.ifru_flags |= (libc::IFF_UP | libc::IFF_RUNNING) as libc::c_short;
+
+        let set_result = libc::ioctl(socket_fd, libc::SIOCSIFFLAGS as _, &request);
+        libc::close(socket_fd);
+        set_result
+    };
+
+    if result < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    Ok(())
+}
+
+async fn fetch_mmds_data() -> Result<MmdsData> {
+    let mut stream = TcpStream::connect(MMDS_ADDR)
+        .await
+        .context("Failed to connect to mmds")?;
+
+    let request = "GET /latest/meta-data/ HTTP/1.1\r\nHost: 169.254.169.254\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .context("Failed to write mmds request")?;
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .context("Failed to read mmds response")?;
+
+    let response_text = String::from_utf8_lossy(&response);
+    let body = response_text
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .context("Malformed mmds response")?;
+
+    serde_json::from_str(body).context("Failed to parse mmds json")
+}
+
+fn mount_volume(volume: &MmdsVolume) -> Result<()> {
+    std::fs::create_dir_all(&volume.mount_path)
+        .with_context(|| format!("Failed to create mount path {}", volume.mount_path))?;
+
+    for fstype in ["ext4", "xfs", "btrfs"] {
+        if mount(
+            Some(volume.device.as_str()),
+            volume.mount_path.as_str(),
+            Some(fstype),
+            MsFlags::empty(),
+            None::<&str>,
+        )
+        .is_ok()
+        {
+            info!(device = %volume.device, mount_path = %volume.mount_path, fstype = %fstype, "Volume mounted");
+            return Ok(());
+        }
+    }
+
+    anyhow::bail!("failed to mount device {} with any known filesystem type", volume.device)
 }
 
 fn mount_pseudo_filesystems() {

@@ -13,6 +13,7 @@ pub struct PortMapping {
 pub struct VolumeMount {
     pub volume_id: String,
     pub mount_path: String,
+    pub device_path: String,
 }
 
 #[derive(Debug, Clone)]

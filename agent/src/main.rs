@@ -732,6 +732,8 @@ async fn start_or_restart_workload(
         .await
         .insert(workload.id.clone(), "creating".to_string());
 
+    let volume_devices = mounted_volumes.lock().await.clone();
+
     let spec = spec::WorkloadSpec {
         workload_id: workload.id.clone(),
         image: workload.image.clone(),
@@ -742,9 +744,13 @@ async fn start_or_restart_workload(
         volume_mounts: workload.volume_mounts.map(|mounts| {
             mounts
                 .into_iter()
-                .map(|m| spec::VolumeMount {
-                    volume_id: m.volume_id,
-                    mount_path: m.mount_path,
+                .filter_map(|m| {
+                    let device_path = volume_devices.get(&m.volume_id)?.clone();
+                    Some(spec::VolumeMount {
+                        volume_id: m.volume_id,
+                        mount_path: m.mount_path,
+                        device_path,
+                    })
                 })
                 .collect()
         }),

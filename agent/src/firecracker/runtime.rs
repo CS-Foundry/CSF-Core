@@ -144,8 +144,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             &tap_device,
             bridge_iface.as_deref(),
             vsock_cid,
-            spec.cpu_millicores,
-            spec.memory_bytes,
+            spec,
         )
         .await?;
 
@@ -301,15 +300,14 @@ async fn configure_and_boot_vm(
     tap_device: &str,
     bridge_iface: Option<&str>,
     vsock_cid: u32,
-    cpu_millicores: i32,
-    memory_bytes: i64,
+    spec: &WorkloadSpec,
 ) -> Result<()> {
     create_tap_device(tap_device, bridge_iface).await?;
 
     let client = FirecrackerApiClient::new(api_socket.to_string());
 
-    let vcpu_count = ((cpu_millicores.max(100)) as f64 / 1000.0).ceil() as i64;
-    let mem_size_mib = (memory_bytes / 1024 / 1024).max(128);
+    let vcpu_count = ((spec.cpu_millicores.max(100)) as f64 / 1000.0).ceil() as i64;
+    let mem_size_mib = (spec.memory_bytes / 1024 / 1024).max(128);
 
     client
         .put(
@@ -343,6 +341,12 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    let mounted_volumes = attach_volume_drives(
+        &client,
+        spec.volume_mounts.as_deref().unwrap_or_default(),
+    )
+    .await?;
+
     client
         .put(
             "/network-interfaces/eth0",
@@ -363,9 +367,87 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    configure_mmds(&client, &mounted_volumes).await?;
+
     client
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
         .await?;
+
+    Ok(())
+}
+
+struct MountedVolume {
+    guest_device: String,
+    mount_path: String,
+}
+
+async fn attach_volume_drives(
+    client: &FirecrackerApiClient,
+    volume_mounts: &[crate::spec::VolumeMount],
+) -> Result<Vec<MountedVolume>> {
+    let mut mounted = Vec::with_capacity(volume_mounts.len());
+
+    for (index, volume_mount) in volume_mounts.iter().enumerate() {
+        let guest_device = guest_device_letter(index);
+
+        client
+            .put(
+                &format!("/drives/{}", volume_mount.volume_id),
+                &json!({
+                    "drive_id": volume_mount.volume_id,
+                    "path_on_host": volume_mount.device_path,
+                    "is_root_device": false,
+                    "is_read_only": false,
+                }),
+            )
+            .await
+            .context("Failed to attach volume drive")?;
+
+        mounted.push(MountedVolume {
+            guest_device,
+            mount_path: volume_mount.mount_path.clone(),
+        });
+    }
+
+    Ok(mounted)
+}
+
+fn guest_device_letter(index: usize) -> String {
+    let letter = (b'b' + index as u8) as char;
+    format!("/dev/vd{}", letter)
+}
+
+async fn configure_mmds(client: &FirecrackerApiClient, volumes: &[MountedVolume]) -> Result<()> {
+    client
+        .put(
+            "/mmds/config",
+            &json!({
+                "version": "V1",
+                "network_interfaces": ["eth0"],
+            }),
+        )
+        .await
+        .context("Failed to configure mmds")?;
+
+    let volumes_payload: Vec<serde_json::Value> = volumes
+        .iter()
+        .map(|v| {
+            json!({
+                "device": v.guest_device,
+                "mount_path": v.mount_path,
+            })
+        })
+        .collect();
+
+    client
+        .put(
+            "/mmds",
+            &json!({
+                "volumes": volumes_payload,
+            }),
+        )
+        .await
+        .context("Failed to write mmds data")?;
 
     Ok(())
 }

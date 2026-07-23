@@ -16,3 +16,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 nix = { version = "0.31", features = ["term", "process", "mount", "reboot"] }
 libc = "0.2"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
