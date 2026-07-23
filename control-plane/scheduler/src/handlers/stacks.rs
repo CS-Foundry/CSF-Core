@@ -25,10 +25,7 @@ pub async fn create_stack(
     }
 }
 
-pub async fn get_stack(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+pub async fn get_stack(State(state): State<AppState>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match crate::db::workload_stacks::get_by_id(&state.db, id).await {
         Ok(Some(model)) => (
             StatusCode::OK,
@@ -66,10 +63,7 @@ pub async fn delete_stack(
     }
 }
 
-pub async fn stop_stack(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+pub async fn stop_stack(State(state): State<AppState>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match state.scheduler.stop_stack(id).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => (

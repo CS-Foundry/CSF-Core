@@ -217,7 +217,9 @@ pub async fn suggest_cidr(
             let [a, b, c, d] = network.to_be_bytes();
             return Ok((
                 StatusCode::OK,
-                Json(json!({ "internal_cidr": format!("{}.{}.{}.{}/{}", a, b, c, d, SUGGESTED_CIDR_PREFIX) })),
+                Json(
+                    json!({ "internal_cidr": format!("{}.{}.{}.{}/{}", a, b, c, d, SUGGESTED_CIDR_PREFIX) }),
+                ),
             ));
         }
     }
