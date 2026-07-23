@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use serde_json::json;
@@ -96,6 +96,25 @@ pub async fn delete_workload(
     .await
 }
 
+pub async fn update_workload(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: String,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::PATCH,
+        &format!("/workloads/{}", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
+}
+
 pub async fn stop_workload(
     CanManageWorkloads(_claims): CanManageWorkloads,
     State(state): State<AppState>,
@@ -160,6 +179,7 @@ pub fn workloads_routes() -> Router<AppState> {
         .route("/workloads", post(create_workload))
         .route("/workloads", get(list_workloads))
         .route("/workloads/{id}", delete(delete_workload))
+        .route("/workloads/{id}", patch(update_workload))
         .route("/workloads/{id}/stop", post(stop_workload))
         .route("/workloads/{id}/restart", post(restart_workload))
         .route("/workload-stacks", post(create_stack))

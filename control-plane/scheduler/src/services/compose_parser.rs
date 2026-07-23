@@ -96,7 +96,7 @@ fn parse_compose_ports(raw: &[String]) -> Vec<PortMapping> {
 }
 
 fn parse_compose_port(entry: &str) -> Option<PortMapping> {
-    let (node_port, container_port) = match entry.split_once(':') {
+    let (rg_port, container_port) = match entry.split_once(':') {
         Some((host, container)) => (host.parse().ok(), container),
         None => (None, entry),
     };
@@ -104,7 +104,7 @@ fn parse_compose_port(entry: &str) -> Option<PortMapping> {
     Some(PortMapping {
         container_port: container_port.parse().ok()?,
         protocol: None,
-        rg_port: None,
-        node_port,
+        rg_port,
+        node_port: None,
     })
 }

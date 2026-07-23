@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     db,
-    models::workload::{CreateWorkloadRequest, DesiredState},
+    models::workload::{CreateWorkloadRequest, DesiredState, UpdateWorkloadRequest},
     server::AppState,
 };
 
@@ -59,6 +59,29 @@ pub async fn stop_workload(
         Ok(model) => {
             if let Some(agent_id) = model.assigned_agent_id {
                 tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
+            }
+            (StatusCode::OK, Json(serde_json::json!(model))).into_response()
+        }
+        Err(sea_orm::DbErr::RecordNotFound(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn update_workload(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateWorkloadRequest>,
+) -> impl IntoResponse {
+    match db::workloads::update_spec(&state.db, id, &req).await {
+        Ok(model) => {
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(
+                    agent_id,
+                ));
             }
             (StatusCode::OK, Json(serde_json::json!(model))).into_response()
         }

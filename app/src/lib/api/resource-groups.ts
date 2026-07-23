@@ -52,6 +52,7 @@ export interface Workload {
     status: string;
     assigned_agent_id: string | null;
     container_id: string | null;
+    env_vars: Record<string, string> | null;
     ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string | null;
@@ -80,6 +81,13 @@ export interface CreateWorkloadRequest {
     ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string;
+    restart_policy?: 'always' | 'on-failure' | 'never';
+    max_restarts?: number | null;
+}
+
+export interface UpdateWorkloadRequest {
+    env_vars?: Record<string, string> | null;
+    ports?: PortMapping[] | null;
     restart_policy?: 'always' | 'on-failure' | 'never';
     max_restarts?: number | null;
 }
@@ -197,6 +205,26 @@ export async function deleteWorkload(token: string, id: string): Promise<void> {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to delete workload: ${res.status}`);
+}
+
+export async function updateWorkload(
+    token: string,
+    id: string,
+    req: UpdateWorkloadRequest,
+): Promise<Workload> {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to update workload: ${res.status}`);
+    }
+    return res.json();
 }
 
 export async function stopWorkload(token: string, id: string): Promise<Workload> {

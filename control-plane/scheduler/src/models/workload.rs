@@ -138,6 +138,14 @@ impl DesiredState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateWorkloadRequest {
+    pub env_vars: Option<HashMap<String, String>>,
+    pub ports: Option<Vec<PortMapping>>,
+    pub restart_policy: Option<RestartPolicy>,
+    pub max_restarts: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkloadRequest {
     pub name: String,
     pub image: String,
@@ -187,6 +195,8 @@ pub struct WorkloadResponse {
     pub status: WorkloadStatus,
     pub assigned_agent_id: Option<Uuid>,
     pub container_id: Option<String>,
+    pub env_vars: Option<HashMap<String, String>>,
+    pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
     pub resource_group_id: Option<Uuid>,
     pub stack_id: Option<Uuid>,

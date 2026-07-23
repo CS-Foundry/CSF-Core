@@ -713,6 +713,17 @@ async fn start_or_restart_workload(
         }
     }
 
+    if let Some(max) = workload.max_restarts {
+        let count = *restart_counts.lock().await.get(&workload.id).unwrap_or(&0);
+        if count as i32 >= max {
+            workload_phases
+                .lock()
+                .await
+                .insert(workload.id.clone(), "failed".to_string());
+            return false;
+        }
+    }
+
     workload_phases
         .lock()
         .await
@@ -775,8 +786,14 @@ async fn start_or_restart_workload(
             restart_requested
         }
         Err(e) => {
-            workload_phases.lock().await.remove(&workload.id);
-            warn!(workload_id = %workload.id, error = ?e, "Failed to start workload");
+            let mut counts = restart_counts.lock().await;
+            let count = counts.entry(workload.id.clone()).or_insert(0);
+            *count += 1;
+            warn!(workload_id = %workload.id, error = ?e, attempt = *count, "Failed to start workload");
+            workload_phases
+                .lock()
+                .await
+                .insert(workload.id.clone(), "failed".to_string());
             false
         }
     }

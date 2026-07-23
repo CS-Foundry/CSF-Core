@@ -12,6 +12,7 @@
         deleteWorkload,
         stopWorkload,
         restartWorkload,
+        updateWorkload,
         createVolume,
         deleteVolume,
         streamWorkloadLogs,
@@ -124,10 +125,16 @@
     let volFormSize = $state("10");
 
     let containerDialog = $state<HTMLDialogElement | null>(null);
-    let containerDialogTab = $state<"logs" | "shell" | "insights" | "network">("logs");
+    let containerDialogTab = $state<"logs" | "shell" | "insights" | "network" | "settings">("logs");
     let activeContainer = $state<Workload | null>(null);
     let containerActionError = $state<string | null>(null);
     let containerActionBusy = $state(false);
+
+    let settingsEnvText = $state("");
+    let settingsRestartPolicy = $state<"always" | "on-failure" | "never">("always");
+    let settingsMaxRestarts = $state("");
+    let settingsError = $state<string | null>(null);
+    let settingsSaving = $state(false);
 
     let logsLines = $state<string[]>([]);
     let logsError = $state<string | null>(null);
@@ -306,6 +313,15 @@
         }
     }
 
+    function loadSettingsForm(workload: Workload) {
+        settingsEnvText = Object.entries(workload.env_vars ?? {})
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n");
+        settingsRestartPolicy = workload.restart_policy as "always" | "on-failure" | "never";
+        settingsMaxRestarts = workload.max_restarts !== null ? String(workload.max_restarts) : "";
+        settingsError = null;
+    }
+
     function openContainer(workload: Workload) {
         activeContainer = workload;
         containerDialogTab = "logs";
@@ -313,6 +329,7 @@
         containerDialog?.showModal();
         startLogsStream(workload);
         resolveNodeIp(workload.assigned_agent_id);
+        loadSettingsForm(workload);
     }
 
     function closeContainer() {
@@ -322,7 +339,7 @@
         activeContainer = null;
     }
 
-    function switchTab(tab: "logs" | "shell" | "insights" | "network") {
+    function switchTab(tab: "logs" | "shell" | "insights" | "network" | "settings") {
         if (containerDialogTab === tab || !activeContainer) return;
 
         if (containerDialogTab === "logs") stopLogsStream();
@@ -446,6 +463,39 @@
             containerActionError = e instanceof Error ? e.message : "Failed to restart container";
         } finally {
             containerActionBusy = false;
+        }
+    }
+
+    async function handleSaveSettings() {
+        if (!auth.token || !activeContainer) return;
+        settingsSaving = true;
+        settingsError = null;
+        try {
+            const env_vars: Record<string, string> = {};
+            for (const line of settingsEnvText.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const idx = trimmed.indexOf("=");
+                if (idx === -1) throw new Error(`Invalid env var line: "${trimmed}" (expected KEY=VALUE)`);
+                env_vars[trimmed.slice(0, idx)] = trimmed.slice(idx + 1);
+            }
+            const max_restarts = settingsMaxRestarts.trim() === "" ? null : Number(settingsMaxRestarts);
+            if (max_restarts !== null && (!Number.isInteger(max_restarts) || max_restarts < 0)) {
+                throw new Error("Max restarts must be a non-negative integer");
+            }
+
+            await updateWorkload(auth.token, activeContainer.id, {
+                env_vars,
+                restart_policy: settingsRestartPolicy,
+                max_restarts,
+            });
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+            activeContainer = workloads.find((w) => w.id === activeContainer?.id) ?? null;
+            if (activeContainer) loadSettingsForm(activeContainer);
+        } catch (e) {
+            settingsError = e instanceof Error ? e.message : "Failed to save settings";
+        } finally {
+            settingsSaving = false;
         }
     }
 
@@ -1047,7 +1097,7 @@
             {/if}
             <div class="px-6 py-2 border-b shrink-0">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"]] as [tab, label]}
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"], ["settings", "Settings"]] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => switchTab(tab as typeof containerDialogTab)}
@@ -1117,7 +1167,7 @@
                             </p>
                         {/if}
                     </div>
-                {:else}
+                {:else if containerDialogTab === "network"}
                     <div class="h-full overflow-y-auto p-6 space-y-6">
                         {#if activeContainer.ports && activeContainer.ports.length > 0}
                             <div>
@@ -1186,6 +1236,51 @@
                         {:else}
                             <p class="text-sm text-muted-foreground">No ports configured for this container.</p>
                         {/if}
+                    </div>
+                {:else}
+                    <div class="h-full overflow-y-auto p-6 space-y-5">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-muted-foreground" for="s-env">Environment variables</label>
+                            <textarea
+                                id="s-env"
+                                class="border rounded px-3 py-2 text-sm bg-background font-mono h-40 resize-y"
+                                placeholder="KEY=value"
+                                bind:value={settingsEnvText}
+                            ></textarea>
+                            <p class="text-xs text-muted-foreground">One KEY=VALUE per line.</p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-muted-foreground" for="s-restart-policy">Restart policy</label>
+                                <select id="s-restart-policy" class="border rounded px-3 py-1.5 text-sm bg-background" bind:value={settingsRestartPolicy}>
+                                    <option value="always">Always</option>
+                                    <option value="on-failure">On failure</option>
+                                    <option value="never">Never</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-muted-foreground" for="s-max-restarts">Max restarts</label>
+                                <input
+                                    id="s-max-restarts"
+                                    type="number"
+                                    min="0"
+                                    class="border rounded px-3 py-1.5 text-sm bg-background"
+                                    placeholder="Unlimited"
+                                    bind:value={settingsMaxRestarts}
+                                />
+                            </div>
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            Saving applies the new configuration by restarting the container.
+                        </p>
+                        {#if settingsError}
+                            <p class="text-xs text-destructive">{settingsError}</p>
+                        {/if}
+                        <div class="flex justify-end">
+                            <Button size="sm" onclick={handleSaveSettings} disabled={settingsSaving}>
+                                {settingsSaving ? "Saving..." : "Save"}
+                            </Button>
+                        </div>
                     </div>
                 {/if}
             </div>

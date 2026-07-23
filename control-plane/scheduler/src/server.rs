@@ -35,6 +35,10 @@ pub fn create_router(state: AppState) -> Router {
             axum::routing::delete(workloads::delete_workload),
         )
         .route(
+            "/workloads/{id}",
+            axum::routing::patch(workloads::update_workload),
+        )
+        .route(
             "/workloads/{id}/stop",
             axum::routing::post(workloads::stop_workload),
         )
