@@ -268,7 +268,7 @@ async fn configure_and_boot_vm(
             "/boot-source",
             &json!({
                 "kernel_image_path": GUEST_KERNEL_PATH,
-                "boot_args": "console=ttyS0 reboot=k panic=1 pci=off",
+                "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/csfx-guest-init",
             }),
         )
         .await?;

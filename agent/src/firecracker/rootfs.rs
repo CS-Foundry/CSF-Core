@@ -10,6 +10,7 @@ use tracing::info;
 
 const ROOTFS_CACHE_DIR: &str = "/var/lib/csfx-agent/rootfs";
 const ROOTFS_SIZE_MB: u64 = 2048;
+const GUEST_INIT_BINARY_PATH: &str = "/var/lib/csfx-agent/csfx-guest-init";
 const GZIP_LAYER_MEDIA_TYPES: &[&str] = &[
     "application/vnd.oci.image.layer.v1.tar+gzip",
     "application/vnd.docker.image.rootfs.diff.tar.gzip",
@@ -74,7 +75,8 @@ impl RootfsBuilder {
                 .context("Failed to extract image layer")?;
         }
 
-        write_entrypoint_metadata(&image_data.config.data, &extract_dir).await?;
+        write_entrypoint_script(&image_data.config.data, &extract_dir).await?;
+        install_guest_init(&extract_dir).await?;
 
         let tmp_image_path = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4.tmp", cache_key));
         build_ext4_image(&extract_dir, &tmp_image_path).await?;
@@ -157,29 +159,81 @@ fn apply_whiteout(dest: &Path, whiteout_path: &Path, deleted_name: &str) -> Resu
     Ok(())
 }
 
-async fn write_entrypoint_metadata(config_data: &[u8], extract_dir: &Path) -> Result<()> {
+async fn write_entrypoint_script(config_data: &[u8], extract_dir: &Path) -> Result<()> {
     let config_file: ConfigFile =
         serde_json::from_slice(config_data).context("Failed to parse image config")?;
-
     let config = config_file.config.unwrap_or_default();
-    let entrypoint = serde_json::json!({
-        "entrypoint": config.entrypoint,
-        "cmd": config.cmd,
-        "env": config.env,
-        "working_dir": config.working_dir,
-    });
 
-    let csfx_dir = extract_dir.join("csfx");
-    tokio::fs::create_dir_all(&csfx_dir)
+    let script = render_entrypoint_script(&config);
+    let script_path = extract_dir.join("csfx-entrypoint");
+
+    tokio::fs::write(&script_path, script)
         .await
-        .context("Failed to create csfx metadata directory")?;
+        .context("Failed to write entrypoint script")?;
 
-    tokio::fs::write(
-        csfx_dir.join("entrypoint.json"),
-        serde_json::to_vec(&entrypoint).context("Failed to serialize entrypoint metadata")?,
-    )
-    .await
-    .context("Failed to write entrypoint metadata")?;
+    set_executable(&script_path)
+        .await
+        .context("Failed to make entrypoint script executable")?;
+
+    Ok(())
+}
+
+fn render_entrypoint_script(config: &oci_client::config::Config) -> String {
+    let mut script = String::from("#!/bin/sh\nset -e\n");
+
+    if let Some(working_dir) = &config.working_dir {
+        if !working_dir.is_empty() {
+            script.push_str(&format!("cd {}\n", shell_quote(working_dir)));
+        }
+    }
+
+    for entry in config.env.as_deref().unwrap_or_default() {
+        if let Some((key, value)) = entry.split_once('=') {
+            script.push_str(&format!("export {}={}\n", key, shell_quote(value)));
+        }
+    }
+
+    let mut argv: Vec<String> = Vec::new();
+    argv.extend(config.entrypoint.clone().unwrap_or_default());
+    argv.extend(config.cmd.clone().unwrap_or_default());
+
+    script.push_str("exec");
+    for arg in &argv {
+        script.push(' ');
+        script.push_str(&shell_quote(arg));
+    }
+    script.push('\n');
+
+    script
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+async fn set_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = tokio::fs::metadata(path).await?.permissions();
+    permissions.set_mode(0o755);
+    tokio::fs::set_permissions(path, permissions).await?;
+
+    Ok(())
+}
+
+async fn install_guest_init(extract_dir: &Path) -> Result<()> {
+    let dest = extract_dir.join("sbin").join("csfx-guest-init");
+    tokio::fs::create_dir_all(extract_dir.join("sbin"))
+        .await
+        .context("Failed to create sbin directory")?;
+
+    tokio::fs::copy(GUEST_INIT_BINARY_PATH, &dest)
+        .await
+        .context("Failed to copy guest-init binary into rootfs")?;
+
+    set_executable(&dest)
+        .await
+        .context("Failed to make guest-init binary executable")?;
 
     Ok(())
 }
