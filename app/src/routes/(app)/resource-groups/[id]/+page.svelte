@@ -5,13 +5,21 @@
     import { auth } from "$lib/auth/store.svelte";
     import {
         getResourceGroup,
+        updateResourceGroup,
+        deleteResourceGroup,
         listResourceGroupWorkloads,
         listResourceGroupVolumes,
         createWorkload,
         createWorkloadStack,
+        getStack,
+        deleteStack,
+        stopStack,
+        restartStack,
+        redeployStack,
         deleteWorkload,
         stopWorkload,
         restartWorkload,
+        updateWorkload,
         createVolume,
         deleteVolume,
         streamWorkloadLogs,
@@ -32,6 +40,7 @@
     import Icon from "@iconify/svelte";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
+    import IconPicker from "$lib/components/icon-picker.svelte";
 
     const rgId: string = $page.params.id;
 
@@ -40,6 +49,18 @@
     let volumes = $state<Volume[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+
+    let appearanceDialog = $state<HTMLDialogElement | null>(null);
+    let editIcon = $state("mdi:cube-outline");
+    let editColor = $state("#6366f1");
+    let savingAppearance = $state(false);
+    let appearanceError = $state<string | null>(null);
+
+    let rgSettingsDialog = $state<HTMLDialogElement | null>(null);
+    let editName = $state("");
+    let editDescription = $state("");
+    let savingRgSettings = $state(false);
+    let rgSettingsError = $state<string | null>(null);
 
     let activeTab = $state<"all" | "container" | "volume">("all");
     let filterText = $state("");
@@ -104,6 +125,7 @@
 
     let composeStackName = $state("");
     let composeYaml = $state("");
+    let editingStackId = $state<string | null>(null);
     let composePreview = $derived(parseComposePreview(composeYaml));
     let composeLineCount = $derived(Math.max(composeYaml.split("\n").length, 1));
     let composeGutter = $state<HTMLDivElement | null>(null);
@@ -124,10 +146,17 @@
     let volFormSize = $state("10");
 
     let containerDialog = $state<HTMLDialogElement | null>(null);
-    let containerDialogTab = $state<"logs" | "shell" | "insights" | "network">("logs");
+    let containerDialogTab = $state<"logs" | "shell" | "insights" | "network" | "settings">("logs");
     let activeContainer = $state<Workload | null>(null);
     let containerActionError = $state<string | null>(null);
     let containerActionBusy = $state(false);
+
+    let settingsImage = $state("");
+    let settingsEnvText = $state("");
+    let settingsRestartPolicy = $state<"always" | "on-failure" | "never">("always");
+    let settingsMaxRestarts = $state("");
+    let settingsError = $state<string | null>(null);
+    let settingsSaving = $state(false);
 
     let logsLines = $state<string[]>([]);
     let logsError = $state<string | null>(null);
@@ -232,15 +261,20 @@
     }
 
     async function handleDeployStack() {
-        if (!auth.token || !composeYaml.trim() || !composeStackName) return;
+        if (!auth.token || !composeYaml.trim()) return;
+        if (!editingStackId && !composeStackName) return;
         deployingStack = true;
         composeError = null;
         try {
-            await createWorkloadStack(auth.token, {
-                name: composeStackName,
-                resource_group_id: rgId,
-                compose_yaml: composeYaml,
-            });
+            if (editingStackId) {
+                await redeployStack(auth.token, editingStackId, composeYaml);
+            } else {
+                await createWorkloadStack(auth.token, {
+                    name: composeStackName,
+                    resource_group_id: rgId,
+                    compose_yaml: composeYaml,
+                });
+            }
             composeDialog?.close();
             resetComposeForm();
             workloads = await listResourceGroupWorkloads(auth.token, rgId);
@@ -255,6 +289,53 @@
         composeStackName = "";
         composeYaml = "";
         composeError = null;
+        editingStackId = null;
+    }
+
+    async function openStackEditor(stackId: string) {
+        if (!auth.token) return;
+        composeError = null;
+        editingStackId = stackId;
+        composeStackName = "";
+        composeYaml = "";
+        composeDialog?.showModal();
+        try {
+            const stack = await getStack(auth.token, stackId);
+            composeStackName = stack.name;
+            composeYaml = stack.compose_source ?? "";
+        } catch (e) {
+            composeError = e instanceof Error ? e.message : "Failed to load stack";
+        }
+    }
+
+    async function handleStopStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await stopStack(auth.token, stackId);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to stop stack";
+        }
+    }
+
+    async function handleRestartStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await restartStack(auth.token, stackId);
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to restart stack";
+        }
+    }
+
+    async function handleDeleteStack(stackId: string) {
+        if (!auth.token) return;
+        try {
+            await deleteStack(auth.token, stackId);
+            workloads = workloads.filter((w) => w.stack_id !== stackId);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete stack";
+        }
     }
 
     function handleComposeFileUpload(event: Event) {
@@ -306,6 +387,16 @@
         }
     }
 
+    function loadSettingsForm(workload: Workload) {
+        settingsImage = workload.image;
+        settingsEnvText = Object.entries(workload.env_vars ?? {})
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n");
+        settingsRestartPolicy = workload.restart_policy as "always" | "on-failure" | "never";
+        settingsMaxRestarts = workload.max_restarts !== null ? String(workload.max_restarts) : "";
+        settingsError = null;
+    }
+
     function openContainer(workload: Workload) {
         activeContainer = workload;
         containerDialogTab = "logs";
@@ -313,6 +404,7 @@
         containerDialog?.showModal();
         startLogsStream(workload);
         resolveNodeIp(workload.assigned_agent_id);
+        loadSettingsForm(workload);
     }
 
     function closeContainer() {
@@ -322,7 +414,7 @@
         activeContainer = null;
     }
 
-    function switchTab(tab: "logs" | "shell" | "insights" | "network") {
+    function switchTab(tab: "logs" | "shell" | "insights" | "network" | "settings") {
         if (containerDialogTab === tab || !activeContainer) return;
 
         if (containerDialogTab === "logs") stopLogsStream();
@@ -446,6 +538,41 @@
             containerActionError = e instanceof Error ? e.message : "Failed to restart container";
         } finally {
             containerActionBusy = false;
+        }
+    }
+
+    async function handleRedeployContainer() {
+        if (!auth.token || !activeContainer) return;
+        settingsSaving = true;
+        settingsError = null;
+        try {
+            if (!settingsImage.trim()) throw new Error("Image cannot be empty");
+            const env_vars: Record<string, string> = {};
+            for (const line of settingsEnvText.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const idx = trimmed.indexOf("=");
+                if (idx === -1) throw new Error(`Invalid env var line: "${trimmed}" (expected KEY=VALUE)`);
+                env_vars[trimmed.slice(0, idx)] = trimmed.slice(idx + 1);
+            }
+            const max_restarts = settingsMaxRestarts.trim() === "" ? null : Number(settingsMaxRestarts);
+            if (max_restarts !== null && (!Number.isInteger(max_restarts) || max_restarts < 0)) {
+                throw new Error("Max restarts must be a non-negative integer");
+            }
+
+            await updateWorkload(auth.token, activeContainer.id, {
+                image: settingsImage.trim(),
+                env_vars,
+                restart_policy: settingsRestartPolicy,
+                max_restarts,
+            });
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+            activeContainer = workloads.find((w) => w.id === activeContainer?.id) ?? null;
+            if (activeContainer) loadSettingsForm(activeContainer);
+        } catch (e) {
+            settingsError = e instanceof Error ? e.message : "Failed to save settings";
+        } finally {
+            settingsSaving = false;
         }
     }
 
@@ -642,8 +769,70 @@
         return `${bytes} B`;
     }
 
-    function initials(name: string): string {
-        return name.slice(0, 2).toUpperCase();
+    function openAppearanceDialog() {
+        if (!group) return;
+        editIcon = group.icon;
+        editColor = group.color;
+        appearanceError = null;
+        appearanceDialog?.showModal();
+    }
+
+    async function handleSaveAppearance() {
+        if (!auth.token || !group) return;
+        savingAppearance = true;
+        appearanceError = null;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, { icon: editIcon, color: editColor });
+            appearanceDialog?.close();
+        } catch (e) {
+            appearanceError = e instanceof Error ? e.message : "Failed to update appearance";
+        } finally {
+            savingAppearance = false;
+        }
+    }
+
+    async function handleTogglePin() {
+        if (!auth.token || !group) return;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, { pinned: !group.pinned });
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to update resource group";
+        }
+    }
+
+    function openSettingsDialog() {
+        if (!group) return;
+        editName = group.name;
+        editDescription = group.description ?? "";
+        rgSettingsError = null;
+        rgSettingsDialog?.showModal();
+    }
+
+    async function handleSaveSettings() {
+        if (!auth.token || !group || !editName) return;
+        savingRgSettings = true;
+        rgSettingsError = null;
+        try {
+            group = await updateResourceGroup(auth.token, group.id, {
+                name: editName,
+                description: editDescription,
+            });
+            rgSettingsDialog?.close();
+        } catch (e) {
+            rgSettingsError = e instanceof Error ? e.message : "Failed to update resource group";
+        } finally {
+            savingRgSettings = false;
+        }
+    }
+
+    async function handleDeleteGroup() {
+        if (!auth.token || !group) return;
+        try {
+            await deleteResourceGroup(auth.token, group.id);
+            goto("/resource-groups");
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete resource group";
+        }
     }
 
     let totalCpu = $derived(workloads.reduce((s, w) => s + w.cpu_millicores, 0));
@@ -856,7 +1045,7 @@
 >
     <div class="flex flex-col gap-4 p-6">
         <div class="flex items-center justify-between">
-            <h2 class="text-base font-semibold">Deploy Docker Compose Stack</h2>
+            <h2 class="text-base font-semibold">{editingStackId ? "Edit Compose Stack" : "Deploy Docker Compose Stack"}</h2>
             <button
                 class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 onclick={() => composeDialog?.close()}
@@ -868,7 +1057,7 @@
         </div>
         <div class="flex flex-col gap-1">
             <label class="text-xs text-muted-foreground" for="c-name">Stack Name</label>
-            <input id="c-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-stack" bind:value={composeStackName} />
+            <input id="c-name" class="border rounded px-3 py-1.5 text-sm bg-background disabled:opacity-60" placeholder="my-stack" bind:value={composeStackName} disabled={!!editingStackId} />
         </div>
         <div class="grid grid-cols-5 gap-4">
             <div class="col-span-2 flex flex-col gap-1">
@@ -939,8 +1128,81 @@
         {/if}
         <div class="flex gap-2 justify-end">
             <Button size="sm" variant="outline" onclick={() => composeDialog?.close()}>Cancel</Button>
-            <Button size="sm" onclick={handleDeployStack} disabled={deployingStack || !composeStackName || !composeYaml.trim()}>
-                {deployingStack ? "Deploying..." : "Deploy Stack"}
+            <Button size="sm" onclick={handleDeployStack} disabled={deployingStack || (!editingStackId && !composeStackName) || !composeYaml.trim()}>
+                {#if deployingStack}
+                    {editingStackId ? "Redeploying..." : "Deploying..."}
+                {:else}
+                    {editingStackId ? "Redeploy" : "Deploy Stack"}
+                {/if}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={appearanceDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { appearanceError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Edit Appearance</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => appearanceDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <IconPicker bind:icon={editIcon} bind:color={editColor} />
+        {#if appearanceError}
+            <p class="text-xs text-destructive">{appearanceError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => appearanceDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleSaveAppearance} disabled={savingAppearance}>
+                {savingAppearance ? "Saving..." : "Save"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={rgSettingsDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { rgSettingsError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Resource Group Settings</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => rgSettingsDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-edit-name">Name</label>
+                <input id="rg-edit-name" class="border rounded px-3 py-1.5 text-sm bg-background" bind:value={editName} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="rg-edit-desc">Description</label>
+                <input id="rg-edit-desc" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="Optional" bind:value={editDescription} />
+            </div>
+        </div>
+        {#if rgSettingsError}
+            <p class="text-xs text-destructive">{rgSettingsError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => rgSettingsDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleSaveSettings} disabled={savingRgSettings || !editName}>
+                {savingRgSettings ? "Saving..." : "Save"}
             </Button>
         </div>
     </div>
@@ -1047,7 +1309,7 @@
             {/if}
             <div class="px-6 py-2 border-b shrink-0">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"]] as [tab, label]}
+                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"], ...(activeContainer.stack_id ? [] : [["settings", "Settings"]])] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => switchTab(tab as typeof containerDialogTab)}
@@ -1117,7 +1379,7 @@
                             </p>
                         {/if}
                     </div>
-                {:else}
+                {:else if containerDialogTab === "network"}
                     <div class="h-full overflow-y-auto p-6 space-y-6">
                         {#if activeContainer.ports && activeContainer.ports.length > 0}
                             <div>
@@ -1187,6 +1449,60 @@
                             <p class="text-sm text-muted-foreground">No ports configured for this container.</p>
                         {/if}
                     </div>
+                {:else if !activeContainer.stack_id}
+                    <div class="h-full overflow-y-auto p-6 space-y-5">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-muted-foreground" for="s-image">Image</label>
+                            <input
+                                id="s-image"
+                                class="border rounded px-3 py-1.5 text-sm bg-background font-mono"
+                                placeholder="nginx:latest"
+                                bind:value={settingsImage}
+                            />
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-muted-foreground" for="s-env">Environment variables</label>
+                            <textarea
+                                id="s-env"
+                                class="border rounded px-3 py-2 text-sm bg-background font-mono h-40 resize-y"
+                                placeholder="KEY=value"
+                                bind:value={settingsEnvText}
+                            ></textarea>
+                            <p class="text-xs text-muted-foreground">One KEY=VALUE per line.</p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-muted-foreground" for="s-restart-policy">Restart policy</label>
+                                <select id="s-restart-policy" class="border rounded px-3 py-1.5 text-sm bg-background" bind:value={settingsRestartPolicy}>
+                                    <option value="always">Always</option>
+                                    <option value="on-failure">On failure</option>
+                                    <option value="never">Never</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-muted-foreground" for="s-max-restarts">Max restarts</label>
+                                <input
+                                    id="s-max-restarts"
+                                    type="number"
+                                    min="0"
+                                    class="border rounded px-3 py-1.5 text-sm bg-background"
+                                    placeholder="Unlimited"
+                                    bind:value={settingsMaxRestarts}
+                                />
+                            </div>
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            Redeploying applies the new configuration by recreating the container, pulling the image again if changed.
+                        </p>
+                        {#if settingsError}
+                            <p class="text-xs text-destructive">{settingsError}</p>
+                        {/if}
+                        <div class="flex justify-end">
+                            <Button size="sm" onclick={handleRedeployContainer} disabled={settingsSaving}>
+                                {settingsSaving ? "Redeploying..." : "Redeploy"}
+                            </Button>
+                        </div>
+                    </div>
                 {/if}
             </div>
         </div>
@@ -1213,9 +1529,15 @@
         <p class="text-sm text-destructive">{error}</p>
     {:else if group}
         <div class="flex items-start gap-4">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border bg-muted font-semibold text-sm">
-                {initials(group.name)}
-            </div>
+            <button
+                class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-opacity hover:opacity-80"
+                style="background-color: {group.color}20; color: {group.color};"
+                onclick={openAppearanceDialog}
+                aria-label="Edit appearance"
+                title="Edit appearance"
+            >
+                <Icon icon={group.icon} width={24} height={24} />
+            </button>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 flex-wrap">
                     <h1 class="text-xl font-semibold tracking-tight">{group.name}</h1>
@@ -1227,6 +1549,35 @@
                 <p class="text-xs text-muted-foreground font-mono mt-1">{group.internal_cidr}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={handleTogglePin}
+                    aria-label={group.pinned ? "Unpin" : "Pin"}
+                    title={group.pinned ? "Unpin" : "Pin"}
+                >
+                    <Icon
+                        icon={group.pinned ? "mdi:pin" : "mdi:pin-outline"}
+                        width={18}
+                        height={18}
+                        class="transition-transform duration-200 {group.pinned ? 'scale-110' : 'scale-100'}"
+                    />
+                </button>
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={openSettingsDialog}
+                    aria-label="Settings"
+                    title="Settings"
+                >
+                    <Icon icon="mdi:cog-outline" width={18} height={18} />
+                </button>
+                <button
+                    class="flex items-center justify-center w-9 h-9 rounded-full text-destructive hover:bg-destructive/10 transition-colors"
+                    onclick={handleDeleteGroup}
+                    aria-label="Delete"
+                    title="Delete"
+                >
+                    <Icon icon="mdi:trash-can-outline" width={18} height={18} />
+                </button>
                 <Button size="sm" variant="outline" onclick={downloadVpnConfig} disabled={downloadingVpn}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     {downloadingVpn ? "Generating..." : "Connect VPN"}
@@ -1384,21 +1735,28 @@
                             {:else if item.kind === "stack"}
                                 {@const stack = item.data}
                                 {@const expanded = expandedStacks.has(stack.stack_id)}
-                                <tr class="border-t hover:bg-muted/20 transition-colors">
+                                <tr
+                                    class="border-t hover:bg-muted/20 transition-colors cursor-pointer"
+                                    onclick={() => openStackEditor(stack.stack_id)}
+                                >
                                     <td class="px-4 py-3">
-                                        <button
-                                            class="flex items-center gap-2.5 text-left"
-                                            onclick={() => toggleStack(stack.stack_id)}
-                                        >
+                                        <div class="flex items-center gap-2.5">
+                                            <button
+                                                class="flex items-center justify-center w-5 h-5 shrink-0 rounded hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); toggleStack(stack.stack_id); }}
+                                                aria-label={expanded ? "Collapse" : "Expand"}
+                                                title={expanded ? "Collapse" : "Expand"}
+                                            >
+                                                <Icon icon={expanded ? "mdi:chevron-up" : "mdi:chevron-down"} width={16} height={16} class="text-muted-foreground" />
+                                            </button>
                                             <div class="flex w-5 shrink-0 items-center justify-center">
-                                                <Icon icon="mdi:layers-outline" width={20} height={20} />
+                                                <Icon icon="logos:docker-icon" width={20} height={20} />
                                             </div>
                                             <div>
                                                 <p class="font-medium leading-tight">{stack.stack_name}</p>
                                                 <p class="text-xs text-muted-foreground">{stack.children.length} services</p>
                                             </div>
-                                            <Icon icon={expanded ? "mdi:chevron-up" : "mdi:chevron-down"} width={16} height={16} class="text-muted-foreground" />
-                                        </button>
+                                        </div>
                                     </td>
                                     <td class="px-4 py-3">
                                         <span class="text-xs px-2 py-0.5 rounded border font-medium">Compose Stack</span>
@@ -1412,7 +1770,34 @@
                                             {stack.children.filter((c) => c.status === 'running').length}/{stack.children.length} running
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3"></td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleRestartStack(stack.stack_id); }}
+                                                aria-label="Restart stack"
+                                                title="Restart stack"
+                                            >
+                                                <Icon icon="mdi:restart" width={16} height={16} />
+                                            </button>
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleStopStack(stack.stack_id); }}
+                                                aria-label="Stop stack"
+                                                title="Stop stack"
+                                            >
+                                                <Icon icon="mdi:stop-circle-outline" width={16} height={16} />
+                                            </button>
+                                            <button
+                                                class="flex items-center justify-center w-7 h-7 rounded-full text-destructive hover:bg-destructive/10 transition-colors"
+                                                onclick={(e) => { e.stopPropagation(); handleDeleteStack(stack.stack_id); }}
+                                                aria-label="Delete stack"
+                                                title="Delete stack"
+                                            >
+                                                <Icon icon="mdi:trash-can-outline" width={16} height={16} />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                                 {#if expanded}
                                     {#each stack.children as child (child.id)}

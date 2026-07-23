@@ -100,9 +100,62 @@ pub async fn update_ports(
     Ok(())
 }
 
+pub async fn update_spec(
+    db: &DatabaseConnection,
+    workload_id: Uuid,
+    req: &crate::models::workload::UpdateWorkloadRequest,
+) -> Result<workloads::Model, sea_orm::DbErr> {
+    let workload = workloads::Entity::find_by_id(workload_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(workload_id.to_string()))?;
+
+    let mut active: workloads::ActiveModel = workload.into();
+
+    if let Some(ref image) = req.image {
+        active.image = Set(image.clone());
+    }
+    if let Some(ref env_vars) = req.env_vars {
+        active.env_vars = Set(serde_json::to_value(env_vars).ok());
+    }
+    if let Some(ref ports) = req.ports {
+        active.ports = Set(serde_json::to_value(ports).ok());
+    }
+    if let Some(ref restart_policy) = req.restart_policy {
+        active.restart_policy = Set(restart_policy.as_str().to_string());
+    }
+    if req.max_restarts.is_some() {
+        active.max_restarts = Set(req.max_restarts);
+    }
+
+    active.restart_requested = Set(true);
+    active.status = Set(WorkloadStatus::Starting.as_str().to_string());
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await
+}
+
 pub async fn get_all(db: &DatabaseConnection) -> Result<Vec<WorkloadResponse>, sea_orm::DbErr> {
     let rows = workloads::Entity::find().all(db).await?;
     Ok(rows.into_iter().map(into_response).collect())
+}
+
+pub async fn get_by_stack_id(
+    db: &DatabaseConnection,
+    stack_id: Uuid,
+) -> Result<Vec<workloads::Model>, sea_orm::DbErr> {
+    workloads::Entity::find()
+        .filter(workloads::Column::StackId.eq(stack_id))
+        .all(db)
+        .await
+}
+
+pub async fn delete_by_stack_id(db: &DatabaseConnection, stack_id: Uuid) -> Result<(), sea_orm::DbErr> {
+    workloads::Entity::delete_many()
+        .filter(workloads::Column::StackId.eq(stack_id))
+        .exec(db)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_pending(db: &DatabaseConnection) -> Result<Vec<workloads::Model>, sea_orm::DbErr> {
@@ -232,6 +285,14 @@ pub async fn delete(db: &DatabaseConnection, workload_id: Uuid) -> Result<(), se
 }
 
 fn into_response(m: workloads::Model) -> WorkloadResponse {
+    let env_vars = m
+        .env_vars
+        .as_ref()
+        .and_then(|e| serde_json::from_value(e.clone()).ok());
+    let ports = m
+        .ports
+        .as_ref()
+        .and_then(|p| serde_json::from_value(p.clone()).ok());
     let volume_mounts = m
         .volume_mounts
         .as_ref()
@@ -247,6 +308,8 @@ fn into_response(m: workloads::Model) -> WorkloadResponse {
         status: WorkloadStatus::from_str(&m.status),
         assigned_agent_id: m.assigned_agent_id,
         container_id: m.container_id,
+        env_vars,
+        ports,
         volume_mounts,
         resource_group_id: m.resource_group_id,
         stack_id: m.stack_id,

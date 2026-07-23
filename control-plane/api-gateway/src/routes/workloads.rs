@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use serde_json::json;
@@ -96,6 +96,25 @@ pub async fn delete_workload(
     .await
 }
 
+pub async fn update_workload(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: String,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::PATCH,
+        &format!("/workloads/{}", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
+}
+
 pub async fn stop_workload(
     CanManageWorkloads(_claims): CanManageWorkloads,
     State(state): State<AppState>,
@@ -148,6 +167,93 @@ pub async fn create_stack(
     .await
 }
 
+pub async fn get_stack(
+    CanViewWorkloads(_claims): CanViewWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::GET,
+        &format!("/workload-stacks/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn delete_stack(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/workload-stacks/{}", id),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn stop_stack(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::POST,
+        &format!("/workload-stacks/{}/stop", id),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn restart_stack(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::POST,
+        &format!("/workload-stacks/{}/restart", id),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn redeploy_stack(
+    CanManageWorkloads(_claims): CanManageWorkloads,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: String,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    let header_map = header_vec(&headers);
+    proxy_to_scheduler(
+        &state,
+        reqwest::Method::PATCH,
+        &format!("/workload-stacks/{}", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
+}
+
 fn header_vec(headers: &HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
@@ -160,7 +266,13 @@ pub fn workloads_routes() -> Router<AppState> {
         .route("/workloads", post(create_workload))
         .route("/workloads", get(list_workloads))
         .route("/workloads/{id}", delete(delete_workload))
+        .route("/workloads/{id}", patch(update_workload))
         .route("/workloads/{id}/stop", post(stop_workload))
         .route("/workloads/{id}/restart", post(restart_workload))
         .route("/workload-stacks", post(create_stack))
+        .route("/workload-stacks/{id}", get(get_stack))
+        .route("/workload-stacks/{id}", delete(delete_stack))
+        .route("/workload-stacks/{id}/stop", post(stop_stack))
+        .route("/workload-stacks/{id}/restart", post(restart_stack))
+        .route("/workload-stacks/{id}", patch(redeploy_stack))
 }

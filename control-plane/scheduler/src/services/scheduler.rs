@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use crate::models::compose::{ComposeServiceSpec, CreateStackRequest, CreateStackResponse};
 use crate::models::workload::{
-    AgentResources, CreateWorkloadRequest, CreateWorkloadResponse, WorkloadStatus,
+    AgentResources, CreateWorkloadRequest, CreateWorkloadResponse, UpdateWorkloadRequest,
+    WorkloadStatus,
 };
 use crate::services::compose_parser::{self, ComposeParseError};
 use crate::services::etcd::{delete_placement, put_placement, PlacementRecord};
@@ -68,7 +69,10 @@ impl SchedulerService {
 
                 if let Some(mut ports) = req.ports.clone() {
                     crate::services::port_allocator::allocate_node_ports(
-                        &self.db, agent_id, workload.id, &mut ports,
+                        &self.db,
+                        agent_id,
+                        workload.id,
+                        &mut ports,
                     )
                     .await?;
                     let ports_json = crate::services::port_allocator::ports_to_json(&ports)?;
@@ -90,9 +94,7 @@ impl SchedulerService {
                     runtime_class: req.runtime_class.as_str().to_string(),
                 };
 
-                tokio::spawn(crate::services::gateway_notify::notify_assignment(
-                    agent_id,
-                ));
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
 
                 put_placement(&self.etcd, &record).await?;
 
@@ -163,6 +165,107 @@ impl SchedulerService {
             stack_id: stack.id,
             workloads,
         })
+    }
+
+    pub async fn delete_stack(&self, stack_id: Uuid) -> Result<(), String> {
+        let workloads = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to fetch stack workloads: {}", e))?;
+
+        for workload in &workloads {
+            delete_placement(&self.etcd, workload.id).await?;
+        }
+
+        crate::db::workloads::delete_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to delete stack workloads: {}", e))?;
+
+        crate::db::workload_stacks::delete(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to delete stack: {}", e))?;
+
+        Ok(())
+    }
+
+    pub async fn stop_stack(&self, stack_id: Uuid) -> Result<(), String> {
+        let workloads = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to fetch stack workloads: {}", e))?;
+
+        for workload in &workloads {
+            let model = crate::db::workloads::set_desired_state(
+                &self.db,
+                workload.id,
+                crate::models::workload::DesiredState::Stopped,
+            )
+            .await
+            .map_err(|e| format!("Failed to stop workload: {}", e))?;
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn restart_stack(&self, stack_id: Uuid) -> Result<(), String> {
+        let workloads = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to fetch stack workloads: {}", e))?;
+
+        for workload in &workloads {
+            let model = crate::db::workloads::request_restart(&self.db, workload.id)
+                .await
+                .map_err(|e| format!("Failed to restart workload: {}", e))?;
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn redeploy_stack(
+        &self,
+        stack_id: Uuid,
+        compose_yaml: &str,
+    ) -> Result<(), String> {
+        let services = compose_parser::parse_compose(compose_yaml)
+            .map_err(|e| format_compose_error(&e))?;
+
+        let existing = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
+            .await
+            .map_err(|e| format!("Failed to fetch stack workloads: {}", e))?;
+
+        for service in &services {
+            let Some(workload) = existing
+                .iter()
+                .find(|w| w.service_name.as_deref() == Some(service.service_name.as_str()))
+            else {
+                continue;
+            };
+
+            let update = UpdateWorkloadRequest {
+                image: Some(service.image.clone()),
+                env_vars: Some(service.env_vars.clone().unwrap_or_default()),
+                ports: service.ports.clone(),
+                restart_policy: None,
+                max_restarts: None,
+            };
+
+            let model = crate::db::workloads::update_spec(&self.db, workload.id, &update)
+                .await
+                .map_err(|e| format!("Failed to update workload: {}", e))?;
+            if let Some(agent_id) = model.assigned_agent_id {
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
+            }
+        }
+
+        crate::db::workload_stacks::update_compose_source(&self.db, stack_id, compose_yaml)
+            .await
+            .map_err(|e| format!("Failed to update stack source: {}", e))?;
+
+        Ok(())
     }
 
     async fn place_stack_workloads(

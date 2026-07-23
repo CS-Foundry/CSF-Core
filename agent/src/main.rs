@@ -273,7 +273,19 @@ async fn reconcile_tick(
     current_flake_rev: &mut String,
 ) {
     process_volumes(client, agent_id, api_key, mounted_volumes).await;
-    let resource_group_ids = process_workloads(client, api_key, docker, running_containers, workload_phases, mounted_volumes, restart_counts, service_dns_registry, rg_dns_registry, wg_private_key_b64).await;
+    let resource_group_ids = process_workloads(
+        client,
+        api_key,
+        docker,
+        running_containers,
+        workload_phases,
+        mounted_volumes,
+        restart_counts,
+        service_dns_registry,
+        rg_dns_registry,
+        wg_private_key_b64,
+    )
+    .await;
     sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
     sync_vpn_peers(client, api_key, &resource_group_ids).await;
     cleanup_stale_resource_groups(client, api_key, wg_private_key_b64).await;
@@ -282,7 +294,10 @@ async fn reconcile_tick(
     push_workload_stats(client, api_key, docker, running_containers).await;
     let metrics = system::collect_metrics();
 
-    match client.heartbeat(agent_id, api_key, Some(statuses), Some(metrics)).await {
+    match client
+        .heartbeat(agent_id, api_key, Some(statuses), Some(metrics))
+        .await
+    {
         Ok(resp) => {
             if *failure_count > 0 {
                 info!(agent_id = %agent_id, "Heartbeat recovered after {} failures", failure_count);
@@ -465,7 +480,10 @@ async fn reap_stale_containers(
 
         let dns_entry = service_dns_registry.lock().await.remove(&workload_id);
         if let Some((resource_group_id, service_name)) = dns_entry {
-            if let Err(e) = rg_dns_registry.remove(&resource_group_id, &service_name).await {
+            if let Err(e) = rg_dns_registry
+                .remove(&resource_group_id, &service_name)
+                .await
+            {
                 warn!(workload_id = %workload_id, error = %e, "Failed to remove service dns record");
             }
         }
@@ -572,7 +590,10 @@ async fn process_workloads(
                 for (workload_id, container_id) in existing {
                     containers.insert(workload_id, container_id);
                 }
-                info!(count = containers.len(), "Reconciled running containers from docker state");
+                info!(
+                    count = containers.len(),
+                    "Reconciled running containers from docker state"
+                );
             }
             Err(e) => {
                 warn!(error = %e, "Failed to reconcile running containers from docker state");
@@ -692,6 +713,17 @@ async fn start_or_restart_workload(
         }
     }
 
+    if let Some(max) = workload.max_restarts {
+        let count = *restart_counts.lock().await.get(&workload.id).unwrap_or(&0);
+        if count as i32 >= max {
+            workload_phases
+                .lock()
+                .await
+                .insert(workload.id.clone(), "failed".to_string());
+            return false;
+        }
+    }
+
     workload_phases
         .lock()
         .await
@@ -754,8 +786,14 @@ async fn start_or_restart_workload(
             restart_requested
         }
         Err(e) => {
-            workload_phases.lock().await.remove(&workload.id);
-            warn!(workload_id = %workload.id, error = ?e, "Failed to start workload");
+            let mut counts = restart_counts.lock().await;
+            let count = counts.entry(workload.id.clone()).or_insert(0);
+            *count += 1;
+            warn!(workload_id = %workload.id, error = ?e, attempt = *count, "Failed to start workload");
+            workload_phases
+                .lock()
+                .await
+                .insert(workload.id.clone(), "failed".to_string());
             false
         }
     }
@@ -770,7 +808,10 @@ async fn register_service_dns(
 ) {
     let network_name = docker::rg_network_name(resource_group_id);
 
-    let ip_address = match runtime.service_network_ip(container_id, &network_name).await {
+    let ip_address = match runtime
+        .service_network_ip(container_id, &network_name)
+        .await
+    {
         Ok(Some(ip)) => ip,
         Ok(None) => {
             warn!(container_id = %container_id, network = %network_name, "No network ip found for service dns registration");

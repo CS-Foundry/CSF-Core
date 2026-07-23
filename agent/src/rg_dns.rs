@@ -62,10 +62,7 @@ impl RgDnsRegistry {
     }
 }
 
-async fn write_zone_file(
-    resource_group_id: &str,
-    records: &HashMap<String, String>,
-) -> Result<()> {
+async fn write_zone_file(resource_group_id: &str, records: &HashMap<String, String>) -> Result<()> {
     fs::create_dir_all(DNS_DIR)
         .await
         .context("Failed to create dns zone directory")?;
@@ -97,11 +94,12 @@ pub async fn write_corefile(resource_group_id: &str, listen_ip: &str) -> Result<
         .context("Failed to create dns zone directory")?;
 
     let zone = zone_name(resource_group_id);
+    let zone_path = zone_file_path(resource_group_id).display().to_string();
     let contents = format!(
-        "{zone}:53 {{\n    bind {listen_ip}\n    file /zones/{rg}.zone\n    reload 2s\n    log\n    errors\n}}\n",
+        "{zone}:53 {{\n    bind {listen_ip}\n    file {zone_path}\n    reload 2s\n    log\n    errors\n}}\n",
         zone = zone,
         listen_ip = listen_ip,
-        rg = resource_group_id,
+        zone_path = zone_path,
     );
 
     let path = corefile_path(resource_group_id);

@@ -129,6 +129,7 @@ impl ServiceClient {
             reqwest::Method::GET => self.client.get(&url),
             reqwest::Method::POST => self.client.post(&url),
             reqwest::Method::DELETE => self.client.delete(&url),
+            reqwest::Method::PATCH => self.client.patch(&url),
             _ => return Err(anyhow::anyhow!("Unsupported HTTP method")),
         };
 

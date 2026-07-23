@@ -9,6 +9,9 @@ export interface ResourceGroup {
     description: string | null;
     internal_cidr: string;
     status: string;
+    icon: string;
+    color: string;
+    pinned: boolean;
     created_at: string;
     updated_at: string | null;
 }
@@ -17,6 +20,16 @@ export interface CreateResourceGroupRequest {
     name: string;
     description?: string;
     internal_cidr: string;
+    icon?: string;
+    color?: string;
+}
+
+export interface UpdateResourceGroupRequest {
+    name?: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    pinned?: boolean;
 }
 
 export interface PortMapping {
@@ -52,6 +65,7 @@ export interface Workload {
     status: string;
     assigned_agent_id: string | null;
     container_id: string | null;
+    env_vars: Record<string, string> | null;
     ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string | null;
@@ -80,6 +94,14 @@ export interface CreateWorkloadRequest {
     ports: PortMapping[] | null;
     volume_mounts: VolumeMount[] | null;
     resource_group_id: string;
+    restart_policy?: 'always' | 'on-failure' | 'never';
+    max_restarts?: number | null;
+}
+
+export interface UpdateWorkloadRequest {
+    image?: string;
+    env_vars?: Record<string, string> | null;
+    ports?: PortMapping[] | null;
     restart_policy?: 'always' | 'on-failure' | 'never';
     max_restarts?: number | null;
 }
@@ -116,6 +138,15 @@ export async function listResourceGroups(token: string): Promise<ResourceGroup[]
     return res.json();
 }
 
+export async function suggestCidr(token: string): Promise<string> {
+    const res = await authedFetch(`${API_BASE}/resource-groups/suggest-cidr`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to suggest cidr: ${res.status}`);
+    const data = await res.json();
+    return data.internal_cidr;
+}
+
 export async function getResourceGroup(token: string, id: string): Promise<ResourceGroup> {
     const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -137,6 +168,26 @@ export async function createResourceGroup(
         body: JSON.stringify(req),
     });
     if (!res.ok) throw new Error(`Failed to create resource group: ${res.status}`);
+    return res.json();
+}
+
+export async function updateResourceGroup(
+    token: string,
+    id: string,
+    req: UpdateResourceGroupRequest,
+): Promise<ResourceGroup> {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to update resource group: ${res.status}`);
+    }
     return res.json();
 }
 
@@ -191,12 +242,89 @@ export async function createWorkloadStack(
     return res.json();
 }
 
+export interface Stack {
+    id: string;
+    resource_group_id: string;
+    name: string;
+    compose_source: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string | null;
+}
+
+export async function getStack(token: string, id: string): Promise<Stack> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to get stack: ${res.status}`);
+    return res.json();
+}
+
+export async function deleteStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete stack: ${res.status}`);
+}
+
+export async function stopStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to stop stack: ${res.status}`);
+}
+
+export async function restartStack(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}/restart`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to restart stack: ${res.status}`);
+}
+
+export async function redeployStack(token: string, id: string, compose_yaml: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/workload-stacks/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ compose_yaml }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to redeploy stack: ${res.status}`);
+    }
+}
+
 export async function deleteWorkload(token: string, id: string): Promise<void> {
     const res = await authedFetch(`${API_BASE}/workloads/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to delete workload: ${res.status}`);
+}
+
+export async function updateWorkload(
+    token: string,
+    id: string,
+    req: UpdateWorkloadRequest,
+): Promise<Workload> {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to update workload: ${res.status}`);
+    }
+    return res.json();
 }
 
 export async function stopWorkload(token: string, id: string): Promise<Workload> {

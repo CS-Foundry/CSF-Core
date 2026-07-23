@@ -29,6 +29,7 @@ mod m20260711_000000_add_runtime_class;
 mod m20260711_010000_add_agent_cordoned;
 mod m20260712_000000_add_workload_lifecycle;
 mod m20260712_010000_add_resource_group_vpn_peers;
+mod m20260723_000000_add_resource_group_appearance;
 
 pub struct Migrator;
 
@@ -65,6 +66,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260711_010000_add_agent_cordoned::Migration),
             Box::new(m20260712_000000_add_workload_lifecycle::Migration),
             Box::new(m20260712_010000_add_resource_group_vpn_peers::Migration),
+            Box::new(m20260723_000000_add_resource_group_appearance::Migration),
         ]
     }
 }

@@ -39,3 +39,35 @@ pub async fn update_status(
     active.update(db).await?;
     Ok(())
 }
+
+pub async fn update_compose_source(
+    db: &DatabaseConnection,
+    stack_id: Uuid,
+    compose_source: &str,
+) -> Result<(), sea_orm::DbErr> {
+    let stack = workload_stacks::Entity::find_by_id(stack_id)
+        .one(db)
+        .await?
+        .ok_or(sea_orm::DbErr::RecordNotFound(stack_id.to_string()))?;
+
+    let mut active: workload_stacks::ActiveModel = stack.into();
+    active.compose_source = Set(Some(compose_source.to_string()));
+    active.updated_at = Set(Some(Utc::now().naive_utc()));
+
+    active.update(db).await?;
+    Ok(())
+}
+
+pub async fn get_by_id(
+    db: &DatabaseConnection,
+    stack_id: Uuid,
+) -> Result<Option<workload_stacks::Model>, sea_orm::DbErr> {
+    workload_stacks::Entity::find_by_id(stack_id).one(db).await
+}
+
+pub async fn delete(db: &DatabaseConnection, stack_id: Uuid) -> Result<(), sea_orm::DbErr> {
+    workload_stacks::Entity::delete_by_id(stack_id)
+        .exec(db)
+        .await?;
+    Ok(())
+}

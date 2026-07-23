@@ -56,9 +56,7 @@ impl AgentStreamRegistry {
     pub async fn notify_assignment(&self, agent_id: Uuid) -> bool {
         let senders = self.senders.lock().await;
         match senders.get(&agent_id) {
-            Some(tx) => tx
-                .send(Message::Text(ASSIGNMENT_SIGNAL.into()))
-                .is_ok(),
+            Some(tx) => tx.send(Message::Text(ASSIGNMENT_SIGNAL.into())).is_ok(),
             None => false,
         }
     }
@@ -116,7 +114,10 @@ pub async fn notify_assignment_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let delivered = state.agent_stream_registry.notify_assignment(agent_id).await;
+    let delivered = state
+        .agent_stream_registry
+        .notify_assignment(agent_id)
+        .await;
     info!(agent_id = %agent_id, delivered, "assignment notification processed");
     Ok(StatusCode::NO_CONTENT)
 }
