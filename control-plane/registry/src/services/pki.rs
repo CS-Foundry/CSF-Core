@@ -62,9 +62,10 @@ impl PkiService {
             });
         }
 
-        if let (Ok(cert_pem), Ok(key_pem)) =
-            (std::fs::read_to_string(CA_CERT_PATH), std::fs::read_to_string(CA_KEY_PATH))
-        {
+        if let (Ok(cert_pem), Ok(key_pem)) = (
+            std::fs::read_to_string(CA_CERT_PATH),
+            std::fs::read_to_string(CA_KEY_PATH),
+        ) {
             KeyPair::from_pem(&key_pem).map_err(|e| anyhow!("Failed to load CA key: {}", e))?;
             crate::log_info!("pki", "CA loaded from disk");
             return Ok(CaState {
@@ -74,7 +75,10 @@ impl PkiService {
             });
         }
 
-        crate::log_warn!("pki", "no persisted CA found, generating and persisting new CA");
+        crate::log_warn!(
+            "pki",
+            "no persisted CA found, generating and persisting new CA"
+        );
         let ca = Self::generate_ca()?;
         std::fs::create_dir_all(CA_STATE_DIR)
             .map_err(|e| anyhow!("Failed to create CA state dir: {}", e))?;

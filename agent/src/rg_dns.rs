@@ -62,10 +62,7 @@ impl RgDnsRegistry {
     }
 }
 
-async fn write_zone_file(
-    resource_group_id: &str,
-    records: &HashMap<String, String>,
-) -> Result<()> {
+async fn write_zone_file(resource_group_id: &str, records: &HashMap<String, String>) -> Result<()> {
     fs::create_dir_all(DNS_DIR)
         .await
         .context("Failed to create dns zone directory")?;

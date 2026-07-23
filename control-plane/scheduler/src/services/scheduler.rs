@@ -68,7 +68,10 @@ impl SchedulerService {
 
                 if let Some(mut ports) = req.ports.clone() {
                     crate::services::port_allocator::allocate_node_ports(
-                        &self.db, agent_id, workload.id, &mut ports,
+                        &self.db,
+                        agent_id,
+                        workload.id,
+                        &mut ports,
                     )
                     .await?;
                     let ports_json = crate::services::port_allocator::ports_to_json(&ports)?;
@@ -90,9 +93,7 @@ impl SchedulerService {
                     runtime_class: req.runtime_class.as_str().to_string(),
                 };
 
-                tokio::spawn(crate::services::gateway_notify::notify_assignment(
-                    agent_id,
-                ));
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
 
                 put_placement(&self.etcd, &record).await?;
 

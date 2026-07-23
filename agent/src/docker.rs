@@ -251,30 +251,30 @@ impl DockerRuntime {
 
         let existing = self
             .docker
-            .inspect_container(&container_name, None::<InspectContainerOptionsBuilder>.map(|b| b.build()))
+            .inspect_container(
+                &container_name,
+                None::<InspectContainerOptionsBuilder>.map(|b| b.build()),
+            )
             .await;
 
-        match existing {
-            Ok(inspect) => {
-                let running = inspect
-                    .state
-                    .and_then(|s| s.status)
-                    .map(|status| status == ContainerStateStatusEnum::RUNNING)
-                    .unwrap_or(false);
-                if running {
-                    return Ok(());
-                }
-                info!(resource_group_id = %resource_group_id, "Resource group dns container exists but not running, recreating");
-                let remove_options =
-                    bollard::query_parameters::RemoveContainerOptionsBuilder::default()
-                        .force(true)
-                        .build();
-                self.docker
-                    .remove_container(&container_name, Some(remove_options))
-                    .await
-                    .context("Failed to remove stale resource group dns container")?;
+        if let Ok(inspect) = existing {
+            let running = inspect
+                .state
+                .and_then(|s| s.status)
+                .map(|status| status == ContainerStateStatusEnum::RUNNING)
+                .unwrap_or(false);
+            if running {
+                return Ok(());
             }
-            Err(_) => {}
+            info!(resource_group_id = %resource_group_id, "Resource group dns container exists but not running, recreating");
+            let remove_options =
+                bollard::query_parameters::RemoveContainerOptionsBuilder::default()
+                    .force(true)
+                    .build();
+            self.docker
+                .remove_container(&container_name, Some(remove_options))
+                .await
+                .context("Failed to remove stale resource group dns container")?;
         }
 
         crate::rg_dns::write_corefile(resource_group_id, &dns_ip)
@@ -310,10 +310,7 @@ impl DockerRuntime {
             )])),
         };
 
-        let corefile_container_path = format!(
-            "/zones/{}.Corefile",
-            resource_group_id
-        );
+        let corefile_container_path = format!("/zones/{}.Corefile", resource_group_id);
 
         let config = ContainerCreateBody {
             image: Some(DNS_IMAGE.to_string()),
@@ -822,8 +819,7 @@ impl crate::runtime::Runtime for DockerRuntime {
         workload_handle: &str,
         network_name: &str,
     ) -> Result<Option<String>> {
-        self.inspect_network_ip(workload_handle, network_name)
-            .await
+        self.inspect_network_ip(workload_handle, network_name).await
     }
 
     async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {

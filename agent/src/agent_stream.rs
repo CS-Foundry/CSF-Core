@@ -75,7 +75,14 @@ async fn run(gateway_url: String, api_key: String, agent_id: Uuid, tx: mpsc::Unb
             },
         );
 
-        match tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector.clone()).await {
+        match tokio_tungstenite::connect_async_tls_with_config(
+            request,
+            None,
+            false,
+            connector.clone(),
+        )
+        .await
+        {
             Ok((socket, _)) => {
                 info!(agent_id = %agent_id, "agent stream connected");
                 delay = MIN_RECONNECT_DELAY;

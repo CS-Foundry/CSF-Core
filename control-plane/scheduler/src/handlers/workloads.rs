@@ -58,9 +58,7 @@ pub async fn stop_workload(
     match db::workloads::set_desired_state(&state.db, id, DesiredState::Stopped).await {
         Ok(model) => {
             if let Some(agent_id) = model.assigned_agent_id {
-                tokio::spawn(crate::services::gateway_notify::notify_assignment(
-                    agent_id,
-                ));
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
             }
             (StatusCode::OK, Json(serde_json::json!(model))).into_response()
         }
@@ -80,9 +78,7 @@ pub async fn restart_workload(
     match db::workloads::request_restart(&state.db, id).await {
         Ok(model) => {
             if let Some(agent_id) = model.assigned_agent_id {
-                tokio::spawn(crate::services::gateway_notify::notify_assignment(
-                    agent_id,
-                ));
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
             }
             (StatusCode::OK, Json(serde_json::json!(model))).into_response()
         }
