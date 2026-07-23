@@ -48,12 +48,12 @@ impl FirecrackerRuntime {
 
 #[async_trait::async_trait]
 impl crate::runtime::Runtime for FirecrackerRuntime {
-    async fn pull_image(&self, image: &str) -> Result<()> {
-        self.docker.pull_image(image).await
+    async fn pull_image(&self, _image: &str) -> Result<()> {
+        Ok(())
     }
 
     async fn start_workload(&self, spec: &WorkloadSpec) -> Result<String> {
-        let rootfs_builder = RootfsBuilder::new(self.docker.docker_handle());
+        let rootfs_builder = RootfsBuilder::new();
         let rootfs_path = rootfs_builder.ensure_rootfs(&spec.image).await?;
 
         let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&spec.workload_id);

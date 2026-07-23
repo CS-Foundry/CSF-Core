@@ -37,10 +37,6 @@ pub struct DockerRuntime {
 }
 
 impl DockerRuntime {
-    pub fn docker_handle(&self) -> &Docker {
-        &self.docker
-    }
-
     pub async fn ensure_running(wg_private_key_b64: String) -> Result<Self> {
         if !Path::new(DOCKER_SOCKET_PATH).exists() {
             start_docker_unit().await?;
