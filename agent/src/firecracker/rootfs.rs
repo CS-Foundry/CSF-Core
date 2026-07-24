@@ -65,18 +65,23 @@ impl RootfsBuilder {
             .context("Failed to pull image layers")?;
 
         let extract_dir = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.extract", cache_key));
+        if extract_dir.exists() {
+            tokio::fs::remove_dir_all(&extract_dir)
+                .await
+                .context("Failed to clean up stale rootfs extraction directory")?;
+        }
         tokio::fs::create_dir_all(&extract_dir)
             .await
             .context("Failed to create rootfs extraction directory")?;
 
-        for layer in &image_data.layers {
-            extract_layer(&layer.data, &extract_dir)
-                .await
-                .context("Failed to extract image layer")?;
-        }
+        let build_result = self.build_extracted_rootfs(&image_data, &extract_dir).await;
 
-        write_entrypoint_script(&image_data.config.data, &extract_dir).await?;
-        install_guest_init(&extract_dir).await?;
+        if build_result.is_err() {
+            tokio::fs::remove_dir_all(&extract_dir)
+                .await
+                .context("Failed to clean up rootfs extraction directory after failure")?;
+        }
+        build_result?;
 
         let tmp_image_path = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4.tmp", cache_key));
         build_ext4_image(&extract_dir, &tmp_image_path).await?;
@@ -92,6 +97,23 @@ impl RootfsBuilder {
         info!(image = %image, path = ?image_path, "Rootfs image ready");
 
         Ok(image_path)
+    }
+
+    async fn build_extracted_rootfs(
+        &self,
+        image_data: &oci_client::client::ImageData,
+        extract_dir: &Path,
+    ) -> Result<()> {
+        for layer in &image_data.layers {
+            extract_layer(&layer.data, extract_dir)
+                .await
+                .context("Failed to extract image layer")?;
+        }
+
+        write_entrypoint_script(&image_data.config.data, extract_dir).await?;
+        install_guest_init(extract_dir).await?;
+
+        Ok(())
     }
 }
 
