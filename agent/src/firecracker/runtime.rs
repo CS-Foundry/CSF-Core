@@ -546,6 +546,11 @@ async fn spawn_jailer(
     let uid_arg = jailer_uid.to_string();
     let firecracker_bin = firecracker_bin_path();
     let chroot_base_dir = jailer_chroot_base_dir(chroot_dir);
+    if chroot_base_dir.exists() {
+        tokio::fs::remove_dir_all(&chroot_base_dir)
+            .await
+            .context("Failed to clean up stale jailer chroot directory")?;
+    }
     tokio::fs::create_dir_all(&chroot_base_dir)
         .await
         .context("Failed to create jailer chroot base directory")?;
