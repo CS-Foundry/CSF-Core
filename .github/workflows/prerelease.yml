@@ -319,6 +319,16 @@ jobs:
 
           cat > infra/versions.nix <<EOF
           {
+            firecrackerGuestKernel = {
+              amd64 = {
+                url    = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.9/x86_64/vmlinux-6.1.102";
+                sha256 = "3b6e45c66d1b66d4fb0a1528107abbe890972f94e902bafe85fdf5108288c575";
+              };
+              arm64 = {
+                url    = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.9/aarch64/vmlinux-6.1.102";
+                sha256 = "aee80c3ab9bc2d32f4c00de8ddf919c200359a400aae7c4710e8bc8ad438e1c4";
+              };
+            };
             csfx = {
               version = "${VERSION}";
               agent = {
