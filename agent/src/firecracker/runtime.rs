@@ -26,6 +26,22 @@ fn firecracker_bin_path() -> String {
         .unwrap_or_else(|_| DEFAULT_FIRECRACKER_BIN_PATH.to_string())
 }
 
+fn jailer_chroot_base_dir(chroot_dir: &Path) -> PathBuf {
+    chroot_dir.join("jail")
+}
+
+fn jailer_vm_root_dir(chroot_dir: &Path, workload_id: &str) -> PathBuf {
+    let firecracker_bin_name = Path::new(&firecracker_bin_path())
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "firecracker".to_string());
+
+    jailer_chroot_base_dir(chroot_dir)
+        .join(firecracker_bin_name)
+        .join(workload_id)
+        .join("root")
+}
+
 struct VmHandle {
     workload_id: String,
     jailer_pid: u32,
@@ -169,7 +185,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         let vsock_cid = self.allocate_cid().await;
         let tap_device = format!("fctap{}", vsock_cid);
-        let api_socket = chroot_dir
+        let api_socket = jailer_vm_root_dir(&chroot_dir, &spec.workload_id)
             .join("firecracker.socket")
             .to_string_lossy()
             .to_string();
@@ -321,8 +337,8 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             return Ok(());
         };
 
-        let _ = Command::new("kill")
-            .arg(handle.jailer_pid.to_string())
+        let _ = Command::new("systemctl")
+            .args(["stop", &jailer_unit_name(&handle.workload_id)])
             .status()
             .await;
 
@@ -517,6 +533,10 @@ fn vsock_log_stream(
     }
 }
 
+fn jailer_unit_name(workload_id: &str) -> String {
+    format!("csfx-jailer-{}", workload_id)
+}
+
 async fn spawn_jailer(
     workload_id: &str,
     chroot_dir: &Path,
@@ -525,8 +545,20 @@ async fn spawn_jailer(
 ) -> Result<u32> {
     let uid_arg = jailer_uid.to_string();
     let firecracker_bin = firecracker_bin_path();
-    let child = Command::new("jailer")
+    let chroot_base_dir = jailer_chroot_base_dir(chroot_dir);
+    tokio::fs::create_dir_all(&chroot_base_dir)
+        .await
+        .context("Failed to create jailer chroot base directory")?;
+
+    let unit_name = jailer_unit_name(workload_id);
+    let status = Command::new("systemd-run")
         .args([
+            "--unit",
+            &unit_name,
+            "--collect",
+            "--uid=0",
+            "--gid=0",
+            "jailer",
             "--id",
             workload_id,
             "--exec-file",
@@ -536,7 +568,7 @@ async fn spawn_jailer(
             "--gid",
             &uid_arg,
             "--chroot-base-dir",
-            chroot_dir.to_string_lossy().as_ref(),
+            chroot_base_dir.to_string_lossy().as_ref(),
             "--cgroup-version",
             "2",
             "--parent-cgroup",
@@ -545,10 +577,22 @@ async fn spawn_jailer(
             "--api-sock",
             api_socket,
         ])
-        .spawn()
-        .context("Failed to spawn jailer")?;
+        .status()
+        .await
+        .context("Failed to spawn jailer via systemd-run")?;
 
-    child.id().context("jailer process has no pid")
+    if !status.success() {
+        anyhow::bail!("systemd-run failed to start jailer unit {}", unit_name);
+    }
+
+    for _ in 0..50 {
+        if let Some(pid) = find_live_jailer_pid(workload_id).await {
+            return Ok(pid);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    anyhow::bail!("jailer process for workload {} did not appear", workload_id)
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
