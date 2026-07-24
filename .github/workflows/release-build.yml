@@ -35,6 +35,7 @@ jobs:
         binary:
           - csfx-updater
           - csfx-agent
+          - csfx-guest-init
         arch:
           - amd64
           - arm64
@@ -230,6 +231,10 @@ jobs:
             csfx-agent-amd64.sha256 \
             csfx-agent-arm64 \
             csfx-agent-arm64.sha256 \
+            csfx-guest-init-amd64 \
+            csfx-guest-init-amd64.sha256 \
+            csfx-guest-init-arm64 \
+            csfx-guest-init-arm64.sha256 \
             csfx-frontend.tar.gz \
             csfx-frontend.tar.gz.sha256 \
             ${CP_BINS} \
@@ -251,6 +256,12 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           pattern: csfx-agent-*
+          path: /tmp/binaries
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: csfx-guest-init-*
           path: /tmp/binaries
           merge-multiple: true
 
@@ -301,6 +312,16 @@ jobs:
                 arm64 = {
                   url    = "${RELEASE_BASE}/csfx-agent-arm64";
                   sha256 = "$(get_sha256 csfx-agent-arm64)";
+                };
+              };
+              guestInit = {
+                amd64 = {
+                  url    = "${RELEASE_BASE}/csfx-guest-init-amd64";
+                  sha256 = "$(get_sha256 csfx-guest-init-amd64)";
+                };
+                arm64 = {
+                  url    = "${RELEASE_BASE}/csfx-guest-init-arm64";
+                  sha256 = "$(get_sha256 csfx-guest-init-arm64)";
                 };
               };
               controlPlane = {
