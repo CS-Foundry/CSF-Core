@@ -19,6 +19,12 @@ const GUEST_KERNEL_PATH: &str = "/var/lib/csfx-agent/vmlinux";
 const GUEST_CID_BASE: u32 = 1000;
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const CGROUP_PARENT: &str = "csfx-firecracker";
+const DEFAULT_FIRECRACKER_BIN_PATH: &str = "/usr/bin/firecracker";
+
+fn firecracker_bin_path() -> String {
+    std::env::var("CSFX_FIRECRACKER_BIN_PATH")
+        .unwrap_or_else(|_| DEFAULT_FIRECRACKER_BIN_PATH.to_string())
+}
 
 struct VmHandle {
     workload_id: String,
@@ -518,12 +524,13 @@ async fn spawn_jailer(
     jailer_uid: u32,
 ) -> Result<u32> {
     let uid_arg = jailer_uid.to_string();
+    let firecracker_bin = firecracker_bin_path();
     let child = Command::new("jailer")
         .args([
             "--id",
             workload_id,
             "--exec-file",
-            "/usr/bin/firecracker",
+            &firecracker_bin,
             "--uid",
             &uid_arg,
             "--gid",
