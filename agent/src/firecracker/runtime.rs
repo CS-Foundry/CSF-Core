@@ -688,8 +688,11 @@ async fn find_live_jailer_pid(jailer_id: &str) -> Option<u32> {
             .filter(|part| !part.is_empty())
             .collect();
 
-        let is_jailer = args.first().map(|a| a.ends_with("jailer")).unwrap_or(false);
-        if !is_jailer {
+        let is_jailer_process = args
+            .first()
+            .map(|a| a.ends_with("jailer") || a.ends_with("firecracker"))
+            .unwrap_or(false);
+        if !is_jailer_process {
             continue;
         }
 
