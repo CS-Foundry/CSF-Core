@@ -76,6 +76,7 @@ struct GuestNetwork {
     ip: String,
     prefix: String,
     gateway: Option<String>,
+    dns: Option<String>,
 }
 
 pub struct FirecrackerRuntime {
@@ -221,10 +222,12 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                     .context("Failed to allocate resource group ip address")?;
                 let prefix = cidr.split('/').nth(1).unwrap_or("24").to_string();
                 let gateway = crate::spec::second_host_ip(cidr);
+                let dns = crate::spec::second_host_ip(cidr);
                 Some(GuestNetwork {
                     ip,
                     prefix,
                     gateway,
+                    dns,
                 })
             }
             _ => None,
@@ -363,7 +366,9 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .status()
             .await;
 
-        let _ = tokio::fs::remove_dir_all(&handle.chroot_dir).await;
+        if let Err(e) = remove_chroot_dir_privileged(&handle.chroot_dir).await {
+            warn!(workload_id = %handle.workload_id, error = %e, "Failed to clean up jailer chroot directory");
+        }
 
         if let Some(resource_group_id) = &handle.resource_group_id {
             crate::rg_ipam::release(resource_group_id, &handle.workload_id).await;
@@ -428,13 +433,13 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             };
 
             let Some(sidecar) = read_sidecar_metadata(&chroot_dir).await else {
-                let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
+                let _ = remove_chroot_dir_privileged(&chroot_dir).await;
                 continue;
             };
             let workload_id = sidecar.workload_id.clone();
 
             let Some(jailer_pid) = find_live_jailer_pid(&jailer_id).await else {
-                let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
+                let _ = remove_chroot_dir_privileged(&chroot_dir).await;
                 continue;
             };
 
@@ -562,9 +567,7 @@ async fn spawn_jailer(
     let firecracker_bin = firecracker_bin_path();
     let chroot_base_dir = jailer_chroot_base_dir(chroot_dir);
     if chroot_base_dir.exists() {
-        tokio::fs::remove_dir_all(&chroot_base_dir)
-            .await
-            .context("Failed to clean up stale jailer chroot directory")?;
+        remove_chroot_dir_privileged(&chroot_base_dir).await?;
     }
     tokio::fs::create_dir_all(&chroot_base_dir)
         .await
@@ -614,6 +617,30 @@ async fn spawn_jailer(
     }
 
     anyhow::bail!("jailer process for id {} did not appear", jailer_id)
+}
+
+async fn remove_chroot_dir_privileged(path: &Path) -> Result<()> {
+    let status = Command::new("systemd-run")
+        .args([
+            "--pipe",
+            "--wait",
+            "--collect",
+            "--uid=0",
+            "--gid=0",
+            "rm",
+            "-rf",
+            "--",
+        ])
+        .arg(path)
+        .status()
+        .await
+        .context("Failed to spawn privileged chroot cleanup")?;
+
+    if !status.success() {
+        anyhow::bail!("privileged cleanup of chroot directory {:?} failed", path);
+    }
+
+    Ok(())
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
@@ -896,6 +923,7 @@ async fn configure_mmds(
             "ip": net.ip,
             "prefix": net.prefix,
             "gateway": net.gateway,
+            "dns": net.dns,
         })
     });
 

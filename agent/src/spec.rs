@@ -34,10 +34,6 @@ pub fn rg_network_name(resource_group_id: &str) -> String {
     format!("csfx-rg-{}", resource_group_id)
 }
 
-pub fn first_host_ip(cidr: &str) -> Option<String> {
-    nth_host_ip(cidr, 1)
-}
-
 pub fn second_host_ip(cidr: &str) -> Option<String> {
     nth_host_ip(cidr, 2)
 }

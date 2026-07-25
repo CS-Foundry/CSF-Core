@@ -4,7 +4,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-use crate::spec::first_host_ip;
+use crate::spec::second_host_ip;
 
 pub struct RgDnsProcessSupervisor {
     processes: Mutex<HashMap<String, Child>>,
@@ -24,7 +24,7 @@ impl RgDnsProcessSupervisor {
     }
 
     pub async fn ensure_running(&self, resource_group_id: &str, cidr: &str) -> Result<()> {
-        let Some(dns_ip) = first_host_ip(cidr) else {
+        let Some(dns_ip) = second_host_ip(cidr) else {
             warn!(resource_group_id = %resource_group_id, cidr = %cidr, "Invalid resource group cidr, skipping dns process");
             return Ok(());
         };

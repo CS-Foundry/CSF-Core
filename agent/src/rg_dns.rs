@@ -88,10 +88,20 @@ async fn write_zone_file(resource_group_id: &str, records: &HashMap<String, Stri
     Ok(())
 }
 
+async fn ensure_zone_file(resource_group_id: &str) -> Result<()> {
+    let path = zone_file_path(resource_group_id);
+    if fs::try_exists(&path).await.unwrap_or(false) {
+        return Ok(());
+    }
+    write_zone_file(resource_group_id, &HashMap::new()).await
+}
+
 pub async fn write_corefile(resource_group_id: &str, listen_ip: &str) -> Result<()> {
     fs::create_dir_all(DNS_DIR)
         .await
         .context("Failed to create dns zone directory")?;
+
+    ensure_zone_file(resource_group_id).await?;
 
     let zone = zone_name(resource_group_id);
     let zone_path = zone_file_path(resource_group_id).display().to_string();

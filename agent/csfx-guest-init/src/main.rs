@@ -17,6 +17,7 @@ const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
 const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
 const MMDS_ADDR: &str = "169.254.169.254:80";
+const RESOLV_CONF_PATH: &str = "/etc/resolv.conf";
 
 #[derive(Debug, Deserialize)]
 struct MmdsVolume {
@@ -29,6 +30,7 @@ struct MmdsNetwork {
     ip: String,
     prefix: String,
     gateway: Option<String>,
+    dns: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -152,8 +154,17 @@ fn configure_network(iface: &str, network: &MmdsNetwork) -> Result<()> {
         add_default_route(gateway)?;
     }
 
+    if let Some(dns) = &network.dns {
+        write_resolv_conf(dns)?;
+    }
+
     info!(iface = %iface, ip = %ip, prefix = prefix, "Guest network configured");
     Ok(())
+}
+
+fn write_resolv_conf(dns: &str) -> Result<()> {
+    std::fs::write(RESOLV_CONF_PATH, format!("nameserver {}\n", dns))
+        .context("Failed to write resolv.conf")
 }
 
 fn prefix_to_netmask(prefix: u32) -> Result<std::net::Ipv4Addr> {
