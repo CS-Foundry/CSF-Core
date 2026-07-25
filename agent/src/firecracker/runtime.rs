@@ -26,11 +26,17 @@ fn firecracker_bin_path() -> String {
         .unwrap_or_else(|_| DEFAULT_FIRECRACKER_BIN_PATH.to_string())
 }
 
+const JAILER_ID_LEN: usize = 8;
+
+fn jailer_short_id(workload_id: &str) -> String {
+    workload_id.chars().filter(|c| *c != '-').take(JAILER_ID_LEN).collect()
+}
+
 fn jailer_chroot_base_dir(chroot_dir: &Path) -> PathBuf {
     chroot_dir.join("jail")
 }
 
-fn jailer_vm_root_dir(chroot_dir: &Path, workload_id: &str) -> PathBuf {
+fn jailer_vm_root_dir(chroot_dir: &Path, jailer_id: &str) -> PathBuf {
     let firecracker_bin_name = Path::new(&firecracker_bin_path())
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
@@ -38,7 +44,7 @@ fn jailer_vm_root_dir(chroot_dir: &Path, workload_id: &str) -> PathBuf {
 
     jailer_chroot_base_dir(chroot_dir)
         .join(firecracker_bin_name)
-        .join(workload_id)
+        .join(jailer_id)
         .join("root")
 }
 
@@ -178,15 +184,17 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         let rootfs_builder = RootfsBuilder::new();
         let rootfs_path = rootfs_builder.ensure_rootfs(&spec.image).await?;
 
-        let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&spec.workload_id);
+        let jailer_id = jailer_short_id(&spec.workload_id);
+        let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&jailer_id);
         tokio::fs::create_dir_all(&chroot_dir)
             .await
             .context("Failed to create jailer chroot directory")?;
 
         let vsock_cid = self.allocate_cid().await;
         let tap_device = format!("fctap{}", vsock_cid);
-        let api_socket = jailer_vm_root_dir(&chroot_dir, &spec.workload_id)
-            .join("firecracker.socket")
+        const API_SOCKET_NAME: &str = "firecracker.socket";
+        let api_socket_host_path = jailer_vm_root_dir(&chroot_dir, &jailer_id)
+            .join(API_SOCKET_NAME)
             .to_string_lossy()
             .to_string();
 
@@ -217,7 +225,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .context("Failed to allocate jailer uid")?;
 
         let jailer_pid =
-            match spawn_jailer(&spec.workload_id, &chroot_dir, &api_socket, jailer_uid).await {
+            match spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await {
                 Ok(pid) => pid,
                 Err(e) => {
                     self.jailer_ids.release(jailer_uid).await;
@@ -228,7 +236,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         let metrics_path = chroot_dir.join("metrics.fifo");
 
         let boot_config = VmBootConfig {
-            api_socket: api_socket.clone(),
+            api_socket: api_socket_host_path.clone(),
             rootfs_path: rootfs_path.clone(),
             tap_device: tap_device.clone(),
             metrics_path: metrics_path.clone(),
@@ -338,7 +346,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         };
 
         let _ = Command::new("systemctl")
-            .args(["stop", &jailer_unit_name(&handle.workload_id)])
+            .args(["stop", &jailer_unit_name(&jailer_short_id(&handle.workload_id))])
             .status()
             .await;
 
@@ -407,7 +415,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .context("Failed to read jailer base directory entry")?
         {
             let chroot_dir = entry.path();
-            let Some(workload_id) = entry.file_name().to_str().map(str::to_string) else {
+            let Some(jailer_id) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
 
@@ -415,8 +423,9 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
                 continue;
             };
+            let workload_id = sidecar.workload_id.clone();
 
-            let Some(jailer_pid) = find_live_jailer_pid(&workload_id).await else {
+            let Some(jailer_pid) = find_live_jailer_pid(&jailer_id).await else {
                 let _ = tokio::fs::remove_dir_all(&chroot_dir).await;
                 continue;
             };
@@ -533,12 +542,12 @@ fn vsock_log_stream(
     }
 }
 
-fn jailer_unit_name(workload_id: &str) -> String {
-    format!("csfx-jailer-{}", workload_id)
+fn jailer_unit_name(jailer_id: &str) -> String {
+    format!("csfx-jailer-{}", jailer_id)
 }
 
 async fn spawn_jailer(
-    workload_id: &str,
+    jailer_id: &str,
     chroot_dir: &Path,
     api_socket: &str,
     jailer_uid: u32,
@@ -555,7 +564,7 @@ async fn spawn_jailer(
         .await
         .context("Failed to create jailer chroot base directory")?;
 
-    let unit_name = jailer_unit_name(workload_id);
+    let unit_name = jailer_unit_name(jailer_id);
     let status = Command::new("systemd-run")
         .args([
             "--unit",
@@ -565,7 +574,7 @@ async fn spawn_jailer(
             "--gid=0",
             "jailer",
             "--id",
-            workload_id,
+            jailer_id,
             "--exec-file",
             &firecracker_bin,
             "--uid",
@@ -591,13 +600,13 @@ async fn spawn_jailer(
     }
 
     for _ in 0..50 {
-        if let Some(pid) = find_live_jailer_pid(workload_id).await {
+        if let Some(pid) = find_live_jailer_pid(jailer_id).await {
             return Ok(pid);
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    anyhow::bail!("jailer process for workload {} did not appear", workload_id)
+    anyhow::bail!("jailer process for id {} did not appear", jailer_id)
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
@@ -660,7 +669,7 @@ async fn read_sidecar_metadata(chroot_dir: &Path) -> Option<VmSidecarMetadata> {
     serde_json::from_slice(&content).ok()
 }
 
-async fn find_live_jailer_pid(workload_id: &str) -> Option<u32> {
+async fn find_live_jailer_pid(jailer_id: &str) -> Option<u32> {
     let mut proc_entries = tokio::fs::read_dir("/proc").await.ok()?;
 
     while let Ok(Some(entry)) = proc_entries.next_entry().await {
@@ -687,7 +696,7 @@ async fn find_live_jailer_pid(workload_id: &str) -> Option<u32> {
         let matches_id = args
             .iter()
             .zip(args.iter().skip(1))
-            .any(|(flag, value)| *flag == "--id" && *value == workload_id);
+            .any(|(flag, value)| *flag == "--id" && *value == jailer_id);
 
         if matches_id {
             return Some(pid);
