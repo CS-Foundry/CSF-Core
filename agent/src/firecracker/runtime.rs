@@ -238,6 +238,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         let jailer_pid = spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
 
         let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
+        create_metrics_fifo(&metrics_path).context("Failed to create metrics fifo")?;
 
         let boot_config = VmBootConfig {
             api_socket: api_socket_host_path.clone(),
@@ -638,6 +639,21 @@ async fn remove_chroot_dir_privileged(path: &Path) -> Result<()> {
 
     if !status.success() {
         anyhow::bail!("privileged cleanup of chroot directory {:?} failed", path);
+    }
+
+    Ok(())
+}
+
+fn create_metrics_fifo(path: &Path) -> Result<()> {
+    let path_cstr = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+        .context("Invalid metrics fifo path")?;
+
+    let result = unsafe { libc::mkfifo(path_cstr.as_ptr(), 0o600) };
+    if result != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(err).context("mkfifo failed for metrics path");
+        }
     }
 
     Ok(())
