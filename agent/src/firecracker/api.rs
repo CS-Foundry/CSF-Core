@@ -31,11 +31,12 @@ impl FirecrackerApiClient {
             .await
             .context("Failed to write HTTP request body")?;
 
-        let mut response = Vec::new();
-        stream
-            .read_to_end(&mut response)
-            .await
-            .context("Failed to read Firecracker API response")?;
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            read_http_response(&mut stream),
+        )
+        .await
+        .context("Timed out waiting for Firecracker API response")??;
 
         let response_text = String::from_utf8_lossy(&response);
         let status_line = response_text
@@ -53,6 +54,54 @@ impl FirecrackerApiClient {
 
         Ok(())
     }
+}
+
+async fn read_http_response(stream: &mut UnixStream) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+
+    let header_end = loop {
+        if let Some(pos) = find_header_end(&buf) {
+            break pos;
+        }
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .context("Failed to read Firecracker API response headers")?;
+        if n == 0 {
+            anyhow::bail!("Firecracker API closed connection before sending headers");
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    };
+
+    let headers_text = String::from_utf8_lossy(&buf[..header_end]);
+    let content_length: usize = headers_text
+        .lines()
+        .find_map(|line| {
+            line.to_ascii_lowercase()
+                .strip_prefix("content-length:")
+                .map(|v| v.trim().to_string())
+        })
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    let body_start = header_end + 4;
+    while buf.len() < body_start + content_length {
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .context("Failed to read Firecracker API response body")?;
+        if n == 0 {
+            anyhow::bail!("Firecracker API closed connection before sending full body");
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+
+    Ok(buf)
+}
+
+fn find_header_end(buf: &[u8]) -> Option<usize> {
+    buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
 async fn connect_with_retry(socket_path: &str) -> Result<UnixStream> {

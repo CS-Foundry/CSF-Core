@@ -36,7 +36,11 @@ fn process_gid() -> u32 {
 const JAILER_ID_LEN: usize = 8;
 
 fn jailer_short_id(workload_id: &str) -> String {
-    workload_id.chars().filter(|c| *c != '-').take(JAILER_ID_LEN).collect()
+    workload_id
+        .chars()
+        .filter(|c| *c != '-')
+        .take(JAILER_ID_LEN)
+        .collect()
 }
 
 fn jailer_chroot_base_dir(chroot_dir: &Path) -> PathBuf {
@@ -163,11 +167,9 @@ impl FirecrackerRuntime {
             .await
             .context("Failed to tear down resource group bridge")?;
 
-        crate::nftables::remove_bridge_rules(&crate::spec::rg_bridge_iface_name(
-            resource_group_id,
-        ))
-        .await
-        .context("Failed to remove nftables rules for resource group")?;
+        crate::nftables::remove_bridge_rules(&crate::spec::rg_bridge_iface_name(resource_group_id))
+            .await
+            .context("Failed to remove nftables rules for resource group")?;
 
         let wg_iface = crate::wireguard::rg_interface_name(resource_group_id);
         crate::wireguard::remove_interface(&wg_iface)
@@ -217,15 +219,18 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                     .context("Failed to allocate resource group ip address")?;
                 let prefix = cidr.split('/').nth(1).unwrap_or("24").to_string();
                 let gateway = crate::spec::second_host_ip(cidr);
-                Some(GuestNetwork { ip, prefix, gateway })
+                Some(GuestNetwork {
+                    ip,
+                    prefix,
+                    gateway,
+                })
             }
             _ => None,
         };
 
         let jailer_uid = process_uid();
 
-        let jailer_pid =
-            spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
+        let jailer_pid = spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
 
         let metrics_path = chroot_dir.join("metrics.fifo");
 
@@ -237,8 +242,13 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             vsock_cid,
         };
 
-        configure_and_boot_vm(&boot_config, bridge_iface.as_deref(), spec, guest_network.as_ref())
-            .await?;
+        configure_and_boot_vm(
+            &boot_config,
+            bridge_iface.as_deref(),
+            spec,
+            guest_network.as_ref(),
+        )
+        .await?;
 
         let guest_ip = guest_network.as_ref().map(|net| net.ip.clone());
 
@@ -339,7 +349,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         };
 
         let _ = Command::new("systemctl")
-            .args(["stop", &jailer_unit_name(&jailer_short_id(&handle.workload_id))])
+            .args([
+                "stop",
+                &jailer_unit_name(&jailer_short_id(&handle.workload_id)),
+            ])
             .status()
             .await;
 
@@ -388,7 +401,9 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         _network_name: &str,
     ) -> Result<Option<String>> {
         let handles = self.handles.lock().await;
-        Ok(handles.get(workload_handle).and_then(|h| h.guest_ip.clone()))
+        Ok(handles
+            .get(workload_handle)
+            .and_then(|h| h.guest_ip.clone()))
     }
 
     async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
@@ -600,12 +615,14 @@ async fn spawn_jailer(
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
-    Path::new(CGROUP_ROOT)
-        .join(CGROUP_PARENT)
-        .join(workload_id)
+    Path::new(CGROUP_ROOT).join(CGROUP_PARENT).join(workload_id)
 }
 
-async fn apply_node_port_dnat(workload_id: &str, guest_ip: &str, spec: &WorkloadSpec) -> Result<()> {
+async fn apply_node_port_dnat(
+    workload_id: &str,
+    guest_ip: &str,
+    spec: &WorkloadSpec,
+) -> Result<()> {
     let Some(ports) = &spec.ports else {
         return Ok(());
     };
@@ -663,7 +680,11 @@ async fn find_live_jailer_pid(jailer_id: &str) -> Option<u32> {
     let mut proc_entries = tokio::fs::read_dir("/proc").await.ok()?;
 
     while let Ok(Some(entry)) = proc_entries.next_entry().await {
-        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
             continue;
         };
 
@@ -762,11 +783,8 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
-    let mounted_volumes = attach_volume_drives(
-        &client,
-        spec.volume_mounts.as_deref().unwrap_or_default(),
-    )
-    .await?;
+    let mounted_volumes =
+        attach_volume_drives(&client, spec.volume_mounts.as_deref().unwrap_or_default()).await?;
 
     client
         .put(
@@ -788,7 +806,13 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
-    configure_mmds(&client, &mounted_volumes, guest_network, spec.env_vars.as_ref()).await?;
+    configure_mmds(
+        &client,
+        &mounted_volumes,
+        guest_network,
+        spec.env_vars.as_ref(),
+    )
+    .await?;
 
     client
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
