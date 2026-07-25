@@ -1166,6 +1166,7 @@ dependencies = [
  "chrono",
  "flate2",
  "futures-util",
+ "libc",
  "oci-client",
  "rcgen",
  "reqwest",

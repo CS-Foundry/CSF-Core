@@ -8,7 +8,6 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use crate::firecracker::api::FirecrackerApiClient;
-use crate::firecracker::jailer_ids::JailerIdAllocator;
 use crate::firecracker::rootfs::RootfsBuilder;
 use crate::rg_dns_process::RgDnsProcessSupervisor;
 use crate::runtime::{ExecSession, LogStream};
@@ -24,6 +23,14 @@ const DEFAULT_FIRECRACKER_BIN_PATH: &str = "/usr/bin/firecracker";
 fn firecracker_bin_path() -> String {
     std::env::var("CSFX_FIRECRACKER_BIN_PATH")
         .unwrap_or_else(|_| DEFAULT_FIRECRACKER_BIN_PATH.to_string())
+}
+
+fn process_uid() -> u32 {
+    unsafe { libc::getuid() }
+}
+
+fn process_gid() -> u32 {
+    unsafe { libc::getgid() }
 }
 
 const JAILER_ID_LEN: usize = 8;
@@ -56,7 +63,6 @@ struct VmHandle {
     vsock_cid: u32,
     resource_group_id: Option<String>,
     guest_ip: Option<String>,
-    jailer_uid: u32,
     cgroup_path: PathBuf,
     metrics_path: PathBuf,
     previous_cpu_sample: Mutex<Option<(std::time::Instant, u64)>>,
@@ -71,7 +77,6 @@ struct GuestNetwork {
 pub struct FirecrackerRuntime {
     wg_private_key_b64: String,
     dns_supervisor: RgDnsProcessSupervisor,
-    jailer_ids: JailerIdAllocator,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
     reconciled: AtomicBool,
@@ -82,7 +87,6 @@ impl FirecrackerRuntime {
         Self {
             wg_private_key_b64,
             dns_supervisor: RgDnsProcessSupervisor::new(),
-            jailer_ids: JailerIdAllocator::new(),
             handles: Mutex::new(HashMap::new()),
             next_cid: Mutex::new(GUEST_CID_BASE),
             reconciled: AtomicBool::new(false),
@@ -218,20 +222,10 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             _ => None,
         };
 
-        let jailer_uid = self
-            .jailer_ids
-            .allocate()
-            .await
-            .context("Failed to allocate jailer uid")?;
+        let jailer_uid = process_uid();
 
         let jailer_pid =
-            match spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await {
-                Ok(pid) => pid,
-                Err(e) => {
-                    self.jailer_ids.release(jailer_uid).await;
-                    return Err(e);
-                }
-            };
+            spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
 
         let metrics_path = chroot_dir.join("metrics.fifo");
 
@@ -278,7 +272,6 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 vsock_cid,
                 resource_group_id: spec.resource_group_id.clone(),
                 guest_ip,
-                jailer_uid,
                 previous_cpu_sample: Mutex::new(None),
             },
         );
@@ -365,8 +358,6 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             warn!(workload_id = %handle.workload_id, error = %e, "Failed to remove node port forwarding rules");
         }
 
-        self.jailer_ids.release(handle.jailer_uid).await;
-
         info!(workload_id = %handle.workload_id, "Firecracker microVM stopped");
 
         Ok(())
@@ -430,8 +421,6 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 continue;
             };
 
-            self.jailer_ids.mark_allocated(sidecar.jailer_uid).await;
-
             let metrics_path = chroot_dir.join("metrics.fifo");
             let handle = VmHandle {
                 workload_id: workload_id.clone(),
@@ -443,7 +432,6 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 vsock_cid: sidecar.vsock_cid,
                 resource_group_id: sidecar.resource_group_id,
                 guest_ip: sidecar.guest_ip,
-                jailer_uid: sidecar.jailer_uid,
                 previous_cpu_sample: Mutex::new(None),
             };
 
@@ -553,6 +541,7 @@ async fn spawn_jailer(
     jailer_uid: u32,
 ) -> Result<u32> {
     let uid_arg = jailer_uid.to_string();
+    let gid_arg = process_gid().to_string();
     let firecracker_bin = firecracker_bin_path();
     let chroot_base_dir = jailer_chroot_base_dir(chroot_dir);
     if chroot_base_dir.exists() {
@@ -580,7 +569,7 @@ async fn spawn_jailer(
             "--uid",
             &uid_arg,
             "--gid",
-            &uid_arg,
+            &gid_arg,
             "--chroot-base-dir",
             chroot_base_dir.to_string_lossy().as_ref(),
             "--cgroup-version",

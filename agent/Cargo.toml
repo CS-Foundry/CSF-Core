@@ -35,3 +35,4 @@ tokio-vsock = "0.7"
 async-stream = "0.3"
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 rustls-pemfile = { workspace = true }
+libc = "0.2"
