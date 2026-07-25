@@ -199,7 +199,9 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         let vsock_cid = self.allocate_cid().await;
         let tap_device = format!("fctap{}", vsock_cid);
         const API_SOCKET_NAME: &str = "firecracker.socket";
-        let api_socket_host_path = jailer_vm_root_dir(&chroot_dir, &jailer_id)
+        const METRICS_FILE_NAME: &str = "metrics.fifo";
+        let vm_root_dir = jailer_vm_root_dir(&chroot_dir, &jailer_id);
+        let api_socket_host_path = vm_root_dir
             .join(API_SOCKET_NAME)
             .to_string_lossy()
             .to_string();
@@ -232,13 +234,13 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         let jailer_pid = spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
 
-        let metrics_path = chroot_dir.join("metrics.fifo");
+        let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
 
         let boot_config = VmBootConfig {
             api_socket: api_socket_host_path.clone(),
+            metrics_socket_name: METRICS_FILE_NAME.to_string(),
             rootfs_path: rootfs_path.clone(),
             tap_device: tap_device.clone(),
-            metrics_path: metrics_path.clone(),
             vsock_cid,
         };
 
@@ -436,7 +438,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
                 continue;
             };
 
-            let metrics_path = chroot_dir.join("metrics.fifo");
+            let metrics_path = jailer_vm_root_dir(&chroot_dir, &jailer_id).join("metrics.fifo");
             let handle = VmHandle {
                 workload_id: workload_id.clone(),
                 jailer_pid,
@@ -724,7 +726,7 @@ struct VmBootConfig {
     api_socket: String,
     rootfs_path: PathBuf,
     tap_device: String,
-    metrics_path: PathBuf,
+    metrics_socket_name: String,
     vsock_cid: u32,
 }
 
@@ -755,7 +757,7 @@ async fn configure_and_boot_vm(
         .put(
             "/metrics",
             &json!({
-                "metrics_path": boot_config.metrics_path.to_string_lossy(),
+                "metrics_path": boot_config.metrics_socket_name,
             }),
         )
         .await
