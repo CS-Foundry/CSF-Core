@@ -48,7 +48,12 @@ impl RootfsBuilder {
             .await
             .context("Failed to resolve image manifest")?;
 
-        let cache_key = digest.trim_start_matches("sha256:");
+        let guest_init_version = guest_init_binary_version().await?;
+        let cache_key = format!(
+            "{}-{}",
+            digest.trim_start_matches("sha256:"),
+            guest_init_version
+        );
         let image_path = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4", cache_key));
 
         if image_path.exists() {
@@ -241,6 +246,31 @@ async fn set_executable(path: &Path) -> Result<()> {
     tokio::fs::set_permissions(path, permissions).await?;
 
     Ok(())
+}
+
+async fn guest_init_binary_version() -> Result<String> {
+    match tokio::fs::read_link(GUEST_INIT_BINARY_PATH).await {
+        Ok(target) => Ok(sanitize_cache_key_component(&target.to_string_lossy())),
+        Err(_) => {
+            let metadata = tokio::fs::metadata(GUEST_INIT_BINARY_PATH)
+                .await
+                .context("Failed to stat guest-init binary")?;
+            let modified = metadata
+                .modified()
+                .context("Failed to read guest-init binary mtime")?;
+            let since_epoch = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .context("Guest-init binary mtime before unix epoch")?;
+            Ok(since_epoch.as_secs().to_string())
+        }
+    }
+}
+
+fn sanitize_cache_key_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 async fn install_guest_init(extract_dir: &Path) -> Result<()> {
