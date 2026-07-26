@@ -262,6 +262,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             bridge_iface.as_deref(),
             spec,
             guest_network.as_ref(),
+            jailer_uid,
         )
         .await?;
 
@@ -630,6 +631,13 @@ async fn spawn_jailer(
 }
 
 async fn remove_chroot_dir_privileged(path: &Path) -> Result<()> {
+    let slug: String = path
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let unit = format!("csfx-jailer-cleanup-{slug}");
+
     let status = Command::new("systemd-run")
         .args([
             "--pipe",
@@ -637,6 +645,7 @@ async fn remove_chroot_dir_privileged(path: &Path) -> Result<()> {
             "--collect",
             "--uid=0",
             "--gid=0",
+            &format!("--unit={unit}"),
             "rm",
             "-rf",
             "--",
@@ -804,8 +813,9 @@ async fn configure_and_boot_vm(
     bridge_iface: Option<&str>,
     spec: &WorkloadSpec,
     guest_network: Option<&GuestNetwork>,
+    jailer_uid: u32,
 ) -> Result<()> {
-    create_tap_device(&boot_config.tap_device, bridge_iface).await?;
+    create_tap_device(&boot_config.tap_device, bridge_iface, jailer_uid).await?;
 
     let client = FirecrackerApiClient::new(boot_config.api_socket.clone());
 
@@ -1042,9 +1052,16 @@ async fn configure_mmds(
     Ok(())
 }
 
-async fn create_tap_device(tap_device: &str, bridge_iface: Option<&str>) -> Result<()> {
+async fn create_tap_device(
+    tap_device: &str,
+    bridge_iface: Option<&str>,
+    owner_uid: u32,
+) -> Result<()> {
+    let uid_arg = owner_uid.to_string();
     let status = Command::new("ip")
-        .args(["tuntap", "add", "dev", tap_device, "mode", "tap"])
+        .args([
+            "tuntap", "add", "dev", tap_device, "mode", "tap", "user", &uid_arg,
+        ])
         .status()
         .await
         .context("Failed to execute ip tuntap add")?;
