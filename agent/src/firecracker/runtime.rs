@@ -877,7 +877,6 @@ async fn configure_and_boot_vm(
             &json!({
                 "iface_id": "eth0",
                 "host_dev_name": boot_config.tap_device,
-                "allow_mmds_requests": true,
             }),
         )
         .await?;
