@@ -212,7 +212,7 @@ fn add_host_route(dest: std::net::Ipv4Addr, iface: &str) -> Result<()> {
         return Err(std::io::Error::last_os_error().into());
     }
 
-    let mut iface_name = [0i8; libc::IFNAMSIZ];
+    let mut iface_name = [0 as libc::c_char; libc::IFNAMSIZ];
     for (dst, src) in iface_name.iter_mut().zip(iface.as_bytes()) {
         *dst = *src as libc::c_char;
     }
