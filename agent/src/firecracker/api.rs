@@ -45,10 +45,13 @@ impl FirecrackerApiClient {
             .context("Empty Firecracker API response")?;
 
         if !status_line.contains("204") && !status_line.contains("200") {
+            let header_end = find_header_end(&response).unwrap_or(response.len());
+            let body_text = String::from_utf8_lossy(&response[header_end..]);
             anyhow::bail!(
-                "Firecracker API request failed path={} response={}",
+                "Firecracker API request failed path={} response={} body={}",
                 path,
-                status_line
+                status_line,
+                body_text.trim()
             );
         }
 
