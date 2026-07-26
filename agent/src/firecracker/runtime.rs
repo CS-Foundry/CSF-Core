@@ -37,6 +37,29 @@ fn process_gid() -> u32 {
     unsafe { libc::getgid() }
 }
 
+fn next_free_cid_on_host() -> u32 {
+    let output = std::process::Command::new("ip")
+        .args(["tuntap", "show"])
+        .output();
+
+    let Ok(output) = output else {
+        return GUEST_CID_BASE;
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let max_cid = stdout
+        .lines()
+        .filter_map(|line| line.split(':').next())
+        .filter_map(|name| name.strip_prefix("fctap"))
+        .filter_map(|cid| cid.parse::<u32>().ok())
+        .max();
+
+    match max_cid {
+        Some(cid) => cid + 1,
+        None => GUEST_CID_BASE,
+    }
+}
+
 const JAILER_ID_LEN: usize = 8;
 
 fn jailer_short_id(workload_id: &str) -> String {
@@ -97,7 +120,7 @@ impl FirecrackerRuntime {
             wg_private_key_b64,
             dns_supervisor: RgDnsProcessSupervisor::new(),
             handles: Mutex::new(HashMap::new()),
-            next_cid: Mutex::new(GUEST_CID_BASE),
+            next_cid: Mutex::new(next_free_cid_on_host()),
             reconciled: AtomicBool::new(false),
         }
     }
@@ -239,32 +262,25 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         let jailer_pid = spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
 
-        let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
-        create_metrics_fifo(&metrics_path).context("Failed to create metrics fifo")?;
-
-        stage_kernel_into_jail(&vm_root_dir)
-            .await
-            .context("Failed to stage kernel image into jailer chroot")?;
-        stage_rootfs_into_jail(&rootfs_path, &vm_root_dir)
-            .await
-            .context("Failed to stage rootfs image into jailer chroot")?;
-
-        let boot_config = VmBootConfig {
-            api_socket: api_socket_host_path.clone(),
-            metrics_socket_name: METRICS_FILE_NAME.to_string(),
-            tap_device: tap_device.clone(),
-            vsock_cid,
-        };
-
-        configure_and_boot_vm(
-            &boot_config,
+        let boot_result = boot_vm(
             &vm_root_dir,
+            &rootfs_path,
+            &tap_device,
+            vsock_cid,
+            &api_socket_host_path,
             bridge_iface.as_deref(),
             spec,
             guest_network.as_ref(),
             jailer_uid,
         )
-        .await?;
+        .await;
+
+        let metrics_path = if let Err(e) = boot_result {
+            abort_failed_jailer(&jailer_id, &tap_device).await;
+            return Err(e);
+        } else {
+            vm_root_dir.join(METRICS_FILE_NAME)
+        };
 
         let guest_ip = guest_network.as_ref().map(|net| net.ip.clone());
 
@@ -565,6 +581,58 @@ fn vsock_log_stream(
 
 fn jailer_unit_name(jailer_id: &str) -> String {
     format!("csfx-jailer-{}", jailer_id)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn boot_vm(
+    vm_root_dir: &Path,
+    rootfs_path: &Path,
+    tap_device: &str,
+    vsock_cid: u32,
+    api_socket_host_path: &str,
+    bridge_iface: Option<&str>,
+    spec: &WorkloadSpec,
+    guest_network: Option<&GuestNetwork>,
+    jailer_uid: u32,
+) -> Result<()> {
+    let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
+    create_metrics_fifo(&metrics_path).context("Failed to create metrics fifo")?;
+
+    stage_kernel_into_jail(vm_root_dir)
+        .await
+        .context("Failed to stage kernel image into jailer chroot")?;
+    stage_rootfs_into_jail(rootfs_path, vm_root_dir)
+        .await
+        .context("Failed to stage rootfs image into jailer chroot")?;
+
+    let boot_config = VmBootConfig {
+        api_socket: api_socket_host_path.to_string(),
+        metrics_socket_name: METRICS_FILE_NAME.to_string(),
+        tap_device: tap_device.to_string(),
+        vsock_cid,
+    };
+
+    configure_and_boot_vm(
+        &boot_config,
+        vm_root_dir,
+        bridge_iface,
+        spec,
+        guest_network,
+        jailer_uid,
+    )
+    .await
+}
+
+async fn abort_failed_jailer(jailer_id: &str, tap_device: &str) {
+    let _ = Command::new("systemctl")
+        .args(["stop", &jailer_unit_name(jailer_id)])
+        .status()
+        .await;
+
+    let _ = Command::new("ip")
+        .args(["link", "delete", tap_device])
+        .status()
+        .await;
 }
 
 async fn spawn_jailer(
