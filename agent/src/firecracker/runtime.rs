@@ -19,6 +19,10 @@ const GUEST_CID_BASE: u32 = 1000;
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const CGROUP_PARENT: &str = "csfx-firecracker";
 const DEFAULT_FIRECRACKER_BIN_PATH: &str = "/usr/bin/firecracker";
+const API_SOCKET_NAME: &str = "firecracker.socket";
+const METRICS_FILE_NAME: &str = "metrics.fifo";
+const JAIL_KERNEL_NAME: &str = "vmlinux";
+const JAIL_ROOTFS_NAME: &str = "rootfs.ext4";
 
 fn firecracker_bin_path() -> String {
     std::env::var("CSFX_FIRECRACKER_BIN_PATH")
@@ -199,8 +203,6 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
 
         let vsock_cid = self.allocate_cid().await;
         let tap_device = format!("fctap{}", vsock_cid);
-        const API_SOCKET_NAME: &str = "firecracker.socket";
-        const METRICS_FILE_NAME: &str = "metrics.fifo";
         let vm_root_dir = jailer_vm_root_dir(&chroot_dir, &jailer_id);
         let api_socket_host_path = vm_root_dir
             .join(API_SOCKET_NAME)
@@ -240,16 +242,23 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
         create_metrics_fifo(&metrics_path).context("Failed to create metrics fifo")?;
 
+        stage_kernel_into_jail(&vm_root_dir)
+            .await
+            .context("Failed to stage kernel image into jailer chroot")?;
+        stage_rootfs_into_jail(&rootfs_path, &vm_root_dir)
+            .await
+            .context("Failed to stage rootfs image into jailer chroot")?;
+
         let boot_config = VmBootConfig {
             api_socket: api_socket_host_path.clone(),
             metrics_socket_name: METRICS_FILE_NAME.to_string(),
-            rootfs_path: rootfs_path.clone(),
             tap_device: tap_device.clone(),
             vsock_cid,
         };
 
         configure_and_boot_vm(
             &boot_config,
+            &vm_root_dir,
             bridge_iface.as_deref(),
             spec,
             guest_network.as_ref(),
@@ -644,6 +653,23 @@ async fn remove_chroot_dir_privileged(path: &Path) -> Result<()> {
     Ok(())
 }
 
+async fn stage_kernel_into_jail(vm_root_dir: &Path) -> Result<()> {
+    let source = tokio::fs::canonicalize(GUEST_KERNEL_PATH)
+        .await
+        .context("Failed to resolve kernel image path")?;
+    tokio::fs::copy(&source, vm_root_dir.join(JAIL_KERNEL_NAME))
+        .await
+        .context("Failed to copy kernel image into jailer chroot")?;
+    Ok(())
+}
+
+async fn stage_rootfs_into_jail(rootfs_path: &Path, vm_root_dir: &Path) -> Result<()> {
+    tokio::fs::copy(rootfs_path, vm_root_dir.join(JAIL_ROOTFS_NAME))
+        .await
+        .context("Failed to copy rootfs image into jailer chroot")?;
+    Ok(())
+}
+
 fn create_metrics_fifo(path: &Path) -> Result<()> {
     let path_cstr = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
         .context("Invalid metrics fifo path")?;
@@ -767,7 +793,6 @@ async fn find_live_jailer_pid(jailer_id: &str) -> Option<u32> {
 
 struct VmBootConfig {
     api_socket: String,
-    rootfs_path: PathBuf,
     tap_device: String,
     metrics_socket_name: String,
     vsock_cid: u32,
@@ -775,6 +800,7 @@ struct VmBootConfig {
 
 async fn configure_and_boot_vm(
     boot_config: &VmBootConfig,
+    vm_root_dir: &Path,
     bridge_iface: Option<&str>,
     spec: &WorkloadSpec,
     guest_network: Option<&GuestNetwork>,
@@ -810,7 +836,7 @@ async fn configure_and_boot_vm(
         .put(
             "/boot-source",
             &json!({
-                "kernel_image_path": GUEST_KERNEL_PATH,
+                "kernel_image_path": JAIL_KERNEL_NAME,
                 "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/csfx-guest-init",
             }),
         )
@@ -821,15 +847,19 @@ async fn configure_and_boot_vm(
             "/drives/rootfs",
             &json!({
                 "drive_id": "rootfs",
-                "path_on_host": boot_config.rootfs_path.to_string_lossy(),
+                "path_on_host": JAIL_ROOTFS_NAME,
                 "is_root_device": true,
                 "is_read_only": false,
             }),
         )
         .await?;
 
-    let mounted_volumes =
-        attach_volume_drives(&client, spec.volume_mounts.as_deref().unwrap_or_default()).await?;
+    let mounted_volumes = attach_volume_drives(
+        &client,
+        vm_root_dir,
+        spec.volume_mounts.as_deref().unwrap_or_default(),
+    )
+    .await?;
 
     client
         .put(
@@ -846,7 +876,7 @@ async fn configure_and_boot_vm(
             "/vsock",
             &json!({
                 "guest_cid": boot_config.vsock_cid,
-                "uds_path": format!("{}.vsock", boot_config.api_socket),
+                "uds_path": format!("{}.vsock", API_SOCKET_NAME),
             }),
         )
         .await?;
@@ -873,19 +903,25 @@ struct MountedVolume {
 
 async fn attach_volume_drives(
     client: &FirecrackerApiClient,
+    vm_root_dir: &Path,
     volume_mounts: &[crate::spec::VolumeMount],
 ) -> Result<Vec<MountedVolume>> {
     let mut mounted = Vec::with_capacity(volume_mounts.len());
 
     for (index, volume_mount) in volume_mounts.iter().enumerate() {
         let guest_device = guest_device_letter(index);
+        let jail_device_name = format!("vd-{}", volume_mount.volume_id);
+
+        stage_block_device_into_jail(&volume_mount.device_path, vm_root_dir, &jail_device_name)
+            .await
+            .context("Failed to stage volume block device into jailer chroot")?;
 
         client
             .put(
                 &format!("/drives/{}", volume_mount.volume_id),
                 &json!({
                     "drive_id": volume_mount.volume_id,
-                    "path_on_host": volume_mount.device_path,
+                    "path_on_host": jail_device_name,
                     "is_root_device": false,
                     "is_read_only": false,
                 }),
@@ -900,6 +936,53 @@ async fn attach_volume_drives(
     }
 
     Ok(mounted)
+}
+
+async fn stage_block_device_into_jail(
+    device_path: &str,
+    vm_root_dir: &Path,
+    jail_device_name: &str,
+) -> Result<()> {
+    let metadata = tokio::fs::metadata(device_path)
+        .await
+        .context("Failed to stat volume block device")?;
+    let device_id = std::os::unix::fs::MetadataExt::rdev(&metadata) as libc::dev_t;
+    let major = libc::major(device_id);
+    let minor = libc::minor(device_id);
+    let jailer_uid = process_uid();
+    let jailer_gid = process_gid();
+    let target_path = vm_root_dir.join(jail_device_name);
+
+    let status = Command::new("systemd-run")
+        .args([
+            "--pipe",
+            "--wait",
+            "--collect",
+            "--uid=0",
+            "--gid=0",
+            "sh",
+            "-c",
+        ])
+        .arg(format!(
+            "rm -f {target} && mknod {target} b {major} {minor} && chown {uid}:{gid} {target}",
+            target = target_path.to_string_lossy(),
+            major = major,
+            minor = minor,
+            uid = jailer_uid,
+            gid = jailer_gid,
+        ))
+        .status()
+        .await
+        .context("Failed to spawn privileged mknod for volume device")?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "privileged mknod failed for volume device {:?}",
+            target_path
+        );
+    }
+
+    Ok(())
 }
 
 fn guest_device_letter(index: usize) -> String {

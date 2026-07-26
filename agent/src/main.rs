@@ -429,25 +429,12 @@ async fn process_volumes(
             }
         };
 
-        let mount_point = rbd::mount_point_for(&volume.id);
-
-        if let Err(e) = rbd::mount(&device, &mount_point).await {
-            warn!(volume_id = %volume.id, error = %e, "Failed to mount device");
-            let _ = rbd::unmap_device(&device).await;
-            continue;
-        }
-
         mounted_volumes
             .lock()
             .await
             .insert(volume.id.clone(), device.clone());
 
-        info!(
-            volume_id = %volume.id,
-            device = %device,
-            mount_point = %mount_point,
-            "Volume mounted"
-        );
+        info!(volume_id = %volume.id, device = %device, "Volume mapped");
     }
 }
 
