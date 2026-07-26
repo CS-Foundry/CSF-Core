@@ -61,11 +61,13 @@ async fn main() -> Result<()> {
     }
 
     if let Err(e) = add_host_route(std::net::Ipv4Addr::new(169, 254, 169, 254), "eth0") {
-        warn!(error = %e, "Failed to add mmds route");
+        warn!(error = ?e, "Failed to add mmds route");
+    } else {
+        info!("mmds route added");
     }
 
     let mmds_data = fetch_mmds_data().await.unwrap_or_else(|e| {
-        warn!(error = %e, "Failed to fetch mmds data, continuing without volumes");
+        warn!(error = ?e, "Failed to fetch mmds data, continuing without volumes");
         MmdsData::default()
     });
 
