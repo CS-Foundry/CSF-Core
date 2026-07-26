@@ -60,6 +60,10 @@ async fn main() -> Result<()> {
         warn!(error = %e, "Failed to bring up network interface");
     }
 
+    if let Err(e) = add_host_route(std::net::Ipv4Addr::new(169, 254, 169, 254), "eth0") {
+        warn!(error = %e, "Failed to add mmds route");
+    }
+
     let mmds_data = fetch_mmds_data().await.unwrap_or_else(|e| {
         warn!(error = %e, "Failed to fetch mmds data, continuing without volumes");
         MmdsData::default()
@@ -197,6 +201,35 @@ fn set_ifreq_addr(
         if libc::ioctl(socket_fd, request_code as _, &request) < 0 {
             return Err(std::io::Error::last_os_error().into());
         }
+    }
+
+    Ok(())
+}
+
+fn add_host_route(dest: std::net::Ipv4Addr, iface: &str) -> Result<()> {
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if socket_fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let mut iface_name = [0i8; libc::IFNAMSIZ];
+    for (dst, src) in iface_name.iter_mut().zip(iface.as_bytes()) {
+        *dst = *src as libc::c_char;
+    }
+
+    let mut route: libc::rtentry = unsafe { std::mem::zeroed() };
+    route.rt_dst = ipv4_to_sockaddr_storage(dest);
+    route.rt_genmask = ipv4_to_sockaddr_storage(std::net::Ipv4Addr::new(255, 255, 255, 255));
+    route.rt_flags = (libc::RTF_UP | libc::RTF_HOST) as libc::c_ushort;
+    route.rt_dev = iface_name.as_mut_ptr();
+
+    let result = unsafe { libc::ioctl(socket_fd, libc::SIOCADDRT as _, &route) };
+    unsafe {
+        libc::close(socket_fd);
+    }
+
+    if result < 0 {
+        return Err(std::io::Error::last_os_error().into());
     }
 
     Ok(())
