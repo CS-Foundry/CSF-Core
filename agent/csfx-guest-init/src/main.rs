@@ -9,6 +9,7 @@ use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
 use tracing::{error, info, warn};
 
@@ -19,6 +20,7 @@ const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
 const MMDS_ADDR: &str = "169.254.169.254:80";
 const MMDS_BOOTSTRAP_IP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(169, 254, 169, 2);
 const MMDS_BOOTSTRAP_NETMASK: std::net::Ipv4Addr = std::net::Ipv4Addr::new(255, 255, 0, 0);
+const MMDS_TIMEOUT: Duration = Duration::from_secs(5);
 const RESOLV_CONF_PATH: &str = "/etc/resolv.conf";
 
 #[derive(Debug, Deserialize)]
@@ -331,6 +333,12 @@ fn ipv4_to_sockaddr_storage(addr: std::net::Ipv4Addr) -> libc::sockaddr {
 }
 
 async fn fetch_mmds_data() -> Result<MmdsData> {
+    timeout(MMDS_TIMEOUT, fetch_mmds_data_inner())
+        .await
+        .context("Timed out fetching mmds data")?
+}
+
+async fn fetch_mmds_data_inner() -> Result<MmdsData> {
     let mut stream = TcpStream::connect(MMDS_ADDR)
         .await
         .context("Failed to connect to mmds")?;
@@ -341,19 +349,48 @@ async fn fetch_mmds_data() -> Result<MmdsData> {
         .await
         .context("Failed to write mmds request")?;
 
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .await
-        .context("Failed to read mmds response")?;
+    let body = read_http_body(&mut stream).await?;
+    serde_json::from_str(&body).context("Failed to parse mmds json")
+}
 
-    let response_text = String::from_utf8_lossy(&response);
-    let body = response_text
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| body)
-        .context("Malformed mmds response")?;
+async fn read_http_body(stream: &mut TcpStream) -> Result<String> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let header_end = loop {
+        if let Some(pos) = find_header_end(&buf) {
+            break pos;
+        }
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .context("Failed to read mmds response headers")?;
+        anyhow::ensure!(n > 0, "mmds connection closed before headers completed");
+        buf.extend_from_slice(&chunk[..n]);
+    };
 
-    serde_json::from_str(body).context("Failed to parse mmds json")
+    let header_text = String::from_utf8_lossy(&buf[..header_end]);
+    let content_length: usize = header_text
+        .lines()
+        .find_map(|line| line.to_lowercase().strip_prefix("content-length:").map(str::trim).map(str::to_string))
+        .context("mmds response missing content-length")?
+        .parse()
+        .context("mmds response has invalid content-length")?;
+
+    let body_start = header_end + 4;
+    while buf.len() < body_start + content_length {
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .context("Failed to read mmds response body")?;
+        anyhow::ensure!(n > 0, "mmds connection closed before body completed");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+
+    Ok(String::from_utf8_lossy(&buf[body_start..body_start + content_length]).into_owned())
+}
+
+fn find_header_end(buf: &[u8]) -> Option<usize> {
+    buf.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
 fn mount_volume(volume: &MmdsVolume) -> Result<()> {
