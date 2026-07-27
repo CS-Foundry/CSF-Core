@@ -17,6 +17,8 @@ const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
 const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
 const MMDS_ADDR: &str = "169.254.169.254:80";
+const MMDS_BOOTSTRAP_IP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(169, 254, 169, 2);
+const MMDS_BOOTSTRAP_NETMASK: std::net::Ipv4Addr = std::net::Ipv4Addr::new(255, 255, 0, 0);
 const RESOLV_CONF_PATH: &str = "/etc/resolv.conf";
 
 #[derive(Debug, Deserialize)]
@@ -43,7 +45,7 @@ struct MmdsData {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -54,33 +56,38 @@ async fn main() -> Result<()> {
 
     info!("csfx-guest-init starting");
 
+    if let Err(e) = run().await {
+        error!(error = ?e, "csfx-guest-init failed");
+    }
+
+    power_off();
+}
+
+async fn run() -> Result<()> {
     mount_pseudo_filesystems();
 
-    if let Err(e) = bring_up_interface("eth0") {
-        warn!(error = %e, "Failed to bring up network interface");
-    }
+    bring_up_interface("eth0").context("Failed to bring up network interface")?;
 
-    if let Err(e) = add_host_route(std::net::Ipv4Addr::new(169, 254, 169, 254), "eth0") {
-        warn!(error = ?e, "Failed to add mmds route");
-    } else {
-        info!("mmds route added");
-    }
+    assign_bootstrap_address("eth0")
+        .context("Failed to assign mmds bootstrap address")?;
 
-    let mmds_data = fetch_mmds_data().await.unwrap_or_else(|e| {
-        warn!(error = ?e, "Failed to fetch mmds data, continuing without volumes");
-        MmdsData::default()
-    });
+    add_host_route(std::net::Ipv4Addr::new(169, 254, 169, 254), "eth0")
+        .context("Failed to add mmds route")?;
+    info!("mmds route added");
+
+    let mmds_data = fetch_mmds_data().await.context("Failed to fetch mmds data")?;
 
     if let Some(network) = &mmds_data.network {
-        if let Err(e) = configure_network("eth0", network) {
-            error!(error = %e, "Failed to configure guest network");
-        }
+        configure_network("eth0", network).context("Failed to configure guest network")?;
     }
 
     for volume in &mmds_data.volumes {
-        if let Err(e) = mount_volume(volume) {
-            error!(device = %volume.device, mount_path = %volume.mount_path, error = %e, "Failed to mount volume");
-        }
+        mount_volume(volume).with_context(|| {
+            format!(
+                "Failed to mount volume device={} mount_path={}",
+                volume.device, volume.mount_path
+            )
+        })?;
     }
 
     let log_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, LOG_PORT))
@@ -100,7 +107,7 @@ async fn main() -> Result<()> {
     let status = child.wait().await.context("Failed to wait on entrypoint")?;
     info!(code = ?status.code(), "entrypoint exited");
 
-    power_off();
+    Ok(())
 }
 
 fn bring_up_interface(name: &str) -> Result<()> {
@@ -131,6 +138,27 @@ fn bring_up_interface(name: &str) -> Result<()> {
         return Err(std::io::Error::last_os_error().into());
     }
 
+    Ok(())
+}
+
+fn assign_bootstrap_address(iface: &str) -> Result<()> {
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if socket_fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let result = (|| -> Result<()> {
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFADDR, MMDS_BOOTSTRAP_IP)?;
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFNETMASK, MMDS_BOOTSTRAP_NETMASK)?;
+        Ok(())
+    })();
+
+    unsafe {
+        libc::close(socket_fd);
+    }
+    result?;
+
+    info!(iface = %iface, ip = %MMDS_BOOTSTRAP_IP, "mmds bootstrap address assigned");
     Ok(())
 }
 
