@@ -148,8 +148,10 @@ fn assign_bootstrap_address(iface: &str) -> Result<()> {
     }
 
     let result = (|| -> Result<()> {
-        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFADDR, MMDS_BOOTSTRAP_IP)?;
-        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFNETMASK, MMDS_BOOTSTRAP_NETMASK)?;
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFADDR, MMDS_BOOTSTRAP_IP)
+            .context("SIOCSIFADDR failed")?;
+        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFNETMASK, MMDS_BOOTSTRAP_NETMASK)
+            .context("SIOCSIFNETMASK failed")?;
         Ok(())
     })();
 
@@ -294,9 +296,24 @@ fn ipv4_to_sockaddr(addr: std::net::Ipv4Addr) -> libc::sockaddr_in {
         sin_family: libc::AF_INET as libc::sa_family_t,
         sin_port: 0,
         sin_addr: libc::in_addr {
-            s_addr: u32::from_be_bytes(addr.octets()),
+            s_addr: u32::from_ne_bytes(addr.octets()),
         },
         sin_zero: [0; 8],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sockaddr_holds_octets_in_network_order() {
+        let sockaddr = ipv4_to_sockaddr(std::net::Ipv4Addr::new(169, 254, 169, 2));
+        assert_eq!(sockaddr.sin_addr.s_addr.to_ne_bytes(), [169, 254, 169, 2]);
+        assert_eq!(sockaddr.sin_family, libc::AF_INET as libc::sa_family_t);
+
+        let netmask = ipv4_to_sockaddr(prefix_to_netmask(16).unwrap());
+        assert_eq!(netmask.sin_addr.s_addr.to_ne_bytes(), [255, 255, 0, 0]);
     }
 }
 
