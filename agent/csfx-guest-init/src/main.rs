@@ -1,7 +1,11 @@
 use anyhow::{Context, Result};
+use libcontainer::container::builder::ContainerBuilder;
+use libcontainer::syscall::syscall::SyscallType;
 use nix::mount::{mount, MsFlags};
 use nix::pty::openpty;
 use nix::sys::reboot::{reboot, RebootMode};
+use nix::sys::wait::waitpid;
+use nix::unistd::Pid;
 use serde::Deserialize;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::Stdio;
@@ -15,7 +19,10 @@ use tracing::{error, info, warn};
 
 const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
-const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
+const CONTAINER_BUNDLE_PATH: &str = "/csfx-bundle";
+const CONTAINER_ROOTFS_DIR: &str = "rootfs";
+const CONTAINER_STATE_ROOT: &str = "/run/csfx";
+const CONTAINER_ID: &str = "workload";
 const MMDS_ADDR: &str = "169.254.169.254:80";
 const MMDS_BOOTSTRAP_IP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(169, 254, 169, 2);
 const MMDS_BOOTSTRAP_NETMASK: std::net::Ipv4Addr = std::net::Ipv4Addr::new(255, 255, 0, 0);
@@ -66,7 +73,6 @@ async fn main() {
 
 async fn run() -> Result<()> {
     mount_pseudo_filesystems();
-    write_etc_hosts();
 
     bring_up_interface("eth0").context("Failed to bring up network interface")?;
 
@@ -97,17 +103,77 @@ async fn run() -> Result<()> {
     let exec_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, EXEC_PORT))
         .context("Failed to bind vsock exec port")?;
 
-    let mut child = spawn_entrypoint(&mmds_data.env).await?;
-    let stdout = child.stdout.take().context("child has no stdout")?;
-    let stderr = child.stderr.take().context("child has no stderr")?;
+    let (stdout_read, stderr_read, container_pid) = start_container(&mmds_data.env).await?;
 
-    tokio::spawn(stream_logs(log_listener, stdout, stderr));
+    tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
     tokio::spawn(serve_exec(exec_listener));
 
-    let status = child.wait().await.context("Failed to wait on entrypoint")?;
-    info!(code = ?status.code(), "entrypoint exited");
+    let exit_status = tokio::task::spawn_blocking(move || waitpid(container_pid, None))
+        .await
+        .context("Container wait task panicked")?
+        .context("Failed to wait on container process")?;
+    info!(status = ?exit_status, "entrypoint exited");
 
     Ok(())
+}
+
+fn apply_extra_env(extra_env: &std::collections::HashMap<String, String>) -> Result<()> {
+    if extra_env.is_empty() {
+        return Ok(());
+    }
+
+    let config_path = std::path::Path::new(CONTAINER_BUNDLE_PATH).join("config.json");
+    let mut spec =
+        oci_spec::runtime::Spec::load(&config_path).context("Failed to load runtime config.json")?;
+
+    let process = spec
+        .process_mut()
+        .as_mut()
+        .context("Runtime config has no process section")?;
+    let mut env = process.env().clone().unwrap_or_default();
+    for (key, value) in extra_env {
+        env.push(format!("{}={}", key, value));
+    }
+    process.set_env(Some(env));
+
+    spec.save(&config_path)
+        .context("Failed to save runtime config.json")
+}
+
+async fn start_container(
+    extra_env: &std::collections::HashMap<String, String>,
+) -> Result<(AsyncFd<OwnedFd>, AsyncFd<OwnedFd>, Pid)> {
+    apply_extra_env(extra_env).context("Failed to apply mmds env to container config")?;
+    write_container_etc_hosts();
+
+    let (stdout_read, stdout_write) = nix::unistd::pipe().context("Failed to create stdout pipe")?;
+    let (stderr_read, stderr_write) = nix::unistd::pipe().context("Failed to create stderr pipe")?;
+
+    let container_pid = tokio::task::spawn_blocking(move || -> Result<Pid> {
+        let mut container = ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
+            .with_root_path(CONTAINER_STATE_ROOT)
+            .context("Invalid container state root path")?
+            .with_stdout(stdout_write)
+            .with_stderr(stderr_write)
+            .as_init(CONTAINER_BUNDLE_PATH)
+            .with_systemd(false)
+            .with_detach(true)
+            .build()
+            .context("Failed to build container")?;
+
+        container.start().context("Failed to start container")?;
+
+        let libcontainer_pid = container.pid().context("Container has no pid after start")?;
+        Ok(Pid::from_raw(libcontainer_pid.as_raw()))
+    })
+    .await
+    .context("Container build task panicked")??;
+
+    Ok((
+        AsyncFd::new(stdout_read).context("Failed to register stdout pipe")?,
+        AsyncFd::new(stderr_read).context("Failed to register stderr pipe")?,
+        container_pid,
+    ))
 }
 
 fn bring_up_interface(name: &str) -> Result<()> {
@@ -198,10 +264,13 @@ fn configure_network(iface: &str, network: &MmdsNetwork) -> Result<()> {
     Ok(())
 }
 
-fn write_etc_hosts() {
+fn write_container_etc_hosts() {
+    let path = std::path::Path::new(CONTAINER_BUNDLE_PATH)
+        .join(CONTAINER_ROOTFS_DIR)
+        .join("etc/hosts");
     let contents = "127.0.0.1\tlocalhost\n::1\tlocalhost\n";
-    if let Err(e) = std::fs::write("/etc/hosts", contents) {
-        warn!(error = %e, "Failed to write /etc/hosts");
+    if let Err(e) = std::fs::write(&path, contents) {
+        warn!(path = ?path, error = %e, "Failed to write container /etc/hosts");
     }
 }
 
@@ -399,20 +468,25 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
 }
 
 fn mount_volume(volume: &MmdsVolume) -> Result<()> {
-    std::fs::create_dir_all(&volume.mount_path)
-        .with_context(|| format!("Failed to create mount path {}", volume.mount_path))?;
+    let container_relative_path = volume.mount_path.trim_start_matches('/');
+    let host_mount_path = std::path::Path::new(CONTAINER_BUNDLE_PATH)
+        .join(CONTAINER_ROOTFS_DIR)
+        .join(container_relative_path);
+
+    std::fs::create_dir_all(&host_mount_path)
+        .with_context(|| format!("Failed to create mount path {:?}", host_mount_path))?;
 
     for fstype in ["ext4", "xfs", "btrfs"] {
         if mount(
             Some(volume.device.as_str()),
-            volume.mount_path.as_str(),
+            &host_mount_path,
             Some(fstype),
             MsFlags::empty(),
             None::<&str>,
         )
         .is_ok()
         {
-            info!(device = %volume.device, mount_path = %volume.mount_path, fstype = %fstype, "Volume mounted");
+            info!(device = %volume.device, mount_path = ?host_mount_path, fstype = %fstype, "Volume mounted");
             return Ok(());
         }
     }
@@ -421,60 +495,17 @@ fn mount_volume(volume: &MmdsVolume) -> Result<()> {
 }
 
 fn mount_pseudo_filesystems() {
-    let mounts: &[(&str, &str, &str, MsFlags, Option<&str>)] = &[
-        (
-            "proc",
-            "/proc",
-            "proc",
-            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
-            None,
-        ),
-        (
-            "sysfs",
-            "/sys",
-            "sysfs",
-            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
-            None,
-        ),
-        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID, None),
-        (
-            "devpts",
-            "/dev/pts",
-            "devpts",
-            MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
-            None,
-        ),
-        (
-            "tmpfs",
-            "/dev/shm",
-            "tmpfs",
-            MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
-            Some("mode=1777"),
-        ),
+    let mounts: &[(&str, &str, &str, MsFlags)] = &[
+        ("proc", "/proc", "proc", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
+        ("sysfs", "/sys", "sysfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
+        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID),
+        ("cgroup2", "/sys/fs/cgroup", "cgroup2", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
     ];
 
-    for (source, target, fstype, flags, data) in mounts {
+    for (source, target, fstype, flags) in mounts {
         std::fs::create_dir_all(target).ok();
-        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, *data) {
+        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, None::<&str>) {
             warn!(target = %target, error = %e, "Failed to mount pseudo filesystem");
-        }
-    }
-
-    link_std_fds();
-}
-
-fn link_std_fds() {
-    let links: &[(&str, &str)] = &[
-        ("/proc/self/fd", "/dev/fd"),
-        ("/proc/self/fd/0", "/dev/stdin"),
-        ("/proc/self/fd/1", "/dev/stdout"),
-        ("/proc/self/fd/2", "/dev/stderr"),
-    ];
-
-    for (target, link) in links {
-        std::fs::remove_file(link).ok();
-        if let Err(e) = std::os::unix::fs::symlink(target, link) {
-            warn!(link = %link, error = %e, "Failed to create std fd symlink");
         }
     }
 }
@@ -490,23 +521,7 @@ fn power_off() -> ! {
     }
 }
 
-async fn spawn_entrypoint(
-    env: &std::collections::HashMap<String, String>,
-) -> Result<tokio::process::Child> {
-    Command::new(ENTRYPOINT_PATH)
-        .envs(env)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn entrypoint")
-}
-
-async fn stream_logs(
-    listener: VsockListener,
-    mut stdout: tokio::process::ChildStdout,
-    mut stderr: tokio::process::ChildStderr,
-) {
+async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: AsyncFd<OwnedFd>) {
     let (mut stream, _) = match listener.accept().await {
         Ok(conn) => conn,
         Err(e) => {
@@ -520,7 +535,7 @@ async fn stream_logs(
 
     loop {
         tokio::select! {
-            result = stdout.read(&mut stdout_buf) => {
+            result = read_pty(&stdout, &mut stdout_buf) => {
                 match result {
                     Ok(0) => break,
                     Ok(n) => {
@@ -531,7 +546,7 @@ async fn stream_logs(
                     Err(_) => break,
                 }
             }
-            result = stderr.read(&mut stderr_buf) => {
+            result = read_pty(&stderr, &mut stderr_buf) => {
                 match result {
                     Ok(0) => {}
                     Ok(n) => {

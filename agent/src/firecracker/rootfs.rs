@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
 
+const CONTAINER_BUNDLE_DIR: &str = "csfx-bundle";
 const CONTAINER_ROOTFS_DIR: &str = "rootfs";
 
 const ROOTFS_CACHE_DIR: &str = "/var/lib/csfx-agent/rootfs";
@@ -112,7 +113,8 @@ impl RootfsBuilder {
         image_data: &oci_client::client::ImageData,
         extract_dir: &Path,
     ) -> Result<()> {
-        let rootfs_dir = extract_dir.join(CONTAINER_ROOTFS_DIR);
+        let bundle_dir = extract_dir.join(CONTAINER_BUNDLE_DIR);
+        let rootfs_dir = bundle_dir.join(CONTAINER_ROOTFS_DIR);
         tokio::fs::create_dir_all(&rootfs_dir)
             .await
             .context("Failed to create container rootfs directory")?;
@@ -123,7 +125,7 @@ impl RootfsBuilder {
                 .context("Failed to extract image layer")?;
         }
 
-        write_runtime_config(&image_data.config.data, extract_dir).await?;
+        write_runtime_config(&image_data.config.data, &bundle_dir).await?;
         install_guest_init(extract_dir).await?;
 
         Ok(())
