@@ -4,9 +4,12 @@ use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::config::ConfigFile;
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
+use oci_spec::runtime::{ProcessBuilder, RootBuilder, Spec, SpecBuilder, User, UserBuilder};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
+
+const CONTAINER_ROOTFS_DIR: &str = "rootfs";
 
 const ROOTFS_CACHE_DIR: &str = "/var/lib/csfx-agent/rootfs";
 const ROOTFS_SIZE_MB: u64 = 2048;
@@ -109,13 +112,18 @@ impl RootfsBuilder {
         image_data: &oci_client::client::ImageData,
         extract_dir: &Path,
     ) -> Result<()> {
+        let rootfs_dir = extract_dir.join(CONTAINER_ROOTFS_DIR);
+        tokio::fs::create_dir_all(&rootfs_dir)
+            .await
+            .context("Failed to create container rootfs directory")?;
+
         for layer in &image_data.layers {
-            extract_layer(&layer.data, extract_dir)
+            extract_layer(&layer.data, &rootfs_dir)
                 .await
                 .context("Failed to extract image layer")?;
         }
 
-        write_entrypoint_script(&image_data.config.data, extract_dir).await?;
+        write_runtime_config(&image_data.config.data, extract_dir).await?;
         install_guest_init(extract_dir).await?;
 
         Ok(())
@@ -186,56 +194,77 @@ fn apply_whiteout(dest: &Path, whiteout_path: &Path, deleted_name: &str) -> Resu
     Ok(())
 }
 
-async fn write_entrypoint_script(config_data: &[u8], extract_dir: &Path) -> Result<()> {
+async fn write_runtime_config(config_data: &[u8], extract_dir: &Path) -> Result<()> {
     let config_file: ConfigFile =
         serde_json::from_slice(config_data).context("Failed to parse image config")?;
     let config = config_file.config.unwrap_or_default();
 
-    let script = render_entrypoint_script(&config);
-    let script_path = extract_dir.join("csfx-entrypoint");
+    let spec = build_runtime_spec(&config)?;
+    let config_path = extract_dir.join("config.json");
 
-    tokio::fs::write(&script_path, script)
+    tokio::task::spawn_blocking(move || spec.save(&config_path))
         .await
-        .context("Failed to write entrypoint script")?;
-
-    set_executable(&script_path)
-        .await
-        .context("Failed to make entrypoint script executable")?;
-
-    Ok(())
+        .context("Runtime spec save task panicked")?
+        .context("Failed to write runtime config.json")
 }
 
-fn render_entrypoint_script(config: &oci_client::config::Config) -> String {
-    let mut script = String::from("#!/bin/sh\nset -e\n");
-
-    if let Some(working_dir) = &config.working_dir {
-        if !working_dir.is_empty() {
-            script.push_str(&format!("cd {}\n", shell_quote(working_dir)));
-        }
-    }
-
-    for entry in config.env.as_deref().unwrap_or_default() {
-        if let Some((key, value)) = entry.split_once('=') {
-            script.push_str(&format!("export {}={}\n", key, shell_quote(value)));
-        }
-    }
-
+fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
     let mut argv: Vec<String> = Vec::new();
     argv.extend(config.entrypoint.clone().unwrap_or_default());
     argv.extend(config.cmd.clone().unwrap_or_default());
-
-    script.push_str("exec");
-    for arg in &argv {
-        script.push(' ');
-        script.push_str(&shell_quote(arg));
+    if argv.is_empty() {
+        argv.push("sh".to_string());
     }
-    script.push('\n');
 
-    script
+    let mut env = vec![
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+    ];
+    env.extend(config.env.clone().unwrap_or_default());
+
+    let cwd = config
+        .working_dir
+        .clone()
+        .filter(|dir| !dir.is_empty())
+        .unwrap_or_else(|| "/".to_string());
+
+    let process = ProcessBuilder::default()
+        .terminal(false)
+        .user(parse_oci_user(config.user.as_deref()))
+        .args(argv)
+        .env(env)
+        .cwd(cwd)
+        .no_new_privileges(true)
+        .build()
+        .context("Failed to build runtime process spec")?;
+
+    let root = RootBuilder::default()
+        .path(CONTAINER_ROOTFS_DIR)
+        .readonly(false)
+        .build()
+        .context("Failed to build runtime root spec")?;
+
+    SpecBuilder::default()
+        .process(process)
+        .root(root)
+        .hostname("csfx".to_string())
+        .build()
+        .context("Failed to build runtime spec")
 }
 
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+fn parse_oci_user(user: Option<&str>) -> User {
+    let Some(user) = user else {
+        return UserBuilder::default().uid(0u32).gid(0u32).build().unwrap();
+    };
+
+    let (uid_part, gid_part) = match user.split_once(':') {
+        Some((uid, gid)) => (uid, Some(gid)),
+        None => (user, None),
+    };
+
+    let uid: u32 = uid_part.parse().unwrap_or(0);
+    let gid: u32 = gid_part.and_then(|g| g.parse().ok()).unwrap_or(0);
+
+    UserBuilder::default().uid(uid).gid(gid).build().unwrap()
 }
 
 async fn set_executable(path: &Path) -> Result<()> {

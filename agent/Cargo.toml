@@ -24,6 +24,7 @@ sysinfo = { workspace = true }
 rcgen = { workspace = true }
 futures-util = { workspace = true }
 oci-client = { version = "0.17", default-features = false }
+oci-spec = "0.9"
 tar = "0.4"
 flate2 = "1"
 x25519-dalek = { workspace = true }

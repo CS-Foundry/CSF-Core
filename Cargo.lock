@@ -1168,6 +1168,7 @@ dependencies = [
  "futures-util",
  "libc",
  "oci-client",
+ "oci-spec",
  "rcgen",
  "reqwest",
  "ring",

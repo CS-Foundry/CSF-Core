@@ -66,6 +66,7 @@ async fn main() {
 
 async fn run() -> Result<()> {
     mount_pseudo_filesystems();
+    write_etc_hosts();
 
     bring_up_interface("eth0").context("Failed to bring up network interface")?;
 
@@ -195,6 +196,13 @@ fn configure_network(iface: &str, network: &MmdsNetwork) -> Result<()> {
 
     info!(iface = %iface, ip = %ip, prefix = prefix, "Guest network configured");
     Ok(())
+}
+
+fn write_etc_hosts() {
+    let contents = "127.0.0.1\tlocalhost\n::1\tlocalhost\n";
+    if let Err(e) = std::fs::write("/etc/hosts", contents) {
+        warn!(error = %e, "Failed to write /etc/hosts");
+    }
 }
 
 fn write_resolv_conf(dns: &str) -> Result<()> {
@@ -413,15 +421,60 @@ fn mount_volume(volume: &MmdsVolume) -> Result<()> {
 }
 
 fn mount_pseudo_filesystems() {
-    let mounts: &[(&str, &str, &str, MsFlags)] = &[
-        ("proc", "/proc", "proc", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
-        ("sysfs", "/sys", "sysfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
-        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID),
+    let mounts: &[(&str, &str, &str, MsFlags, Option<&str>)] = &[
+        (
+            "proc",
+            "/proc",
+            "proc",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+            None,
+        ),
+        (
+            "sysfs",
+            "/sys",
+            "sysfs",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+            None,
+        ),
+        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID, None),
+        (
+            "devpts",
+            "/dev/pts",
+            "devpts",
+            MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
+            None,
+        ),
+        (
+            "tmpfs",
+            "/dev/shm",
+            "tmpfs",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+            Some("mode=1777"),
+        ),
     ];
 
-    for (source, target, fstype, flags) in mounts {
-        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, None::<&str>) {
+    for (source, target, fstype, flags, data) in mounts {
+        std::fs::create_dir_all(target).ok();
+        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, *data) {
             warn!(target = %target, error = %e, "Failed to mount pseudo filesystem");
+        }
+    }
+
+    link_std_fds();
+}
+
+fn link_std_fds() {
+    let links: &[(&str, &str)] = &[
+        ("/proc/self/fd", "/dev/fd"),
+        ("/proc/self/fd/0", "/dev/stdin"),
+        ("/proc/self/fd/1", "/dev/stdout"),
+        ("/proc/self/fd/2", "/dev/stderr"),
+    ];
+
+    for (target, link) in links {
+        std::fs::remove_file(link).ok();
+        if let Err(e) = std::os::unix::fs::symlink(target, link) {
+            warn!(link = %link, error = %e, "Failed to create std fd symlink");
         }
     }
 }
