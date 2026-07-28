@@ -915,7 +915,7 @@ async fn configure_and_boot_vm(
             "/boot-source",
             &json!({
                 "kernel_image_path": JAIL_KERNEL_NAME,
-                "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/csfx-guest-init",
+                "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/csfx-guest-init cgroup_no_v1=all systemd.unified_cgroup_hierarchy=1",
             }),
         )
         .await?;
