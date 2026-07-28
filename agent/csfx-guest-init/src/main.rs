@@ -506,6 +506,9 @@ fn mount_pseudo_filesystems() {
     for (source, target, fstype, flags) in mounts {
         std::fs::create_dir_all(target).ok();
         if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, None::<&str>) {
+            if e == nix::errno::Errno::EBUSY {
+                continue;
+            }
             warn!(target = %target, error = %e, "Failed to mount pseudo filesystem");
         }
     }
@@ -523,26 +526,27 @@ fn power_off() -> ! {
 }
 
 async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: AsyncFd<OwnedFd>) {
-    let (mut stream, _) = match listener.accept().await {
-        Ok(conn) => conn,
-        Err(e) => {
-            error!(error = %e, "Failed to accept log connection");
-            return;
-        }
-    };
+    let mut client: Option<tokio_vsock::VsockStream> = None;
+    let mut accept_fut = std::pin::pin!(listener.accept());
 
     let mut stdout_buf = [0u8; 4096];
     let mut stderr_buf = [0u8; 4096];
 
     loop {
         tokio::select! {
+            accept_result = &mut accept_fut, if client.is_none() => {
+                match accept_result {
+                    Ok((conn, _)) => client = Some(conn),
+                    Err(e) => error!(error = %e, "Failed to accept log connection"),
+                }
+            }
             result = read_pty(&stdout, &mut stdout_buf) => {
                 match result {
                     Ok(0) => break,
                     Ok(n) => {
-                        if stream.write_all(&stdout_buf[..n]).await.is_err() {
-                            break;
-                        }
+                        info!(target: "workload.stdout", "{}", String::from_utf8_lossy(&stdout_buf[..n]).trim_end());
+                        if let Some(stream) = client.as_mut()
+                            && stream.write_all(&stdout_buf[..n]).await.is_err() { client = None; }
                     }
                     Err(_) => break,
                 }
@@ -551,9 +555,11 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                 match result {
                     Ok(0) => {}
                     Ok(n) => {
-                        if stream.write_all(&stderr_buf[..n]).await.is_err() {
-                            break;
-                        }
+                        info!(target: "workload.stderr", "{}", String::from_utf8_lossy(&stderr_buf[..n]).trim_end());
+                        if let Some(stream) = client.as_mut()
+                            && stream.write_all(&stderr_buf[..n]).await.is_err() {
+                                client = None;
+                            }
                     }
                     Err(_) => break,
                 }
