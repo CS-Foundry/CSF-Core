@@ -127,6 +127,7 @@ impl RootfsBuilder {
 
         write_runtime_config(&image_data.config.data, &bundle_dir).await?;
         install_guest_init(extract_dir).await?;
+        create_guest_root_dirs(extract_dir).await?;
 
         Ok(())
     }
@@ -318,6 +319,15 @@ async fn install_guest_init(extract_dir: &Path) -> Result<()> {
         .await
         .context("Failed to make guest-init binary executable")?;
 
+    Ok(())
+}
+
+async fn create_guest_root_dirs(extract_dir: &Path) -> Result<()> {
+    for dir in ["dev", "proc", "sys", "etc"] {
+        tokio::fs::create_dir_all(extract_dir.join(dir))
+            .await
+            .with_context(|| format!("Failed to create guest root directory {}", dir))?;
+    }
     Ok(())
 }
 

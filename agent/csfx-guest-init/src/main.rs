@@ -275,6 +275,7 @@ fn write_container_etc_hosts() {
 }
 
 fn write_resolv_conf(dns: &str) -> Result<()> {
+    std::fs::create_dir_all("/etc").context("Failed to create /etc")?;
     std::fs::write(RESOLV_CONF_PATH, format!("nameserver {}\n", dns))
         .context("Failed to write resolv.conf")
 }
