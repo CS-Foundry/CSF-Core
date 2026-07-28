@@ -4,7 +4,10 @@ use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::config::ConfigFile;
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
-use oci_spec::runtime::{ProcessBuilder, RootBuilder, Spec, SpecBuilder, User, UserBuilder};
+use oci_spec::runtime::{
+    get_default_namespaces, Linux, LinuxNamespaceType, ProcessBuilder, RootBuilder, Spec,
+    SpecBuilder, User, UserBuilder,
+};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
@@ -219,10 +222,10 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         argv.push("sh".to_string());
     }
 
-    let mut env = vec![
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
-    ];
-    env.extend(config.env.clone().unwrap_or_default());
+    let mut env = config.env.clone().unwrap_or_default();
+    if !env.iter().any(|entry| entry.starts_with("PATH=")) {
+        env.push("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string());
+    }
 
     let cwd = config
         .working_dir
@@ -246,9 +249,18 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .build()
         .context("Failed to build runtime root spec")?;
 
+    let namespaces: Vec<_> = get_default_namespaces()
+        .into_iter()
+        .filter(|ns| ns.typ() != LinuxNamespaceType::Network)
+        .collect();
+
+    let mut linux = Linux::default();
+    linux.set_namespaces(Some(namespaces));
+
     SpecBuilder::default()
         .process(process)
         .root(root)
+        .linux(linux)
         .hostname("csfx".to_string())
         .build()
         .context("Failed to build runtime spec")

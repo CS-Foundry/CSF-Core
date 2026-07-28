@@ -101,6 +101,35 @@ pub async fn add_node_port_dnat(
     .await
 }
 
+pub async fn add_rg_port_dnat(
+    workload_id: &str,
+    protocol: &str,
+    rg_gateway_ip: &str,
+    rg_port: u16,
+    guest_ip: &str,
+    container_port: u16,
+) -> Result<()> {
+    run_nft(&[
+        "add",
+        "rule",
+        "ip",
+        NAT_TABLE_NAME,
+        NAT_CHAIN_NAME,
+        "ip",
+        "daddr",
+        rg_gateway_ip,
+        protocol,
+        "dport",
+        &rg_port.to_string(),
+        "dnat",
+        "to",
+        &format!("{}:{}", guest_ip, container_port),
+        "comment",
+        &format!("\"{}\"", workload_id),
+    ])
+    .await
+}
+
 pub async fn remove_node_port_rules(workload_id: &str) -> Result<()> {
     let output = Command::new("nft")
         .args(["-a", "list", "chain", "ip", NAT_TABLE_NAME, NAT_CHAIN_NAME])

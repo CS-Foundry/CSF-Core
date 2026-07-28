@@ -297,8 +297,8 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .context("Failed to write vm sidecar metadata")?;
 
         if let Some(guest_ip) = &guest_ip {
-            if let Err(e) = apply_node_port_dnat(&spec.workload_id, guest_ip, spec).await {
-                warn!(workload_id = %spec.workload_id, error = %e, "Failed to apply node port forwarding");
+            if let Err(e) = apply_port_dnat(&spec.workload_id, guest_ip, spec).await {
+                warn!(workload_id = %spec.workload_id, error = %e, "Failed to apply port forwarding");
             }
         }
 
@@ -766,30 +766,46 @@ fn cgroup_path(workload_id: &str) -> PathBuf {
     Path::new(CGROUP_ROOT).join(CGROUP_PARENT).join(workload_id)
 }
 
-async fn apply_node_port_dnat(
-    workload_id: &str,
-    guest_ip: &str,
-    spec: &WorkloadSpec,
-) -> Result<()> {
+async fn apply_port_dnat(workload_id: &str, guest_ip: &str, spec: &WorkloadSpec) -> Result<()> {
     let Some(ports) = &spec.ports else {
         return Ok(());
     };
 
-    for port in ports {
-        let Some(node_port) = port.node_port else {
-            continue;
-        };
+    let rg_gateway_ip = spec
+        .resource_group_cidr
+        .as_deref()
+        .and_then(crate::spec::second_host_ip);
 
+    for port in ports {
         let protocol = port.protocol.as_deref().unwrap_or("tcp");
-        crate::nftables::add_node_port_dnat(
-            workload_id,
-            protocol,
-            node_port,
-            guest_ip,
-            port.container_port,
-        )
-        .await
-        .context("Failed to add node port dnat rule")?;
+
+        if let Some(node_port) = port.node_port {
+            crate::nftables::add_node_port_dnat(
+                workload_id,
+                protocol,
+                node_port,
+                guest_ip,
+                port.container_port,
+            )
+            .await
+            .context("Failed to add node port dnat rule")?;
+        }
+
+        if let Some(rg_port) = port.rg_port {
+            let rg_gateway_ip = rg_gateway_ip
+                .as_deref()
+                .context("rg_port requires a resource group with a cidr")?;
+            crate::nftables::add_rg_port_dnat(
+                workload_id,
+                protocol,
+                rg_gateway_ip,
+                rg_port,
+                guest_ip,
+                port.container_port,
+            )
+            .await
+            .context("Failed to add rg port dnat rule")?;
+        }
     }
 
     Ok(())
