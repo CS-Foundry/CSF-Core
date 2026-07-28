@@ -165,9 +165,17 @@ fn extract_layer_blocking(gzip_data: &[u8], dest: &Path) -> Result<()> {
             }
         }
 
-        entry
+        if path.as_os_str() == "etc/passwd" {
+            info!(entry_size = entry.header().size().unwrap_or(0), "debug: etc/passwd entry found in layer");
+        }
+
+        let unpacked = entry
             .unpack_in(dest)
             .with_context(|| format!("Failed to unpack {:?}", path))?;
+
+        if path.as_os_str() == "etc/passwd" {
+            info!(unpacked = unpacked, "debug: etc/passwd unpack result");
+        }
     }
 
     Ok(())
