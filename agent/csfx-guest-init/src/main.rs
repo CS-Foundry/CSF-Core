@@ -343,7 +343,7 @@ async fn fetch_mmds_data_inner() -> Result<MmdsData> {
         .await
         .context("Failed to connect to mmds")?;
 
-    let request = "GET /latest/meta-data/ HTTP/1.1\r\nHost: 169.254.169.254\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: 169.254.169.254\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
     stream
         .write_all(request.as_bytes())
         .await
