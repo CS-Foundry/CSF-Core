@@ -13,7 +13,6 @@ use tokio::time::{timeout, Duration};
 use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
 use tracing::{error, info, warn};
 
-const READY_PORT: u32 = 10000;
 const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
 const ENTRYPOINT_PATH: &str = "/csfx-entrypoint";
@@ -103,8 +102,6 @@ async fn run() -> Result<()> {
 
     tokio::spawn(stream_logs(log_listener, stdout, stderr));
     tokio::spawn(serve_exec(exec_listener));
-
-    signal_ready().await;
 
     let status = child.wait().await.context("Failed to wait on entrypoint")?;
     info!(code = ?status.code(), "entrypoint exited");
@@ -450,17 +447,6 @@ async fn spawn_entrypoint(
         .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn entrypoint")
-}
-
-async fn signal_ready() {
-    match VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, READY_PORT)) {
-        Ok(listener) => {
-            if let Ok((mut stream, _)) = listener.accept().await {
-                let _ = stream.write_all(b"ready\n").await;
-            }
-        }
-        Err(e) => warn!(error = %e, "Failed to bind ready port"),
-    }
 }
 
 async fn stream_logs(
