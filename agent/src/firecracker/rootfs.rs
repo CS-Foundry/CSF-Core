@@ -5,8 +5,8 @@ use oci_client::config::ConfigFile;
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
 use oci_spec::runtime::{
-    get_default_namespaces, Linux, LinuxNamespaceType, ProcessBuilder, RootBuilder, Spec,
-    SpecBuilder, User, UserBuilder,
+    get_default_namespaces, Capability, Capabilities, LinuxBuilder, LinuxCapabilitiesBuilder,
+    LinuxNamespaceType, ProcessBuilder, RootBuilder, Spec, SpecBuilder, User, UserBuilder,
 };
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -241,12 +241,20 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .filter(|dir| !dir.is_empty())
         .unwrap_or_else(|| "/".to_string());
 
+    let capabilities = LinuxCapabilitiesBuilder::default()
+        .bounding(default_container_capabilities())
+        .effective(default_container_capabilities())
+        .permitted(default_container_capabilities())
+        .build()
+        .context("Failed to build runtime capabilities spec")?;
+
     let process = ProcessBuilder::default()
         .terminal(false)
         .user(parse_oci_user(config.user.as_deref()))
         .args(argv)
         .env(env)
         .cwd(cwd)
+        .capabilities(capabilities)
         .no_new_privileges(true)
         .build()
         .context("Failed to build runtime process spec")?;
@@ -262,8 +270,10 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .filter(|ns| ns.typ() != LinuxNamespaceType::Network)
         .collect();
 
-    let mut linux = Linux::default();
-    linux.set_namespaces(Some(namespaces));
+    let linux = LinuxBuilder::default()
+        .namespaces(namespaces)
+        .build()
+        .context("Failed to build runtime linux spec")?;
 
     SpecBuilder::default()
         .process(process)
@@ -272,6 +282,27 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .hostname("csfx".to_string())
         .build()
         .context("Failed to build runtime spec")
+}
+
+fn default_container_capabilities() -> Capabilities {
+    [
+        Capability::AuditWrite,
+        Capability::Chown,
+        Capability::DacOverride,
+        Capability::Fowner,
+        Capability::Fsetid,
+        Capability::Kill,
+        Capability::Mknod,
+        Capability::NetBindService,
+        Capability::NetRaw,
+        Capability::Setfcap,
+        Capability::Setgid,
+        Capability::Setpcap,
+        Capability::Setuid,
+        Capability::SysChroot,
+    ]
+    .into_iter()
+    .collect()
 }
 
 fn parse_oci_user(user: Option<&str>) -> User {
