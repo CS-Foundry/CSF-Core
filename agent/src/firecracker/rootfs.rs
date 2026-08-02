@@ -40,6 +40,7 @@ impl RootfsBuilder {
         Self {
             client: Client::new(ClientConfig {
                 protocol: ClientProtocol::Https,
+                max_concurrent_download: 1,
                 ..Default::default()
             }),
         }
@@ -148,6 +149,8 @@ async fn extract_layer(gzip_data: &[u8], dest: &Path) -> Result<()> {
 fn extract_layer_blocking(gzip_data: &[u8], dest: &Path) -> Result<()> {
     let decoder = GzDecoder::new(gzip_data);
     let mut archive = tar::Archive::new(decoder);
+    archive.set_preserve_ownerships(true);
+    archive.set_preserve_permissions(true);
 
     let entries = archive.entries().context("Failed to read layer entries")?;
     for entry in entries {
@@ -165,16 +168,12 @@ fn extract_layer_blocking(gzip_data: &[u8], dest: &Path) -> Result<()> {
             }
         }
 
-        if path.as_os_str() == "etc/passwd" {
-            info!(entry_size = entry.header().size().unwrap_or(0), "debug: etc/passwd entry found in layer");
-        }
-
         let unpacked = entry
             .unpack_in(dest)
             .with_context(|| format!("Failed to unpack {:?}", path))?;
 
-        if path.as_os_str() == "etc/passwd" {
-            info!(unpacked = unpacked, "debug: etc/passwd unpack result");
+        if !unpacked {
+            anyhow::bail!("Refused to unpack unsafe layer entry path {:?}", path);
         }
     }
 

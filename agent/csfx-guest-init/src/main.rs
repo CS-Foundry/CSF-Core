@@ -105,7 +105,7 @@ async fn run() -> Result<()> {
 
     let (stdout_read, stderr_read, container_pid) = start_container(&mmds_data.env).await?;
 
-    tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
+    let log_task = tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
     tokio::spawn(serve_exec(exec_listener));
 
     let exit_status = tokio::task::spawn_blocking(move || waitpid(container_pid, None))
@@ -113,6 +113,8 @@ async fn run() -> Result<()> {
         .context("Container wait task panicked")?
         .context("Failed to wait on container process")?;
     info!(status = ?exit_status, "entrypoint exited");
+
+    let _ = timeout(Duration::from_secs(2), log_task).await;
 
     if !matches!(exit_status, WaitStatus::Exited(_, 0)) {
         dump_failure_diagnostics();
@@ -308,8 +310,17 @@ fn write_container_etc_hosts() {
 }
 
 fn write_resolv_conf(dns: &str) -> Result<()> {
+    let contents = format!("nameserver {}\n", dns);
+
     std::fs::create_dir_all("/etc").context("Failed to create /etc")?;
-    std::fs::write(RESOLV_CONF_PATH, format!("nameserver {}\n", dns))
+    std::fs::write(RESOLV_CONF_PATH, &contents).context("Failed to write guest resolv.conf")?;
+
+    let container_resolv_conf = std::path::Path::new(CONTAINER_BUNDLE_PATH)
+        .join(CONTAINER_ROOTFS_DIR)
+        .join("etc/resolv.conf");
+    std::fs::create_dir_all(container_resolv_conf.parent().unwrap())
+        .context("Failed to create container /etc")?;
+    std::fs::write(&container_resolv_conf, &contents)
         .context("Failed to write resolv.conf")
 }
 
@@ -564,8 +575,10 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
 
     let mut stdout_buf = [0u8; 4096];
     let mut stderr_buf = [0u8; 4096];
+    let mut stdout_open = true;
+    let mut stderr_open = true;
 
-    loop {
+    while stdout_open || stderr_open {
         tokio::select! {
             accept_result = &mut accept_fut, if client.is_none() => {
                 match accept_result {
@@ -573,20 +586,20 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                     Err(e) => error!(error = %e, "Failed to accept log connection"),
                 }
             }
-            result = read_pty(&stdout, &mut stdout_buf) => {
+            result = read_pty(&stdout, &mut stdout_buf), if stdout_open => {
                 match result {
-                    Ok(0) => break,
+                    Ok(0) => stdout_open = false,
                     Ok(n) => {
                         info!(target: "workload.stdout", "{}", String::from_utf8_lossy(&stdout_buf[..n]).trim_end());
                         if let Some(stream) = client.as_mut()
                             && stream.write_all(&stdout_buf[..n]).await.is_err() { client = None; }
                     }
-                    Err(_) => break,
+                    Err(_) => stdout_open = false,
                 }
             }
-            result = read_pty(&stderr, &mut stderr_buf) => {
+            result = read_pty(&stderr, &mut stderr_buf), if stderr_open => {
                 match result {
-                    Ok(0) => {}
+                    Ok(0) => stderr_open = false,
                     Ok(n) => {
                         info!(target: "workload.stderr", "{}", String::from_utf8_lossy(&stderr_buf[..n]).trim_end());
                         if let Some(stream) = client.as_mut()
@@ -594,7 +607,7 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                                 client = None;
                             }
                     }
-                    Err(_) => break,
+                    Err(_) => stderr_open = false,
                 }
             }
         }
