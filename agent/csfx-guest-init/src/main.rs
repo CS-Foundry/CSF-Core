@@ -15,7 +15,7 @@ use tokio::net::TcpStream;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
@@ -72,10 +72,13 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
+    debug!(stage = "mount_pseudo_filesystems", "Mounting pseudo filesystems");
     mount_pseudo_filesystems();
 
+    debug!(stage = "bring_up_interface", iface = "eth0", "Bringing up network interface");
     bring_up_interface("eth0").context("Failed to bring up network interface")?;
 
+    debug!(stage = "assign_bootstrap_address", iface = "eth0", "Assigning mmds bootstrap address");
     assign_bootstrap_address("eth0")
         .context("Failed to assign mmds bootstrap address")?;
 
@@ -83,13 +86,23 @@ async fn run() -> Result<()> {
         .context("Failed to add mmds route")?;
     info!("mmds route added");
 
+    debug!(stage = "fetch_mmds_data", "Fetching mmds data");
     let mmds_data = fetch_mmds_data().await.context("Failed to fetch mmds data")?;
+    debug!(
+        stage = "mmds_data_fetched",
+        has_network = mmds_data.network.is_some(),
+        volume_count = mmds_data.volumes.len(),
+        env_count = mmds_data.env.len(),
+        "mmds data fetched"
+    );
 
     if let Some(network) = &mmds_data.network {
+        debug!(stage = "configure_network", ip = %network.ip, prefix = %network.prefix, dns = ?network.dns, "Configuring guest network");
         configure_network("eth0", network).context("Failed to configure guest network")?;
     }
 
     for volume in &mmds_data.volumes {
+        debug!(stage = "mount_volume", device = %volume.device, mount_path = %volume.mount_path, "Mounting volume");
         mount_volume(volume).with_context(|| {
             format!(
                 "Failed to mount volume device={} mount_path={}",
@@ -102,8 +115,11 @@ async fn run() -> Result<()> {
         .context("Failed to bind vsock log port")?;
     let exec_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, EXEC_PORT))
         .context("Failed to bind vsock exec port")?;
+    debug!(stage = "vsock_listeners_bound", log_port = LOG_PORT, exec_port = EXEC_PORT, "vsock listeners bound");
 
+    debug!(stage = "start_container", "Starting container via libcontainer");
     let (stdout_read, stderr_read, container_pid) = start_container(&mmds_data.env).await?;
+    debug!(stage = "container_started", container_pid = container_pid.as_raw(), "Container process started");
 
     let log_task = tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
     tokio::spawn(serve_exec(exec_listener));

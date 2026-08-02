@@ -10,7 +10,7 @@ use oci_spec::runtime::{
 };
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
-use tracing::info;
+use tracing::{debug, info};
 
 const CONTAINER_BUNDLE_DIR: &str = "csfx-bundle";
 const CONTAINER_ROOTFS_DIR: &str = "rootfs";
@@ -71,14 +71,22 @@ impl RootfsBuilder {
 
         info!(image = %image, digest = %digest, "Building rootfs image");
 
+        debug!(image = %image, digest = %digest, stage = "pull_layers", "Pulling image layers");
         let image_data = self
             .client
             .pull(&reference, &auth, GZIP_LAYER_MEDIA_TYPES.to_vec())
             .await
             .context("Failed to pull image layers")?;
+        debug!(
+            image = %image,
+            stage = "pull_layers",
+            layer_count = image_data.layers.len(),
+            "Pulled image layers"
+        );
 
         let extract_dir = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.extract", cache_key));
         if extract_dir.exists() {
+            debug!(path = ?extract_dir, stage = "extract_prepare", "Removing stale extraction directory");
             tokio::fs::remove_dir_all(&extract_dir)
                 .await
                 .context("Failed to clean up stale rootfs extraction directory")?;
@@ -90,6 +98,7 @@ impl RootfsBuilder {
         let build_result = self.build_extracted_rootfs(&image_data, &extract_dir).await;
 
         if build_result.is_err() {
+            debug!(path = ?extract_dir, stage = "extract_cleanup", "Removing extraction directory after failure");
             tokio::fs::remove_dir_all(&extract_dir)
                 .await
                 .context("Failed to clean up rootfs extraction directory after failure")?;
@@ -97,6 +106,7 @@ impl RootfsBuilder {
         build_result?;
 
         let tmp_image_path = Path::new(ROOTFS_CACHE_DIR).join(format!("{}.ext4.tmp", cache_key));
+        debug!(path = ?tmp_image_path, stage = "build_ext4", "Building ext4 image");
         build_ext4_image(&extract_dir, &tmp_image_path).await?;
 
         tokio::fs::remove_dir_all(&extract_dir)
@@ -123,14 +133,26 @@ impl RootfsBuilder {
             .await
             .context("Failed to create container rootfs directory")?;
 
-        for layer in &image_data.layers {
+        for (index, layer) in image_data.layers.iter().enumerate() {
+            debug!(
+                stage = "extract_layer",
+                layer_index = index,
+                layer_size = layer.data.len(),
+                media_type = %layer.media_type,
+                "Extracting image layer"
+            );
             extract_layer(&layer.data, &rootfs_dir)
                 .await
                 .context("Failed to extract image layer")?;
         }
 
+        debug!(stage = "write_runtime_config", "Writing OCI runtime config.json");
         write_runtime_config(&image_data.config.data, &bundle_dir).await?;
+
+        debug!(stage = "install_guest_init", "Installing guest-init binary");
         install_guest_init(extract_dir).await?;
+
+        debug!(stage = "create_root_dirs", "Creating standard guest root directories");
         create_guest_root_dirs(extract_dir).await?;
 
         Ok(())
@@ -240,6 +262,17 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .filter(|dir| !dir.is_empty())
         .unwrap_or_else(|| "/".to_string());
 
+    let user = parse_oci_user(config.user.as_deref());
+    debug!(
+        stage = "build_runtime_spec",
+        image_user = ?config.user,
+        resolved_uid = user.uid(),
+        resolved_gid = user.gid(),
+        argv = ?argv,
+        cwd = %cwd,
+        "Resolved container process identity"
+    );
+
     let capabilities = LinuxCapabilitiesBuilder::default()
         .bounding(default_container_capabilities())
         .effective(default_container_capabilities())
@@ -249,7 +282,7 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
 
     let process = ProcessBuilder::default()
         .terminal(false)
-        .user(parse_oci_user(config.user.as_deref()))
+        .user(user)
         .args(argv)
         .env(env)
         .cwd(cwd)

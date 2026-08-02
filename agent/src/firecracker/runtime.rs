@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::firecracker::api::FirecrackerApiClient;
 use crate::firecracker::rootfs::RootfsBuilder;
@@ -215,8 +215,11 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 
     async fn start_workload(&self, spec: &WorkloadSpec) -> Result<String> {
+        debug!(workload_id = %spec.workload_id, image = %spec.image, stage = "start_workload", "Starting workload deploy");
+
         let rootfs_builder = RootfsBuilder::new();
         let rootfs_path = rootfs_builder.ensure_rootfs(&spec.image).await?;
+        debug!(workload_id = %spec.workload_id, path = ?rootfs_path, stage = "rootfs_ready", "Rootfs image ready for boot");
 
         let jailer_id = jailer_short_id(&spec.workload_id);
         let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&jailer_id);
@@ -231,6 +234,14 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .join(API_SOCKET_NAME)
             .to_string_lossy()
             .to_string();
+        debug!(
+            workload_id = %spec.workload_id,
+            jailer_id = %jailer_id,
+            vsock_cid = vsock_cid,
+            tap_device = %tap_device,
+            stage = "jailer_prepared",
+            "Jailer chroot and vsock cid allocated"
+        );
 
         let bridge_iface = match &spec.resource_group_id {
             Some(resource_group_id) => Some(
@@ -239,6 +250,12 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             ),
             None => None,
         };
+        debug!(
+            workload_id = %spec.workload_id,
+            bridge_iface = ?bridge_iface,
+            stage = "rg_network_ready",
+            "Resource group network resolved"
+        );
 
         let guest_network = match (&spec.resource_group_id, &spec.resource_group_cidr) {
             (Some(resource_group_id), Some(cidr)) => {
@@ -257,10 +274,23 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             }
             _ => None,
         };
+        debug!(
+            workload_id = %spec.workload_id,
+            guest_ip = ?guest_network.as_ref().map(|n| n.ip.clone()),
+            stage = "guest_network_ready",
+            "Guest network configuration resolved"
+        );
 
         let jailer_uid = process_uid();
 
         let jailer_pid = spawn_jailer(&jailer_id, &chroot_dir, API_SOCKET_NAME, jailer_uid).await?;
+        debug!(
+            workload_id = %spec.workload_id,
+            jailer_pid = jailer_pid,
+            jailer_uid = jailer_uid,
+            stage = "jailer_spawned",
+            "Jailer process spawned"
+        );
 
         let boot_result = boot_vm(
             &vm_root_dir,
@@ -276,9 +306,11 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
         .await;
 
         let metrics_path = if let Err(e) = boot_result {
+            debug!(workload_id = %spec.workload_id, error = %e, stage = "boot_vm_failed", "Firecracker boot failed, aborting jailer");
             abort_failed_jailer(&jailer_id, &tap_device).await;
             return Err(e);
         } else {
+            debug!(workload_id = %spec.workload_id, stage = "boot_vm_ok", "Firecracker boot succeeded");
             vm_root_dir.join(METRICS_FILE_NAME)
         };
 
@@ -297,6 +329,7 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             .context("Failed to write vm sidecar metadata")?;
 
         if let Some(guest_ip) = &guest_ip {
+            debug!(workload_id = %spec.workload_id, guest_ip = %guest_ip, stage = "port_dnat", "Applying port forwarding rules");
             if let Err(e) = apply_port_dnat(&spec.workload_id, guest_ip, spec).await {
                 warn!(workload_id = %spec.workload_id, error = %e, "Failed to apply port forwarding");
             }
@@ -598,9 +631,12 @@ async fn boot_vm(
     let metrics_path = vm_root_dir.join(METRICS_FILE_NAME);
     create_metrics_fifo(&metrics_path).context("Failed to create metrics fifo")?;
 
+    debug!(path = ?rootfs_path, vm_root_dir = ?vm_root_dir, stage = "stage_kernel", "Staging kernel image into jailer chroot");
     stage_kernel_into_jail(vm_root_dir)
         .await
         .context("Failed to stage kernel image into jailer chroot")?;
+
+    debug!(path = ?rootfs_path, stage = "stage_rootfs", "Staging rootfs image into jailer chroot");
     stage_rootfs_into_jail(rootfs_path, vm_root_dir)
         .await
         .context("Failed to stage rootfs image into jailer chroot")?;
@@ -611,6 +647,13 @@ async fn boot_vm(
         tap_device: tap_device.to_string(),
         vsock_cid,
     };
+    debug!(
+        api_socket = %boot_config.api_socket,
+        tap_device = %boot_config.tap_device,
+        vsock_cid = boot_config.vsock_cid,
+        stage = "boot_config_ready",
+        "Boot config assembled, calling Firecracker API"
+    );
 
     configure_and_boot_vm(
         &boot_config,
@@ -899,6 +942,12 @@ async fn configure_and_boot_vm(
     guest_network: Option<&GuestNetwork>,
     jailer_uid: u32,
 ) -> Result<()> {
+    debug!(
+        tap_device = %boot_config.tap_device,
+        bridge_iface = ?bridge_iface,
+        stage = "create_tap_device",
+        "Creating tap device"
+    );
     create_tap_device(&boot_config.tap_device, bridge_iface, jailer_uid).await?;
 
     let client = FirecrackerApiClient::new(boot_config.api_socket.clone());
@@ -906,6 +955,7 @@ async fn configure_and_boot_vm(
     let vcpu_count = ((spec.cpu_millicores.max(100)) as f64 / 1000.0).ceil() as i64;
     let mem_size_mib = (spec.memory_bytes / 1024 / 1024).max(128);
 
+    debug!(vcpu_count = vcpu_count, mem_size_mib = mem_size_mib, stage = "machine_config", "Configuring machine");
     client
         .put(
             "/machine-config",
@@ -916,6 +966,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    debug!(stage = "metrics_config", "Configuring metrics socket");
     client
         .put(
             "/metrics",
@@ -926,6 +977,7 @@ async fn configure_and_boot_vm(
         .await
         .context("Failed to configure metrics")?;
 
+    debug!(stage = "boot_source_config", "Configuring boot source");
     client
         .put(
             "/boot-source",
@@ -936,6 +988,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    debug!(stage = "rootfs_drive_config", "Configuring rootfs drive");
     client
         .put(
             "/drives/rootfs",
@@ -948,6 +1001,11 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    debug!(
+        volume_count = spec.volume_mounts.as_deref().unwrap_or_default().len(),
+        stage = "volume_drives_config",
+        "Attaching volume drives"
+    );
     let mounted_volumes = attach_volume_drives(
         &client,
         vm_root_dir,
@@ -955,6 +1013,7 @@ async fn configure_and_boot_vm(
     )
     .await?;
 
+    debug!(stage = "network_interface_config", "Configuring network interface");
     client
         .put(
             "/network-interfaces/eth0",
@@ -965,6 +1024,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    debug!(vsock_cid = boot_config.vsock_cid, stage = "vsock_config", "Configuring vsock device");
     client
         .put(
             "/vsock",
@@ -975,6 +1035,7 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
+    debug!(stage = "mmds_config", "Configuring mmds");
     configure_mmds(
         &client,
         &mounted_volumes,
@@ -983,9 +1044,12 @@ async fn configure_and_boot_vm(
     )
     .await?;
 
+    debug!(stage = "instance_start", "Sending InstanceStart action");
     client
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
         .await?;
+
+    debug!(stage = "instance_started", "InstanceStart accepted by Firecracker");
 
     Ok(())
 }
