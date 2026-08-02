@@ -4,7 +4,7 @@ use libcontainer::syscall::syscall::SyscallType;
 use nix::mount::{mount, MsFlags};
 use nix::pty::openpty;
 use nix::sys::reboot::{reboot, RebootMode};
-use nix::sys::wait::waitpid;
+use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::Pid;
 use serde::Deserialize;
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -114,6 +114,10 @@ async fn run() -> Result<()> {
         .context("Failed to wait on container process")?;
     info!(status = ?exit_status, "entrypoint exited");
 
+    if !matches!(exit_status, WaitStatus::Exited(_, 0)) {
+        dump_failure_diagnostics();
+    }
+
     Ok(())
 }
 
@@ -174,6 +178,35 @@ async fn start_container(
         AsyncFd::new(stderr_read).context("Failed to register stderr pipe")?,
         container_pid,
     ))
+}
+
+fn dump_failure_diagnostics() {
+    let config_path = std::path::Path::new(CONTAINER_BUNDLE_PATH).join("config.json");
+    match std::fs::read_to_string(&config_path) {
+        Ok(contents) => warn!(config = %contents, "debug: container config.json on failure"),
+        Err(e) => warn!(error = ?e, path = ?config_path, "debug: failed to read config.json on failure"),
+    }
+
+    match std::fs::read_to_string("/proc/self/mountinfo") {
+        Ok(contents) => warn!(mountinfo = %contents, "debug: guest mountinfo on failure"),
+        Err(e) => warn!(error = ?e, "debug: failed to read mountinfo on failure"),
+    }
+
+    let rootfs_path = std::path::Path::new(CONTAINER_BUNDLE_PATH).join(CONTAINER_ROOTFS_DIR);
+    let conf_d_path = rootfs_path.join("etc/nginx/conf.d");
+    match std::fs::metadata(&conf_d_path) {
+        Ok(meta) => {
+            use std::os::unix::fs::MetadataExt;
+            warn!(
+                path = ?conf_d_path,
+                mode = format!("{:o}", meta.mode()),
+                uid = meta.uid(),
+                gid = meta.gid(),
+                "debug: conf.d metadata on failure"
+            );
+        }
+        Err(e) => warn!(error = ?e, path = ?conf_d_path, "debug: failed to stat conf.d on failure"),
+    }
 }
 
 fn bring_up_interface(name: &str) -> Result<()> {
