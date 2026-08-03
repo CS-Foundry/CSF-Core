@@ -444,15 +444,19 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 
     async fn stats(&self, workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
-        let handles = self.handles.lock().await;
-        let Some(handle) = handles.get(workload_handle) else {
-            return Ok(crate::runtime::ContainerStats::default());
+        let (cpu_usage_percent, memory_usage_bytes, metrics_path) = {
+            let handles = self.handles.lock().await;
+            let Some(handle) = handles.get(workload_handle) else {
+                return Ok(crate::runtime::ContainerStats::default());
+            };
+            let cpu_usage_percent = read_cpu_usage_percent(handle).await;
+            let memory_usage_bytes = read_memory_usage_bytes(&handle.cgroup_path).await;
+            (cpu_usage_percent, memory_usage_bytes, handle.metrics_path.clone())
         };
 
-        let cpu_usage_percent = read_cpu_usage_percent(handle).await;
-        let memory_usage_bytes = read_memory_usage_bytes(&handle.cgroup_path).await;
-        let (network_rx_bytes, network_tx_bytes) =
-            read_network_bytes(&handle.metrics_path).await.unzip();
+        let (network_rx_bytes, network_tx_bytes) = read_network_bytes(&metrics_path)
+            .await
+            .unzip();
 
         Ok(crate::runtime::ContainerStats {
             cpu_usage_percent,
@@ -574,7 +578,13 @@ async fn read_cgroup_u64(cgroup_path: &Path, file: &str, key: &str) -> Option<u6
 }
 
 async fn read_network_bytes(metrics_path: &Path) -> Option<(i64, i64)> {
-    let content = tokio::fs::read_to_string(metrics_path).await.ok()?;
+    let content = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        read_metrics_fifo_nonblocking(metrics_path),
+    )
+    .await
+    .ok()??;
+
     let last_line = content.lines().last()?;
     let sample: serde_json::Value = serde_json::from_str(last_line).ok()?;
 
@@ -582,6 +592,27 @@ async fn read_network_bytes(metrics_path: &Path) -> Option<(i64, i64)> {
     let tx = sample.get("net")?.get("tx_bytes_count")?.as_i64()?;
 
     Some((rx, tx))
+}
+
+async fn read_metrics_fifo_nonblocking(metrics_path: &Path) -> Option<String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use tokio::io::AsyncReadExt;
+
+    let path = metrics_path.to_owned();
+    let std_file = tokio::task::spawn_blocking(move || {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path)
+    })
+    .await
+    .ok()?
+    .ok()?;
+
+    let mut file = tokio::fs::File::from_std(std_file);
+    let mut content = String::new();
+    file.read_to_string(&mut content).await.ok()?;
+    Some(content)
 }
 
 fn vsock_log_stream(

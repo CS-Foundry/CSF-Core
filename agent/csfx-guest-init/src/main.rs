@@ -587,7 +587,6 @@ fn power_off() -> ! {
 
 async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: AsyncFd<OwnedFd>) {
     let mut client: Option<tokio_vsock::VsockStream> = None;
-    let mut accept_fut = std::pin::pin!(listener.accept());
 
     let mut stdout_buf = [0u8; 4096];
     let mut stderr_buf = [0u8; 4096];
@@ -596,7 +595,7 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
 
     while stdout_open || stderr_open {
         tokio::select! {
-            accept_result = &mut accept_fut, if client.is_none() => {
+            accept_result = listener.accept(), if client.is_none() => {
                 match accept_result {
                     Ok((conn, _)) => client = Some(conn),
                     Err(e) => error!(error = %e, "Failed to accept log connection"),
