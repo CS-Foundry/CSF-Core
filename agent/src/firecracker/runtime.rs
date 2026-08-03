@@ -179,8 +179,14 @@ impl FirecrackerRuntime {
 
     async fn allocate_cid(&self) -> u32 {
         let mut next = self.next_cid.lock().await;
-        let cid = *next;
-        *next += 1;
+        let handles = self.handles.lock().await;
+
+        let mut cid = *next;
+        while handles.values().any(|h| h.vsock_cid == cid) {
+            cid += 1;
+        }
+
+        *next = cid + 1;
         cid
     }
 
@@ -389,15 +395,21 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 
     async fn exec(&self, workload_handle: &str) -> Result<ExecSession> {
-        let handles = self.handles.lock().await;
-        let handle = handles
-            .get(workload_handle)
-            .context("workload not running here")?;
+        let vsock_cid = {
+            let handles = self.handles.lock().await;
+            handles
+                .get(workload_handle)
+                .context("workload not running here")?
+                .vsock_cid
+        };
 
-        let stream =
-            tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(handle.vsock_cid, 10002))
-                .await
-                .context("Failed to connect to guest exec vsock port")?;
+        let stream = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(vsock_cid, 10002)),
+        )
+        .await
+        .context("Timed out connecting to guest exec vsock port")?
+        .context("Failed to connect to guest exec vsock port")?;
 
         let (read_half, write_half) = stream.into_split();
 

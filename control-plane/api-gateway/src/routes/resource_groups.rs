@@ -123,6 +123,15 @@ pub async fn create_resource_group(
         )
     })?;
 
+    if requested.overlaps(&MGMT_TUNNEL_CIDR) {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(
+                json!({ "error": format!("CIDR {} overlaps with the management tunnel range (10.100.0.0/16)", req.internal_cidr) }),
+            ),
+        ));
+    }
+
     let existing_groups = ResourceGroups::find()
         .filter(resource_groups::Column::OrganizationId.eq(org_id))
         .all(&state.db_conn)
@@ -179,9 +188,14 @@ pub async fn create_resource_group(
     ))
 }
 
-const SUGGESTED_CIDR_BASE: u32 = 0x0A640000;
+const SUGGESTED_CIDR_BASE: u32 = 0x0A650000;
 const SUGGESTED_CIDR_PREFIX: u8 = 24;
 const SUGGESTED_CIDR_MAX_SUBNETS: u32 = 256;
+
+const MGMT_TUNNEL_CIDR: Cidr = Cidr {
+    network: 0x0A640000,
+    prefix_len: 16,
+};
 
 pub async fn suggest_cidr(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
