@@ -264,6 +264,7 @@ pub async fn exec_workload(
     let (agent_socket, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| {
+            tracing::warn!(workload_id = %workload_id, error = %e, "failed to connect to agent exec socket");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": format!("failed to connect to agent exec socket: {}", e) })),
@@ -377,6 +378,7 @@ pub async fn stream_node_metrics(
     let (agent_socket, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| {
+            tracing::warn!(agent_id = %agent_id, error = %e, "failed to connect to agent metrics socket");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(

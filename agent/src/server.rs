@@ -164,8 +164,10 @@ async fn logs_handler(
         return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
     }
 
-    verify_ticket(&headers, &workload_id, &state.agent_id.to_string())
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    verify_ticket(&headers, &workload_id, &state.agent_id.to_string()).map_err(|e| {
+        warn!(workload_id = %workload_id, error = %e, "rejected request with invalid proxy ticket");
+        (StatusCode::UNAUTHORIZED, e.to_string())
+    })?;
 
     let container_id = state
         .running_containers
@@ -194,8 +196,10 @@ async fn exec_handler(
         return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
     }
 
-    verify_ticket(&headers, &workload_id, &state.agent_id.to_string())
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    verify_ticket(&headers, &workload_id, &state.agent_id.to_string()).map_err(|e| {
+        warn!(workload_id = %workload_id, error = %e, "rejected request with invalid proxy ticket");
+        (StatusCode::UNAUTHORIZED, e.to_string())
+    })?;
 
     let container_id = state
         .running_containers

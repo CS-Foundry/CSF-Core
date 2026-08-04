@@ -1,5 +1,6 @@
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::{CertificateParams, DistinguishedName, DnType, Issuer, KeyPair, SanType};
+use std::sync::Arc;
 
 const CA_CERT_PATH: &str = "/var/lib/csfx-cp/ca.crt";
 const CA_KEY_PATH: &str = "/var/lib/csfx-cp/ca.key";
@@ -60,6 +61,12 @@ fn collect_sans() -> anyhow::Result<(String, Vec<SanType>)> {
     Ok((san_hosts, sans))
 }
 
+fn restrict_alpn_to_http1(config: &RustlsConfig) {
+    let mut inner = (*config.get_inner()).clone();
+    inner.alpn_protocols = vec![b"http/1.1".to_vec()];
+    config.reload_from_config(Arc::new(inner));
+}
+
 pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
     let cert_path = std::env::var("TLS_CERT").unwrap_or_default();
     let key_path = std::env::var("TLS_KEY").unwrap_or_default();
@@ -68,6 +75,7 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
         let cert_pem = std::fs::read(&cert_path)?;
         let key_pem = std::fs::read(&key_path)?;
         let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
+        restrict_alpn_to_http1(&config);
         tracing::info!(cert = %cert_path, "TLS loaded from files");
         return Ok(config);
     }
@@ -92,6 +100,7 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
             let key_pem = key_pair.serialize_pem().into_bytes();
 
             let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
+            restrict_alpn_to_http1(&config);
 
             tracing::info!(sans = %san_hosts, "TLS certificate signed by internal CA");
             Ok(config)
@@ -102,6 +111,7 @@ pub async fn generate_tls_config() -> anyhow::Result<RustlsConfig> {
             let key_pem = key_pair.serialize_pem().into_bytes();
 
             let config = RustlsConfig::from_pem(cert_pem, key_pem).await?;
+            restrict_alpn_to_http1(&config);
 
             tracing::warn!(
                 sans = %san_hosts,

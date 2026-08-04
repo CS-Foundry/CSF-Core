@@ -420,16 +420,8 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 
     fn logs(&self, workload_handle: &str) -> LogStream {
-        let chroot_dir = {
-            let handles = match self.handles.try_lock() {
-                Ok(h) => h,
-                Err(_) => return Box::pin(futures_util::stream::empty()),
-            };
-            match handles.get(workload_handle) {
-                Some(handle) => handle.chroot_dir.clone(),
-                None => return Box::pin(futures_util::stream::empty()),
-            }
-        };
+        let jailer_id = jailer_short_id(workload_handle);
+        let chroot_dir = PathBuf::from(JAILER_BASE_DIR).join(&jailer_id);
 
         Box::pin(vsock_log_stream(chroot_dir, workload_handle.to_string()))
     }
