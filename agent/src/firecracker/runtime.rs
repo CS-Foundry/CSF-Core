@@ -3,6 +3,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -84,6 +86,44 @@ fn jailer_vm_root_dir(chroot_dir: &Path, jailer_id: &str) -> PathBuf {
         .join(firecracker_bin_name)
         .join(jailer_id)
         .join("root")
+}
+
+fn vsock_uds_path(chroot_dir: &Path, workload_id: &str) -> PathBuf {
+    let jailer_id = jailer_short_id(workload_id);
+    jailer_vm_root_dir(chroot_dir, &jailer_id).join(format!("{}.vsock", API_SOCKET_NAME))
+}
+
+async fn connect_guest_vsock(chroot_dir: &Path, workload_id: &str, port: u32) -> Result<UnixStream> {
+    let uds_path = vsock_uds_path(chroot_dir, workload_id);
+
+    let mut stream = UnixStream::connect(&uds_path)
+        .await
+        .with_context(|| format!("Failed to connect to vsock uds {}", uds_path.display()))?;
+
+    stream
+        .write_all(format!("CONNECT {}\n", port).as_bytes())
+        .await
+        .context("Failed to write vsock CONNECT handshake")?;
+
+    let mut response = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        stream
+            .read_exact(&mut byte)
+            .await
+            .context("Failed to read vsock CONNECT response")?;
+        if byte[0] == b'\n' {
+            break;
+        }
+        response.push(byte[0]);
+    }
+
+    let response = String::from_utf8_lossy(&response);
+    if !response.starts_with("OK ") {
+        anyhow::bail!("vsock CONNECT to port {} refused: {}", port, response);
+    }
+
+    Ok(stream)
 }
 
 struct VmHandle {
@@ -380,36 +420,36 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
     }
 
     fn logs(&self, workload_handle: &str) -> LogStream {
-        let vsock_cid = {
+        let chroot_dir = {
             let handles = match self.handles.try_lock() {
                 Ok(h) => h,
                 Err(_) => return Box::pin(futures_util::stream::empty()),
             };
             match handles.get(workload_handle) {
-                Some(handle) => handle.vsock_cid,
+                Some(handle) => handle.chroot_dir.clone(),
                 None => return Box::pin(futures_util::stream::empty()),
             }
         };
 
-        Box::pin(vsock_log_stream(vsock_cid))
+        Box::pin(vsock_log_stream(chroot_dir, workload_handle.to_string()))
     }
 
     async fn exec(&self, workload_handle: &str) -> Result<ExecSession> {
-        let vsock_cid = {
+        let chroot_dir = {
             let handles = self.handles.lock().await;
             handles
                 .get(workload_handle)
                 .context("workload not running here")?
-                .vsock_cid
+                .chroot_dir
+                .clone()
         };
 
         let stream = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(vsock_cid, 10002)),
+            connect_guest_vsock(&chroot_dir, workload_handle, 10002),
         )
         .await
-        .context("Timed out connecting to guest exec vsock port")?
-        .context("Failed to connect to guest exec vsock port")?;
+        .context("Timed out connecting to guest exec vsock port")??;
 
         let (read_half, write_half) = stream.into_split();
 
@@ -628,10 +668,11 @@ async fn read_metrics_fifo_nonblocking(metrics_path: &Path) -> Option<String> {
 }
 
 fn vsock_log_stream(
-    vsock_cid: u32,
+    chroot_dir: PathBuf,
+    workload_id: String,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
     async_stream::stream! {
-        let connect_result = tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(vsock_cid, 10001)).await;
+        let connect_result = connect_guest_vsock(&chroot_dir, &workload_id, 10001).await;
 
         let mut stream = match connect_result {
             Ok(s) => s,
@@ -643,7 +684,7 @@ fn vsock_log_stream(
 
         let mut buf = [0u8; 4096];
         loop {
-            match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+            match stream.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => yield Ok(axum::body::Bytes::copy_from_slice(&buf[..n])),
                 Err(e) => {

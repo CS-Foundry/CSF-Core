@@ -1189,7 +1189,6 @@ dependencies = [
  "tar",
  "tokio",
  "tokio-tungstenite",
- "tokio-vsock",
  "tracing",
  "tracing-subscriber",
  "uuid",
