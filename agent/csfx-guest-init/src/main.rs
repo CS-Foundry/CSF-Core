@@ -183,6 +183,9 @@ async fn start_container(
     let (stdout_read, stdout_write) = nix::unistd::pipe().context("Failed to create stdout pipe")?;
     let (stderr_read, stderr_write) = nix::unistd::pipe().context("Failed to create stderr pipe")?;
 
+    set_nonblocking(&stdout_read).context("Failed to set stdout pipe non-blocking")?;
+    set_nonblocking(&stderr_read).context("Failed to set stderr pipe non-blocking")?;
+
     let container_pid = tokio::task::spawn_blocking(move || -> Result<Pid> {
         let mut container = ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
             .with_root_path(CONTAINER_STATE_ROOT)
@@ -611,12 +614,17 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
         tokio::select! {
             accept_result = listener.accept(), if client.is_none() => {
                 match accept_result {
-                    Ok((conn, _)) => client = Some(conn),
+                    Ok((conn, addr)) => {
+                        info!(target: "workload.logstream", peer = ?addr, "log client accepted");
+                        client = Some(conn);
+                    }
                     Err(e) => error!(error = %e, "Failed to accept log connection"),
                 }
             }
             probe_result = async { client.as_mut().unwrap().read(&mut client_probe_buf).await }, if client.is_some() => {
+                info!(target: "workload.logstream", result = ?probe_result, "log client probe result");
                 if !matches!(probe_result, Ok(n) if n > 0) {
+                    info!(target: "workload.logstream", "log client disconnected via probe");
                     client = None;
                 }
             }
@@ -625,8 +633,18 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                     Ok(0) => stdout_open = false,
                     Ok(n) => {
                         info!(target: "workload.stdout", "{}", String::from_utf8_lossy(&stdout_buf[..n]).trim_end());
-                        if let Some(stream) = client.as_mut()
-                            && stream.write_all(&stdout_buf[..n]).await.is_err() { client = None; }
+                        if let Some(stream) = client.as_mut() {
+                            info!(target: "workload.logstream", bytes = n, "writing stdout chunk to log client");
+                            match stream.write_all(&stdout_buf[..n]).await {
+                                Ok(()) => info!(target: "workload.logstream", "stdout chunk written to log client"),
+                                Err(e) => {
+                                    info!(target: "workload.logstream", error = %e, "failed writing stdout chunk to log client");
+                                    client = None;
+                                }
+                            }
+                        } else {
+                            info!(target: "workload.logstream", "no log client connected, dropping stdout chunk");
+                        }
                     }
                     Err(_) => stdout_open = false,
                 }
@@ -636,10 +654,18 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                     Ok(0) => stderr_open = false,
                     Ok(n) => {
                         info!(target: "workload.stderr", "{}", String::from_utf8_lossy(&stderr_buf[..n]).trim_end());
-                        if let Some(stream) = client.as_mut()
-                            && stream.write_all(&stderr_buf[..n]).await.is_err() {
-                                client = None;
+                        if let Some(stream) = client.as_mut() {
+                            info!(target: "workload.logstream", bytes = n, "writing stderr chunk to log client");
+                            match stream.write_all(&stderr_buf[..n]).await {
+                                Ok(()) => info!(target: "workload.logstream", "stderr chunk written to log client"),
+                                Err(e) => {
+                                    info!(target: "workload.logstream", error = %e, "failed writing stderr chunk to log client");
+                                    client = None;
+                                }
                             }
+                        } else {
+                            info!(target: "workload.logstream", "no log client connected, dropping stderr chunk");
+                        }
                     }
                     Err(_) => stderr_open = false,
                 }
