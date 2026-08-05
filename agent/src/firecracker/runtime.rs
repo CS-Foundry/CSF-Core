@@ -779,6 +779,8 @@ async fn spawn_jailer(
             "--collect",
             "--uid=0",
             "--gid=0",
+            "--property=StandardOutput=journal",
+            "--property=StandardError=journal",
             "jailer",
             "--id",
             jailer_id,

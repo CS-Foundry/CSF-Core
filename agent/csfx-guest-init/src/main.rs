@@ -124,13 +124,25 @@ async fn run() -> Result<()> {
     let log_task = tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
     tokio::spawn(serve_exec(exec_listener));
 
-    let exit_status = tokio::task::spawn_blocking(move || waitpid(container_pid, None))
-        .await
-        .context("Container wait task panicked")?
-        .context("Failed to wait on container process")?;
+    let exit_status = tokio::task::spawn_blocking(move || loop {
+        match waitpid(container_pid, None) {
+            Ok(WaitStatus::Exited(pid, code)) if pid == container_pid => {
+                return Ok(WaitStatus::Exited(pid, code))
+            }
+            Ok(WaitStatus::Signaled(pid, sig, core)) if pid == container_pid => {
+                return Ok(WaitStatus::Signaled(pid, sig, core))
+            }
+            Ok(_) => continue,
+            Err(nix::errno::Errno::EINTR) => continue,
+            Err(e) => return Err(e),
+        }
+    })
+    .await
+    .context("Container wait task panicked")?
+    .context("Failed to wait on container process")?;
     info!(status = ?exit_status, "entrypoint exited");
 
-    let _ = timeout(Duration::from_secs(2), log_task).await;
+    let _ = log_task.await;
 
     if !matches!(exit_status, WaitStatus::Exited(_, 0)) {
         dump_failure_diagnostics();
