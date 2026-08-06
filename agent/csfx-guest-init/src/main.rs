@@ -608,8 +608,6 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
     let mut stdout_open = true;
     let mut stderr_open = true;
 
-    let mut client_probe_buf = [0u8; 1];
-
     while stdout_open || stderr_open {
         tokio::select! {
             accept_result = listener.accept(), if client.is_none() => {
@@ -619,13 +617,6 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                         client = Some(conn);
                     }
                     Err(e) => error!(error = %e, "Failed to accept log connection"),
-                }
-            }
-            probe_result = async { client.as_mut().unwrap().read(&mut client_probe_buf).await }, if client.is_some() => {
-                info!(target: "workload.logstream", result = ?probe_result, "log client probe result");
-                if !matches!(probe_result, Ok(n) if n > 0) {
-                    info!(target: "workload.logstream", "log client disconnected via probe");
-                    client = None;
                 }
             }
             result = read_pty(&stdout, &mut stdout_buf), if stdout_open => {
