@@ -159,6 +159,8 @@ async fn logs_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Result<axum::body::Body, (StatusCode, String)> {
+    info!(workload_id = %workload_id, source = %addr, "log stream request received");
+
     if !is_internal_source(&addr) {
         warn!(source = %addr, "rejected agent inbound request from non-internal source");
         return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
@@ -175,11 +177,15 @@ async fn logs_handler(
         .await
         .get(&workload_id)
         .cloned()
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            "workload not running here".to_string(),
-        ))?;
+        .ok_or_else(|| {
+            warn!(workload_id = %workload_id, "log stream requested for workload not running here");
+            (
+                StatusCode::NOT_FOUND,
+                "workload not running here".to_string(),
+            )
+        })?;
 
+    info!(workload_id = %workload_id, container_id = %container_id, "opening log stream to guest");
     let stream = state.firecracker.logs(&container_id);
     Ok(axum::body::Body::from_stream(stream))
 }

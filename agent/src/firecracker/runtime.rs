@@ -664,22 +664,33 @@ fn vsock_log_stream(
     workload_id: String,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
     async_stream::stream! {
+        info!(workload_id = %workload_id, "connecting to guest log vsock");
         let connect_result = connect_guest_vsock(&chroot_dir, &workload_id, 10001).await;
 
         let mut stream = match connect_result {
             Ok(s) => s,
             Err(e) => {
+                warn!(workload_id = %workload_id, error = ?e, "failed to connect to guest log vsock");
                 yield Err(std::io::Error::other(e));
                 return;
             }
         };
+        info!(workload_id = %workload_id, "guest log vsock connected");
 
         let mut buf = [0u8; 4096];
+        let mut total_bytes: u64 = 0;
         loop {
             match stream.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => yield Ok(axum::body::Bytes::copy_from_slice(&buf[..n])),
+                Ok(0) => {
+                    info!(workload_id = %workload_id, total_bytes, "guest log vsock closed by peer");
+                    break;
+                }
+                Ok(n) => {
+                    total_bytes += n as u64;
+                    yield Ok(axum::body::Bytes::copy_from_slice(&buf[..n]));
+                }
                 Err(e) => {
+                    warn!(workload_id = %workload_id, total_bytes, error = ?e, "guest log vsock read failed");
                     yield Err(e);
                     break;
                 }
