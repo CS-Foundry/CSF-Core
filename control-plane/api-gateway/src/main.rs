@@ -140,6 +140,7 @@ async fn main() {
 
     metrics::init();
     let log_receiver = telemetry::init_tracing();
+    tracing::info!("api-gateway starting");
 
     let db_conn = match db::establish_connection().await {
         Ok(conn) => {
