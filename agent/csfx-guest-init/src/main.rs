@@ -8,11 +8,9 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::Pid;
 use serde::Deserialize;
 use std::os::fd::{AsRawFd, OwnedFd};
-use std::process::Stdio;
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
 use tracing::{debug, error, info, warn};
@@ -681,37 +679,41 @@ async fn serve_exec(listener: VsockListener) {
 }
 
 async fn handle_exec_session(stream: tokio_vsock::VsockStream) {
+    info!("exec session starting");
+
     let pty = match openpty(None, None) {
         Ok(pty) => pty,
         Err(e) => {
-            error!(error = %e, "Failed to open pty");
+            error!(error = ?e, "Failed to open pty");
             return;
         }
     };
 
-    let mut child = match spawn_shell_on_pty(&pty) {
-        Ok(child) => child,
+    let slave = pty.slave;
+    let child_pid = match exec_shell_in_container(slave).await {
+        Ok(pid) => pid,
         Err(e) => {
-            error!(error = %e, "Failed to spawn exec shell");
+            error!(error = ?e, "Failed to spawn exec shell");
             return;
         }
     };
-
-    drop(pty.slave);
+    info!(pid = child_pid.as_raw(), "exec shell started in container");
 
     if let Err(e) = set_nonblocking(&pty.master) {
-        error!(error = %e, "Failed to set pty master nonblocking");
-        let _ = child.kill().await;
+        error!(error = ?e, "Failed to set pty master nonblocking");
+        reap_exec_child(child_pid).await;
         return;
     }
 
     match AsyncFd::new(pty.master) {
-        Ok(master) => pipe_pty_to_vsock(master, stream, child).await,
+        Ok(master) => pipe_pty_to_vsock(master, stream, child_pid).await,
         Err(e) => {
-            error!(error = %e, "Failed to register pty master with async runtime");
-            let _ = child.kill().await;
+            error!(error = ?e, "Failed to register pty master with async runtime");
+            reap_exec_child(child_pid).await;
         }
     }
+
+    info!("exec session ended");
 }
 
 fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
@@ -726,39 +728,38 @@ fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
     Ok(())
 }
 
-fn spawn_shell_on_pty(pty: &nix::pty::OpenptyResult) -> Result<tokio::process::Child> {
-    let slave_fd = pty.slave.as_raw_fd();
+async fn exec_shell_in_container(slave: OwnedFd) -> Result<Pid> {
+    tokio::task::spawn_blocking(move || -> Result<Pid> {
+        let stdin = slave.try_clone().context("Failed to clone pty slave for stdin")?;
+        let stdout = slave.try_clone().context("Failed to clone pty slave for stdout")?;
 
-    let mut command = Command::new("/bin/sh");
-    unsafe {
-        command.pre_exec(move || {
-            if libc::setsid() < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            if libc::ioctl(slave_fd, libc::TIOCSCTTY as _, 0) < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            for target_fd in 0..3 {
-                if libc::dup2(slave_fd, target_fd) < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-            }
-            Ok(())
-        });
-    }
+        let libcontainer_pid = ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
+            .with_root_path(CONTAINER_STATE_ROOT)
+            .context("Invalid container state root path")?
+            .with_stdin(stdin)
+            .with_stdout(stdout)
+            .with_stderr(slave)
+            .as_tenant()
+            .with_container_args(vec!["sh".to_string()])
+            .with_detach(true)
+            .build()
+            .context("Failed to exec into container")?;
 
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("Failed to spawn shell")
+        Ok(Pid::from_raw(libcontainer_pid.as_raw()))
+    })
+    .await
+    .context("Exec task panicked")?
+}
+
+async fn reap_exec_child(pid: Pid) {
+    let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
+    let _ = tokio::task::spawn_blocking(move || waitpid(pid, None)).await;
 }
 
 async fn pipe_pty_to_vsock(
     master: AsyncFd<OwnedFd>,
     stream: tokio_vsock::VsockStream,
-    mut child: tokio::process::Child,
+    child_pid: Pid,
 ) {
     let (mut vsock_read, mut vsock_write) = stream.into_split();
 
@@ -797,7 +798,7 @@ async fn pipe_pty_to_vsock(
         _ = input_task => {}
     }
 
-    let _ = child.kill().await;
+    reap_exec_child(child_pid).await;
 }
 
 async fn read_pty(master: &AsyncFd<OwnedFd>, buf: &mut [u8]) -> std::io::Result<usize> {
