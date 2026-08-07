@@ -571,16 +571,17 @@ fn mount_volume(volume: &MmdsVolume) -> Result<()> {
 }
 
 fn mount_pseudo_filesystems() {
-    let mounts: &[(&str, &str, &str, MsFlags)] = &[
-        ("proc", "/proc", "proc", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
-        ("sysfs", "/sys", "sysfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
-        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID),
-        ("cgroup2", "/sys/fs/cgroup", "cgroup2", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC),
+    let mounts: &[(&str, &str, &str, MsFlags, Option<&str>)] = &[
+        ("proc", "/proc", "proc", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
+        ("sysfs", "/sys", "sysfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
+        ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID, None),
+        ("devpts", "/dev/pts", "devpts", MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC, Some("mode=0620,ptmxmode=0666,gid=5")),
+        ("cgroup2", "/sys/fs/cgroup", "cgroup2", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
     ];
 
-    for (source, target, fstype, flags) in mounts {
+    for (source, target, fstype, flags, data) in mounts {
         std::fs::create_dir_all(target).ok();
-        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, None::<&str>) {
+        if let Err(e) = mount(Some(*source), *target, Some(*fstype), *flags, *data) {
             if e == nix::errno::Errno::EBUSY {
                 continue;
             }
