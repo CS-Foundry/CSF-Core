@@ -199,13 +199,15 @@ pub async fn stream_workload_logs(
         ));
     }
 
-    let stream = futures_util::stream::once(async {
-        Ok::<_, reqwest::Error>(axum::body::Bytes::new())
-    })
-    .chain(resp.bytes_stream());
+    let stream =
+        futures_util::stream::once(async { Ok::<_, reqwest::Error>(axum::body::Bytes::new()) })
+            .chain(resp.bytes_stream());
 
     Ok((
-        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
         Body::from_stream(stream),
     ))
 }
