@@ -3,6 +3,7 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
@@ -158,7 +159,7 @@ async fn logs_handler(
     Path(workload_id): Path<String>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-) -> Result<axum::body::Body, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     info!(workload_id = %workload_id, source = %addr, "log stream request received");
 
     if !is_internal_source(&addr) {
@@ -186,8 +187,15 @@ async fn logs_handler(
         })?;
 
     info!(workload_id = %workload_id, container_id = %container_id, "opening log stream to guest");
-    let stream = state.firecracker.logs(&container_id);
-    Ok(axum::body::Body::from_stream(stream))
+    let stream = futures_util::stream::once(async {
+        Ok::<_, std::io::Error>(axum::body::Bytes::new())
+    })
+    .chain(state.firecracker.logs(&container_id));
+
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        axum::body::Body::from_stream(stream),
+    ))
 }
 
 async fn exec_handler(
