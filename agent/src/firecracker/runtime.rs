@@ -606,16 +606,25 @@ async fn read_cpu_usage_percent(handle: &VmHandle) -> Option<f64> {
 }
 
 async fn read_memory_usage_bytes(cgroup_path: &Path) -> Option<i64> {
-    let content = tokio::fs::read_to_string(cgroup_path.join("memory.current"))
-        .await
-        .ok()?;
-    content.trim().parse::<i64>().ok()
+    let path = cgroup_path.join("memory.current");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => content.trim().parse::<i64>().ok(),
+        Err(e) => {
+            warn!(path = %path.display(), error = %e, "failed to read workload memory cgroup");
+            None
+        }
+    }
 }
 
 async fn read_cgroup_u64(cgroup_path: &Path, file: &str, key: &str) -> Option<u64> {
-    let content = tokio::fs::read_to_string(cgroup_path.join(file))
-        .await
-        .ok()?;
+    let path = cgroup_path.join(file);
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(content) => content,
+        Err(e) => {
+            warn!(path = %path.display(), error = %e, "failed to read workload cgroup file");
+            return None;
+        }
+    };
 
     content.lines().find_map(|line| {
         let (line_key, value) = line.split_once(' ')?;
@@ -900,7 +909,9 @@ fn create_metrics_fifo(path: &Path) -> Result<()> {
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
-    Path::new(CGROUP_ROOT).join(CGROUP_PARENT).join(workload_id)
+    Path::new(CGROUP_ROOT)
+        .join(CGROUP_PARENT)
+        .join(jailer_short_id(workload_id))
 }
 
 async fn apply_port_dnat(workload_id: &str, guest_ip: &str, spec: &WorkloadSpec) -> Result<()> {
