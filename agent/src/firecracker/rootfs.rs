@@ -5,7 +5,7 @@ use oci_client::config::ConfigFile;
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
 use oci_spec::runtime::{
-    get_default_namespaces, Capability, Capabilities, LinuxBuilder, LinuxCapabilitiesBuilder,
+    get_default_namespaces, Capabilities, Capability, LinuxBuilder, LinuxCapabilitiesBuilder,
     LinuxNamespaceType, ProcessBuilder, RootBuilder, Spec, SpecBuilder, User, UserBuilder,
 };
 use std::path::{Path, PathBuf};
@@ -146,13 +146,19 @@ impl RootfsBuilder {
                 .context("Failed to extract image layer")?;
         }
 
-        debug!(stage = "write_runtime_config", "Writing OCI runtime config.json");
+        debug!(
+            stage = "write_runtime_config",
+            "Writing OCI runtime config.json"
+        );
         write_runtime_config(&image_data.config.data, &bundle_dir).await?;
 
         debug!(stage = "install_guest_init", "Installing guest-init binary");
         install_guest_init(extract_dir).await?;
 
-        debug!(stage = "create_root_dirs", "Creating standard guest root directories");
+        debug!(
+            stage = "create_root_dirs",
+            "Creating standard guest root directories"
+        );
         create_guest_root_dirs(extract_dir).await?;
 
         Ok(())

@@ -79,9 +79,7 @@ pub async fn update_workload(
     match db::workloads::update_spec(&state.db, id, &req).await {
         Ok(model) => {
             if let Some(agent_id) = model.assigned_agent_id {
-                tokio::spawn(crate::services::gateway_notify::notify_assignment(
-                    agent_id,
-                ));
+                tokio::spawn(crate::services::gateway_notify::notify_assignment(agent_id));
             }
             (StatusCode::OK, Json(serde_json::json!(model))).into_response()
         }

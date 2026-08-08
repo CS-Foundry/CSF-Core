@@ -1,18 +1,18 @@
 use anyhow::{Context, Result};
 use libcontainer::container::builder::ContainerBuilder;
 use libcontainer::syscall::syscall::SyscallType;
-use nix::mount::{mount, MsFlags};
+use nix::mount::{MsFlags, mount};
 use nix::pty::openpty;
-use nix::sys::reboot::{reboot, RebootMode};
-use nix::sys::wait::{waitpid, WaitStatus};
+use nix::sys::reboot::{RebootMode, reboot};
+use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::Pid;
 use serde::Deserialize;
 use std::os::fd::{AsRawFd, OwnedFd};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::{timeout, Duration};
-use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
+use tokio::time::{Duration, timeout};
+use tokio_vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener};
 use tracing::{debug, error, info, warn};
 
 const LOG_PORT: u32 = 10001;
@@ -70,22 +70,34 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
-    debug!(stage = "mount_pseudo_filesystems", "Mounting pseudo filesystems");
+    debug!(
+        stage = "mount_pseudo_filesystems",
+        "Mounting pseudo filesystems"
+    );
     mount_pseudo_filesystems();
 
-    debug!(stage = "bring_up_interface", iface = "eth0", "Bringing up network interface");
+    debug!(
+        stage = "bring_up_interface",
+        iface = "eth0",
+        "Bringing up network interface"
+    );
     bring_up_interface("eth0").context("Failed to bring up network interface")?;
 
-    debug!(stage = "assign_bootstrap_address", iface = "eth0", "Assigning mmds bootstrap address");
-    assign_bootstrap_address("eth0")
-        .context("Failed to assign mmds bootstrap address")?;
+    debug!(
+        stage = "assign_bootstrap_address",
+        iface = "eth0",
+        "Assigning mmds bootstrap address"
+    );
+    assign_bootstrap_address("eth0").context("Failed to assign mmds bootstrap address")?;
 
     add_host_route(std::net::Ipv4Addr::new(169, 254, 169, 254), "eth0")
         .context("Failed to add mmds route")?;
     info!("mmds route added");
 
     debug!(stage = "fetch_mmds_data", "Fetching mmds data");
-    let mmds_data = fetch_mmds_data().await.context("Failed to fetch mmds data")?;
+    let mmds_data = fetch_mmds_data()
+        .await
+        .context("Failed to fetch mmds data")?;
     debug!(
         stage = "mmds_data_fetched",
         has_network = mmds_data.network.is_some(),
@@ -113,26 +125,40 @@ async fn run() -> Result<()> {
         .context("Failed to bind vsock log port")?;
     let exec_listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, EXEC_PORT))
         .context("Failed to bind vsock exec port")?;
-    debug!(stage = "vsock_listeners_bound", log_port = LOG_PORT, exec_port = EXEC_PORT, "vsock listeners bound");
+    debug!(
+        stage = "vsock_listeners_bound",
+        log_port = LOG_PORT,
+        exec_port = EXEC_PORT,
+        "vsock listeners bound"
+    );
 
-    debug!(stage = "start_container", "Starting container via libcontainer");
+    debug!(
+        stage = "start_container",
+        "Starting container via libcontainer"
+    );
     let (stdout_read, stderr_read, container_pid) = start_container(&mmds_data.env).await?;
-    debug!(stage = "container_started", container_pid = container_pid.as_raw(), "Container process started");
+    debug!(
+        stage = "container_started",
+        container_pid = container_pid.as_raw(),
+        "Container process started"
+    );
 
     let log_task = tokio::spawn(stream_logs(log_listener, stdout_read, stderr_read));
     tokio::spawn(serve_exec(exec_listener));
 
-    let exit_status = tokio::task::spawn_blocking(move || loop {
-        match waitpid(container_pid, None) {
-            Ok(WaitStatus::Exited(pid, code)) if pid == container_pid => {
-                return Ok(WaitStatus::Exited(pid, code))
+    let exit_status = tokio::task::spawn_blocking(move || {
+        loop {
+            match waitpid(container_pid, None) {
+                Ok(WaitStatus::Exited(pid, code)) if pid == container_pid => {
+                    return Ok(WaitStatus::Exited(pid, code));
+                }
+                Ok(WaitStatus::Signaled(pid, sig, core)) if pid == container_pid => {
+                    return Ok(WaitStatus::Signaled(pid, sig, core));
+                }
+                Ok(_) => continue,
+                Err(nix::errno::Errno::EINTR) => continue,
+                Err(e) => return Err(e),
             }
-            Ok(WaitStatus::Signaled(pid, sig, core)) if pid == container_pid => {
-                return Ok(WaitStatus::Signaled(pid, sig, core))
-            }
-            Ok(_) => continue,
-            Err(nix::errno::Errno::EINTR) => continue,
-            Err(e) => return Err(e),
         }
     })
     .await
@@ -155,8 +181,8 @@ fn apply_extra_env(extra_env: &std::collections::HashMap<String, String>) -> Res
     }
 
     let config_path = std::path::Path::new(CONTAINER_BUNDLE_PATH).join("config.json");
-    let mut spec =
-        oci_spec::runtime::Spec::load(&config_path).context("Failed to load runtime config.json")?;
+    let mut spec = oci_spec::runtime::Spec::load(&config_path)
+        .context("Failed to load runtime config.json")?;
 
     let process = spec
         .process_mut()
@@ -178,8 +204,10 @@ async fn start_container(
     apply_extra_env(extra_env).context("Failed to apply mmds env to container config")?;
     write_container_etc_hosts();
 
-    let (stdout_read, stdout_write) = nix::unistd::pipe().context("Failed to create stdout pipe")?;
-    let (stderr_read, stderr_write) = nix::unistd::pipe().context("Failed to create stderr pipe")?;
+    let (stdout_read, stdout_write) =
+        nix::unistd::pipe().context("Failed to create stdout pipe")?;
+    let (stderr_read, stderr_write) =
+        nix::unistd::pipe().context("Failed to create stderr pipe")?;
 
     set_nonblocking(&stdout_read).context("Failed to set stdout pipe non-blocking")?;
     set_nonblocking(&stderr_read).context("Failed to set stderr pipe non-blocking")?;
@@ -198,7 +226,9 @@ async fn start_container(
 
         container.start().context("Failed to start container")?;
 
-        let libcontainer_pid = container.pid().context("Container has no pid after start")?;
+        let libcontainer_pid = container
+            .pid()
+            .context("Container has no pid after start")?;
         Ok(Pid::from_raw(libcontainer_pid.as_raw()))
     })
     .await
@@ -215,7 +245,9 @@ fn dump_failure_diagnostics() {
     let config_path = std::path::Path::new(CONTAINER_BUNDLE_PATH).join("config.json");
     match std::fs::read_to_string(&config_path) {
         Ok(contents) => warn!(config = %contents, "debug: container config.json on failure"),
-        Err(e) => warn!(error = ?e, path = ?config_path, "debug: failed to read config.json on failure"),
+        Err(e) => {
+            warn!(error = ?e, path = ?config_path, "debug: failed to read config.json on failure")
+        }
     }
 
     match std::fs::read_to_string("/proc/self/mountinfo") {
@@ -280,8 +312,13 @@ fn assign_bootstrap_address(iface: &str) -> Result<()> {
     let result = (|| -> Result<()> {
         set_ifreq_addr(socket_fd, iface, libc::SIOCSIFADDR, MMDS_BOOTSTRAP_IP)
             .context("SIOCSIFADDR failed")?;
-        set_ifreq_addr(socket_fd, iface, libc::SIOCSIFNETMASK, MMDS_BOOTSTRAP_NETMASK)
-            .context("SIOCSIFNETMASK failed")?;
+        set_ifreq_addr(
+            socket_fd,
+            iface,
+            libc::SIOCSIFNETMASK,
+            MMDS_BOOTSTRAP_NETMASK,
+        )
+        .context("SIOCSIFNETMASK failed")?;
         Ok(())
     })();
 
@@ -349,15 +386,18 @@ fn write_resolv_conf(dns: &str) -> Result<()> {
         .join("etc/resolv.conf");
     std::fs::create_dir_all(container_resolv_conf.parent().unwrap())
         .context("Failed to create container /etc")?;
-    std::fs::write(&container_resolv_conf, &contents)
-        .context("Failed to write resolv.conf")
+    std::fs::write(&container_resolv_conf, &contents).context("Failed to write resolv.conf")
 }
 
 fn prefix_to_netmask(prefix: u32) -> Result<std::net::Ipv4Addr> {
     if prefix > 32 {
         anyhow::bail!("invalid prefix length {}", prefix);
     }
-    let bits: u32 = if prefix == 0 { 0 } else { !0u32 << (32 - prefix) };
+    let bits: u32 = if prefix == 0 {
+        0
+    } else {
+        !0u32 << (32 - prefix)
+    };
     Ok(std::net::Ipv4Addr::from(bits))
 }
 
@@ -452,21 +492,6 @@ fn ipv4_to_sockaddr(addr: std::net::Ipv4Addr) -> libc::sockaddr_in {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sockaddr_holds_octets_in_network_order() {
-        let sockaddr = ipv4_to_sockaddr(std::net::Ipv4Addr::new(169, 254, 169, 2));
-        assert_eq!(sockaddr.sin_addr.s_addr.to_ne_bytes(), [169, 254, 169, 2]);
-        assert_eq!(sockaddr.sin_family, libc::AF_INET as libc::sa_family_t);
-
-        let netmask = ipv4_to_sockaddr(prefix_to_netmask(16).unwrap());
-        assert_eq!(netmask.sin_addr.s_addr.to_ne_bytes(), [255, 255, 0, 0]);
-    }
-}
-
 fn ipv4_to_sockaddr_storage(addr: std::net::Ipv4Addr) -> libc::sockaddr {
     let sockaddr_in = ipv4_to_sockaddr(addr);
     let mut sockaddr: libc::sockaddr = unsafe { std::mem::zeroed() };
@@ -519,7 +544,12 @@ async fn read_http_body(stream: &mut TcpStream) -> Result<String> {
     let header_text = String::from_utf8_lossy(&buf[..header_end]);
     let content_length: usize = header_text
         .lines()
-        .find_map(|line| line.to_lowercase().strip_prefix("content-length:").map(str::trim).map(str::to_string))
+        .find_map(|line| {
+            line.to_lowercase()
+                .strip_prefix("content-length:")
+                .map(str::trim)
+                .map(str::to_string)
+        })
         .context("mmds response missing content-length")?
         .parse()
         .context("mmds response has invalid content-length")?;
@@ -565,16 +595,43 @@ fn mount_volume(volume: &MmdsVolume) -> Result<()> {
         }
     }
 
-    anyhow::bail!("failed to mount device {} with any known filesystem type", volume.device)
+    anyhow::bail!(
+        "failed to mount device {} with any known filesystem type",
+        volume.device
+    )
 }
 
 fn mount_pseudo_filesystems() {
     let mounts: &[(&str, &str, &str, MsFlags, Option<&str>)] = &[
-        ("proc", "/proc", "proc", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
-        ("sysfs", "/sys", "sysfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
+        (
+            "proc",
+            "/proc",
+            "proc",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+            None,
+        ),
+        (
+            "sysfs",
+            "/sys",
+            "sysfs",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+            None,
+        ),
         ("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID, None),
-        ("devpts", "/dev/pts", "devpts", MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC, Some("mode=0620,ptmxmode=0666,gid=5")),
-        ("cgroup2", "/sys/fs/cgroup", "cgroup2", MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC, None),
+        (
+            "devpts",
+            "/dev/pts",
+            "devpts",
+            MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
+            Some("mode=0620,ptmxmode=0666,gid=5"),
+        ),
+        (
+            "cgroup2",
+            "/sys/fs/cgroup",
+            "cgroup2",
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+            None,
+        ),
     ];
 
     for (source, target, fstype, flags, data) in mounts {
@@ -730,20 +787,25 @@ fn set_nonblocking(fd: &OwnedFd) -> Result<()> {
 
 async fn exec_shell_in_container(slave: OwnedFd) -> Result<Pid> {
     tokio::task::spawn_blocking(move || -> Result<Pid> {
-        let stdin = slave.try_clone().context("Failed to clone pty slave for stdin")?;
-        let stdout = slave.try_clone().context("Failed to clone pty slave for stdout")?;
+        let stdin = slave
+            .try_clone()
+            .context("Failed to clone pty slave for stdin")?;
+        let stdout = slave
+            .try_clone()
+            .context("Failed to clone pty slave for stdout")?;
 
-        let libcontainer_pid = ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
-            .with_root_path(CONTAINER_STATE_ROOT)
-            .context("Invalid container state root path")?
-            .with_stdin(stdin)
-            .with_stdout(stdout)
-            .with_stderr(slave)
-            .as_tenant()
-            .with_container_args(vec!["sh".to_string()])
-            .with_detach(true)
-            .build()
-            .context("Failed to exec into container")?;
+        let libcontainer_pid =
+            ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
+                .with_root_path(CONTAINER_STATE_ROOT)
+                .context("Invalid container state root path")?
+                .with_stdin(stdin)
+                .with_stdout(stdout)
+                .with_stderr(slave)
+                .as_tenant()
+                .with_container_args(vec!["sh".to_string()])
+                .with_detach(true)
+                .build()
+                .context("Failed to exec into container")?;
 
         Ok(Pid::from_raw(libcontainer_pid.as_raw()))
     })
@@ -806,7 +868,11 @@ async fn read_pty(master: &AsyncFd<OwnedFd>, buf: &mut [u8]) -> std::io::Result<
         let mut guard = master.readable().await?;
         match guard.try_io(|fd| {
             let n = unsafe {
-                libc::read(fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+                libc::read(
+                    fd.as_raw_fd(),
+                    buf.as_mut_ptr() as *mut libc::c_void,
+                    buf.len(),
+                )
             };
             if n < 0 {
                 Err(std::io::Error::last_os_error())
@@ -844,4 +910,19 @@ async fn write_pty(master: &AsyncFd<OwnedFd>, buf: &[u8]) -> std::io::Result<()>
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sockaddr_holds_octets_in_network_order() {
+        let sockaddr = ipv4_to_sockaddr(std::net::Ipv4Addr::new(169, 254, 169, 2));
+        assert_eq!(sockaddr.sin_addr.s_addr.to_ne_bytes(), [169, 254, 169, 2]);
+        assert_eq!(sockaddr.sin_family, libc::AF_INET as libc::sa_family_t);
+
+        let netmask = ipv4_to_sockaddr(prefix_to_netmask(16).unwrap());
+        assert_eq!(netmask.sin_addr.s_addr.to_ne_bytes(), [255, 255, 0, 0]);
+    }
 }
