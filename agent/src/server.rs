@@ -187,13 +187,15 @@ async fn logs_handler(
         })?;
 
     info!(workload_id = %workload_id, container_id = %container_id, "opening log stream to guest");
-    let stream = futures_util::stream::once(async {
-        Ok::<_, std::io::Error>(axum::body::Bytes::new())
-    })
-    .chain(state.firecracker.logs(&container_id));
+    let stream =
+        futures_util::stream::once(async { Ok::<_, std::io::Error>(axum::body::Bytes::new()) })
+            .chain(state.firecracker.logs(&container_id));
 
     Ok((
-        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
         axum::body::Body::from_stream(stream),
     ))
 }
