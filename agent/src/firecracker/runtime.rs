@@ -816,6 +816,7 @@ async fn spawn_jailer(
             "--",
             "--api-sock",
             api_socket,
+            "--no-seccomp",
         ])
         .status()
         .await
