@@ -56,4 +56,3 @@ pub async fn map_device(pool: &str, image: &str) -> Result<String> {
     info!(device = %device, "RBD device mapped");
     Ok(device)
 }
-

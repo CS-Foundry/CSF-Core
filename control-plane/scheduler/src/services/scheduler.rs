@@ -225,13 +225,9 @@ impl SchedulerService {
         Ok(())
     }
 
-    pub async fn redeploy_stack(
-        &self,
-        stack_id: Uuid,
-        compose_yaml: &str,
-    ) -> Result<(), String> {
-        let services = compose_parser::parse_compose(compose_yaml)
-            .map_err(|e| format_compose_error(&e))?;
+    pub async fn redeploy_stack(&self, stack_id: Uuid, compose_yaml: &str) -> Result<(), String> {
+        let services =
+            compose_parser::parse_compose(compose_yaml).map_err(|e| format_compose_error(&e))?;
 
         let existing = crate::db::workloads::get_by_stack_id(&self.db, stack_id)
             .await

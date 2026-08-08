@@ -93,7 +93,11 @@ fn vsock_uds_path(chroot_dir: &Path, workload_id: &str) -> PathBuf {
     jailer_vm_root_dir(chroot_dir, &jailer_id).join(format!("{}.vsock", API_SOCKET_NAME))
 }
 
-async fn connect_guest_vsock(chroot_dir: &Path, workload_id: &str, port: u32) -> Result<UnixStream> {
+async fn connect_guest_vsock(
+    chroot_dir: &Path,
+    workload_id: &str,
+    port: u32,
+) -> Result<UnixStream> {
     let uds_path = vsock_uds_path(chroot_dir, workload_id);
 
     let mut stream = UnixStream::connect(&uds_path)
@@ -495,12 +499,14 @@ impl crate::runtime::Runtime for FirecrackerRuntime {
             };
             let cpu_usage_percent = read_cpu_usage_percent(handle).await;
             let memory_usage_bytes = read_memory_usage_bytes(&handle.cgroup_path).await;
-            (cpu_usage_percent, memory_usage_bytes, handle.metrics_path.clone())
+            (
+                cpu_usage_percent,
+                memory_usage_bytes,
+                handle.metrics_path.clone(),
+            )
         };
 
-        let (network_rx_bytes, network_tx_bytes) = read_network_bytes(&metrics_path)
-            .await
-            .unzip();
+        let (network_rx_bytes, network_tx_bytes) = read_network_bytes(&metrics_path).await.unzip();
 
         Ok(crate::runtime::ContainerStats {
             cpu_usage_percent,
@@ -1043,7 +1049,12 @@ async fn configure_and_boot_vm(
     let vcpu_count = ((spec.cpu_millicores.max(100)) as f64 / 1000.0).ceil() as i64;
     let mem_size_mib = (spec.memory_bytes / 1024 / 1024).max(128);
 
-    debug!(vcpu_count = vcpu_count, mem_size_mib = mem_size_mib, stage = "machine_config", "Configuring machine");
+    debug!(
+        vcpu_count = vcpu_count,
+        mem_size_mib = mem_size_mib,
+        stage = "machine_config",
+        "Configuring machine"
+    );
     client
         .put(
             "/machine-config",
@@ -1101,7 +1112,10 @@ async fn configure_and_boot_vm(
     )
     .await?;
 
-    debug!(stage = "network_interface_config", "Configuring network interface");
+    debug!(
+        stage = "network_interface_config",
+        "Configuring network interface"
+    );
     client
         .put(
             "/network-interfaces/eth0",
@@ -1112,7 +1126,11 @@ async fn configure_and_boot_vm(
         )
         .await?;
 
-    debug!(vsock_cid = boot_config.vsock_cid, stage = "vsock_config", "Configuring vsock device");
+    debug!(
+        vsock_cid = boot_config.vsock_cid,
+        stage = "vsock_config",
+        "Configuring vsock device"
+    );
     client
         .put(
             "/vsock",
@@ -1137,7 +1155,10 @@ async fn configure_and_boot_vm(
         .put("/actions", &json!({ "action_type": "InstanceStart" }))
         .await?;
 
-    debug!(stage = "instance_started", "InstanceStart accepted by Firecracker");
+    debug!(
+        stage = "instance_started",
+        "InstanceStart accepted by Firecracker"
+    );
 
     Ok(())
 }

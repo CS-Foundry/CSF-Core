@@ -150,7 +150,10 @@ pub async fn get_by_stack_id(
         .await
 }
 
-pub async fn delete_by_stack_id(db: &DatabaseConnection, stack_id: Uuid) -> Result<(), sea_orm::DbErr> {
+pub async fn delete_by_stack_id(
+    db: &DatabaseConnection,
+    stack_id: Uuid,
+) -> Result<(), sea_orm::DbErr> {
     workloads::Entity::delete_many()
         .filter(workloads::Column::StackId.eq(stack_id))
         .exec(db)
