@@ -286,16 +286,16 @@ fn build_runtime_spec(config: &oci_client::config::Config) -> Result<Spec> {
         .build()
         .context("Failed to build runtime capabilities spec")?;
 
-    let process = ProcessBuilder::default()
+    let mut process = ProcessBuilder::default()
         .terminal(false)
         .user(user)
         .args(argv)
         .env(env)
         .cwd(cwd)
         .capabilities(capabilities)
-        .no_new_privileges(true)
         .build()
         .context("Failed to build runtime process spec")?;
+    process.set_no_new_privileges(None);
 
     let root = RootBuilder::default()
         .path(CONTAINER_ROOTFS_DIR)
