@@ -136,7 +136,8 @@ async fn run() -> Result<()> {
         stage = "start_container",
         "Starting container via libcontainer"
     );
-    let (stdout_read, stderr_read, container_pid) = start_container(&mmds_data.env).await?;
+    let (stdout_read, stderr_read, container_pid, _stdout_write, _stderr_write) =
+        start_container(&mmds_data.env).await?;
     debug!(
         stage = "container_started",
         container_pid = container_pid.as_raw(),
@@ -200,7 +201,7 @@ fn apply_extra_env(extra_env: &std::collections::HashMap<String, String>) -> Res
 
 async fn start_container(
     extra_env: &std::collections::HashMap<String, String>,
-) -> Result<(AsyncFd<OwnedFd>, AsyncFd<OwnedFd>, Pid)> {
+) -> Result<(AsyncFd<OwnedFd>, AsyncFd<OwnedFd>, Pid, OwnedFd, OwnedFd)> {
     apply_extra_env(extra_env).context("Failed to apply mmds env to container config")?;
     write_container_etc_hosts();
 
@@ -212,12 +213,19 @@ async fn start_container(
     set_nonblocking(&stdout_read).context("Failed to set stdout pipe non-blocking")?;
     set_nonblocking(&stderr_read).context("Failed to set stderr pipe non-blocking")?;
 
+    let stdout_write_container = stdout_write
+        .try_clone()
+        .context("Failed to clone stdout pipe for container")?;
+    let stderr_write_container = stderr_write
+        .try_clone()
+        .context("Failed to clone stderr pipe for container")?;
+
     let container_pid = tokio::task::spawn_blocking(move || -> Result<Pid> {
         let mut container = ContainerBuilder::new(CONTAINER_ID.to_string(), SyscallType::default())
             .with_root_path(CONTAINER_STATE_ROOT)
             .context("Invalid container state root path")?
-            .with_stdout(stdout_write)
-            .with_stderr(stderr_write)
+            .with_stdout(stdout_write_container)
+            .with_stderr(stderr_write_container)
             .as_init(CONTAINER_BUNDLE_PATH)
             .with_systemd(false)
             .with_detach(true)
@@ -238,6 +246,8 @@ async fn start_container(
         AsyncFd::new(stdout_read).context("Failed to register stdout pipe")?,
         AsyncFd::new(stderr_read).context("Failed to register stderr pipe")?,
         container_pid,
+        stdout_write,
+        stderr_write,
     ))
 }
 
