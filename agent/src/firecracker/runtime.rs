@@ -909,9 +909,10 @@ fn create_metrics_fifo(path: &Path) -> Result<()> {
 }
 
 fn cgroup_path(workload_id: &str) -> PathBuf {
+    let unit_name = jailer_unit_name(&jailer_short_id(workload_id));
     Path::new(CGROUP_ROOT)
-        .join(CGROUP_PARENT)
-        .join(jailer_short_id(workload_id))
+        .join("system.slice")
+        .join(format!("{}.service", unit_name))
 }
 
 async fn apply_port_dnat(workload_id: &str, guest_ip: &str, spec: &WorkloadSpec) -> Result<()> {
