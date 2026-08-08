@@ -17,6 +17,7 @@ use tracing::{debug, error, info, warn};
 
 const LOG_PORT: u32 = 10001;
 const EXEC_PORT: u32 = 10002;
+const LOG_BACKLOG_CAPACITY: usize = 65536;
 const CONTAINER_BUNDLE_PATH: &str = "/csfx-bundle";
 const CONTAINER_ROOTFS_DIR: &str = "rootfs";
 const CONTAINER_STATE_ROOT: &str = "/run/csfx";
@@ -666,8 +667,44 @@ fn power_off() -> ! {
     }
 }
 
+fn push_to_backlog(backlog: &mut std::collections::VecDeque<u8>, chunk: &[u8]) {
+    if chunk.len() >= LOG_BACKLOG_CAPACITY {
+        backlog.clear();
+        backlog.extend(&chunk[chunk.len() - LOG_BACKLOG_CAPACITY..]);
+        return;
+    }
+
+    let overflow = (backlog.len() + chunk.len()).saturating_sub(LOG_BACKLOG_CAPACITY);
+    backlog.drain(..overflow);
+    backlog.extend(chunk);
+}
+
+async fn accept_log_client(
+    listener: &VsockListener,
+    backlog: &std::collections::VecDeque<u8>,
+) -> Option<tokio_vsock::VsockStream> {
+    let (mut conn, addr) = match listener.accept().await {
+        Ok(accepted) => accepted,
+        Err(e) => {
+            error!(error = %e, "Failed to accept log connection");
+            return None;
+        }
+    };
+    info!(target: "workload.logstream", peer = ?addr, "log client accepted");
+
+    let (front, back) = backlog.as_slices();
+    if let Err(e) = conn.write_all(front).await.and(conn.write_all(back).await) {
+        info!(target: "workload.logstream", error = %e, "failed replaying log backlog to new client");
+        return None;
+    }
+
+    Some(conn)
+}
+
 async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: AsyncFd<OwnedFd>) {
     let mut client: Option<tokio_vsock::VsockStream> = None;
+    let mut backlog: std::collections::VecDeque<u8> =
+        std::collections::VecDeque::with_capacity(LOG_BACKLOG_CAPACITY);
 
     let mut stdout_buf = [0u8; 4096];
     let mut stderr_buf = [0u8; 4096];
@@ -676,13 +713,9 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
 
     while stdout_open || stderr_open {
         tokio::select! {
-            accept_result = listener.accept() => {
-                match accept_result {
-                    Ok((conn, addr)) => {
-                        info!(target: "workload.logstream", peer = ?addr, "log client accepted");
-                        client = Some(conn);
-                    }
-                    Err(e) => error!(error = %e, "Failed to accept log connection"),
+            accepted = accept_log_client(&listener, &backlog) => {
+                if accepted.is_some() {
+                    client = accepted;
                 }
             }
             result = read_pty(&stdout, &mut stdout_buf), if stdout_open => {
@@ -690,6 +723,7 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                     Ok(0) => stdout_open = false,
                     Ok(n) => {
                         info!(target: "workload.stdout", "{}", String::from_utf8_lossy(&stdout_buf[..n]).trim_end());
+                        push_to_backlog(&mut backlog, &stdout_buf[..n]);
                         if let Some(stream) = client.as_mut() {
                             info!(target: "workload.logstream", bytes = n, "writing stdout chunk to log client");
                             match stream.write_all(&stdout_buf[..n]).await {
@@ -711,6 +745,7 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
                     Ok(0) => stderr_open = false,
                     Ok(n) => {
                         info!(target: "workload.stderr", "{}", String::from_utf8_lossy(&stderr_buf[..n]).trim_end());
+                        push_to_backlog(&mut backlog, &stderr_buf[..n]);
                         if let Some(stream) = client.as_mut() {
                             info!(target: "workload.logstream", bytes = n, "writing stderr chunk to log client");
                             match stream.write_all(&stderr_buf[..n]).await {
