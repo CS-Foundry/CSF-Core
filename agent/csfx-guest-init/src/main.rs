@@ -676,7 +676,7 @@ async fn stream_logs(listener: VsockListener, stdout: AsyncFd<OwnedFd>, stderr: 
 
     while stdout_open || stderr_open {
         tokio::select! {
-            accept_result = listener.accept(), if client.is_none() => {
+            accept_result = listener.accept() => {
                 match accept_result {
                     Ok((conn, addr)) => {
                         info!(target: "workload.logstream", peer = ?addr, "log client accepted");
