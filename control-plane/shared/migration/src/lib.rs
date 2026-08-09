@@ -31,6 +31,7 @@ mod m20260712_000000_add_workload_lifecycle;
 mod m20260712_010000_add_resource_group_vpn_peers;
 mod m20260723_000000_add_resource_group_appearance;
 mod m20260723_010000_runtime_class_default_firecracker;
+mod m20260809_000000_add_user_gravatar_email;
 
 pub struct Migrator;
 
@@ -69,6 +70,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260712_010000_add_resource_group_vpn_peers::Migration),
             Box::new(m20260723_000000_add_resource_group_appearance::Migration),
             Box::new(m20260723_010000_runtime_class_default_firecracker::Migration),
+            Box::new(m20260809_000000_add_user_gravatar_email::Migration),
         ]
     }
 }

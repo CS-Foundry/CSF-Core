@@ -32,6 +32,7 @@ function createAuthStore() {
                 id: response.user_id,
                 username: response.username,
                 email: null,
+                gravatar_email: null,
                 two_factor_enabled: response.two_factor_enabled,
                 force_password_change: response.force_password_change,
             };

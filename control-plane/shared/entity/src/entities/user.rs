@@ -10,6 +10,7 @@ pub struct Model {
     pub password: String,
     pub salt: String,
     pub email: Option<String>,
+    pub gravatar_email: Option<String>,
     pub two_factor_secret: Option<String>,
     pub two_factor_enabled: bool,
     pub force_password_change: bool,

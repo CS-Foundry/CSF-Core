@@ -368,6 +368,7 @@ pub async fn initialize_database(
             password: ActiveValue::Set(hashed_password),
             salt: ActiveValue::Set(salt),
             email: ActiveValue::Set(Some("admin@local.com".to_string())),
+            gravatar_email: ActiveValue::NotSet,
             two_factor_secret: ActiveValue::NotSet,
             two_factor_enabled: ActiveValue::Set(false),
             force_password_change: ActiveValue::Set(true),

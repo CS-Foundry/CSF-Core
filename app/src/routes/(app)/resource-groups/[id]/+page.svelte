@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { tick } from "svelte";
+    import { tick, onDestroy } from "svelte";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
@@ -41,6 +41,8 @@
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
     import IconPicker from "$lib/components/icon-picker.svelte";
+    import StatusBadge from "$lib/components/status-badge.svelte";
+    import { isTransientStatus } from "$lib/utils/status.js";
 
     const rgId: string = $page.params.id;
 
@@ -736,31 +738,10 @@
         })
     );
 
-    function statusClass(status: string): string {
-        switch (status.toLowerCase()) {
-            case "running":
-            case "active":
-            case "available": return "bg-green-500/15 text-green-600 dark:text-green-400";
-            case "failed":
-            case "error": return "bg-red-500/15 text-red-600 dark:text-red-400";
-            case "scheduled":
-            case "attaching": return "bg-blue-500/15 text-blue-600 dark:text-blue-400";
-            case "pulling": return "bg-blue-500/15 text-blue-600 dark:text-blue-400 animate-pulse";
-            case "creating":
-            case "starting": return "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 animate-pulse";
-            case "stopped":
-            case "deleting": return "bg-muted text-muted-foreground";
-            default: return "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400";
-        }
-    }
-
-    function statusLabel(status: string): string {
-        switch (status.toLowerCase()) {
-            case "pulling": return "Pulling image...";
-            case "creating": return "Creating container...";
-            case "starting": return "Starting...";
-            default: return status;
-        }
+    function stackStatus(children: Workload[]): string {
+        if (children.every((c) => c.status === "running")) return "running";
+        if (children.some((c) => c.status === "failed" || c.status === "error")) return "failed";
+        return "pending";
     }
 
     function fmtBytes(bytes: number): string {
@@ -845,6 +826,33 @@
         if (auth.token && !loadStarted) {
             loadStarted = true;
             load();
+        }
+    });
+
+    const hasTransientStatus = $derived(
+        workloads.some((w) => isTransientStatus(w.status)) || volumes.some((v) => isTransientStatus(v.status))
+    );
+
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    $effect(() => {
+        if (hasTransientStatus && !pollInterval) {
+            pollInterval = setInterval(load, 2000);
+        } else if (!hasTransientStatus && pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    });
+
+    onDestroy(() => {
+        if (pollInterval) clearInterval(pollInterval);
+    });
+
+    $effect(() => {
+        if (!activeContainer) return;
+        const refreshed = workloads.find((w) => w.id === activeContainer?.id);
+        if (refreshed && refreshed.status !== activeContainer.status) {
+            activeContainer = refreshed;
         }
     });
 </script>
@@ -1261,9 +1269,7 @@
                         <h2 class="text-base font-semibold leading-tight truncate">{activeContainer.service_name ?? activeContainer.name}</h2>
                         <p class="text-xs text-muted-foreground font-mono truncate">{activeContainer.image}</p>
                     </div>
-                    <span class="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 {statusClass(activeContainer.status)}">
-                        {statusLabel(activeContainer.status)}
-                    </span>
+                    <StatusBadge status={activeContainer.status} class="shrink-0" />
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                     <button
@@ -1541,7 +1547,7 @@
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 flex-wrap">
                     <h1 class="text-xl font-semibold tracking-tight">{group.name}</h1>
-                    <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(group.status)}">{group.status}</span>
+                    <StatusBadge status={group.status} />
                 </div>
                 {#if group.description}
                     <p class="text-sm text-muted-foreground mt-0.5">{group.description}</p>
@@ -1685,9 +1691,7 @@
                                 </td>
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-1.5">
-                                        <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(w.status)}">
-                                            {statusLabel(w.status)}
-                                        </span>
+                                        <StatusBadge status={w.status} />
                                         {#if w.restart_count > 0}
                                             <span
                                                 class="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-600"
@@ -1766,9 +1770,10 @@
                                     </td>
                                     <td class="px-4 py-3 text-xs text-muted-foreground">-</td>
                                     <td class="px-4 py-3">
-                                        <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(stack.children.every((c) => c.status === 'running') ? 'running' : 'pending')}">
-                                            {stack.children.filter((c) => c.status === 'running').length}/{stack.children.length} running
-                                        </span>
+                                        <StatusBadge
+                                            status={stackStatus(stack.children)}
+                                            label="{stack.children.filter((c) => c.status === 'running').length}/{stack.children.length} running"
+                                        />
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="flex items-center justify-end gap-1">
@@ -1833,9 +1838,7 @@
                                         </div>
                                     </td>
                                     <td class="px-4 py-3">
-                                        <span class="text-xs px-2 py-0.5 rounded-full font-medium {statusClass(v.status)}">
-                                            {v.status}
-                                        </span>
+                                        <StatusBadge status={v.status} />
                                     </td>
                                     <td class="px-4 py-3 text-right">
                                         <Button

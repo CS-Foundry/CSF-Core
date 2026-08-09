@@ -7,9 +7,22 @@
     import LogOutIcon from "@lucide/svelte/icons/log-out";
     import UserIcon from "@lucide/svelte/icons/user";
     import { auth } from "$lib/auth/store.svelte";
+    import { gravatarUrl } from "$lib/auth/api";
+    import { settingsDialog } from "$lib/components/settings/settings-store.svelte.js";
     import { goto } from "$app/navigation";
 
     const sidebar = useSidebar();
+
+    let avatarUrl = $state<string | null>(null);
+
+    $effect(() => {
+        const source = auth.user?.gravatar_email;
+        if (!source) {
+            avatarUrl = null;
+            return;
+        }
+        gravatarUrl(source, 64).then((url) => (avatarUrl = url));
+    });
 
     function initials(name: string): string {
         return name.slice(0, 2).toUpperCase();
@@ -32,6 +45,9 @@
                         {...props}
                     >
                         <Avatar.Root class="size-8 rounded-lg">
+                            {#if avatarUrl}
+                                <Avatar.Image src={avatarUrl} alt={auth.user?.username ?? "avatar"} />
+                            {/if}
                             <Avatar.Fallback class="rounded-lg text-xs">
                                 {auth.user ? initials(auth.user.username) : "??"}
                             </Avatar.Fallback>
@@ -53,6 +69,9 @@
                 <DropdownMenu.Label class="p-0 font-normal">
                     <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                         <Avatar.Root class="size-8 rounded-lg">
+                            {#if avatarUrl}
+                                <Avatar.Image src={avatarUrl} alt={auth.user?.username ?? "avatar"} />
+                            {/if}
                             <Avatar.Fallback class="rounded-lg text-xs">
                                 {auth.user ? initials(auth.user.username) : "??"}
                             </Avatar.Fallback>
@@ -65,7 +84,7 @@
                 </DropdownMenu.Label>
                 <DropdownMenu.Separator />
                 <DropdownMenu.Group>
-                    <DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => settingsDialog.show()}>
                         <UserIcon />
                         Profile
                     </DropdownMenu.Item>

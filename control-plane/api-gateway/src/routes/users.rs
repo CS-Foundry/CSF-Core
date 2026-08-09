@@ -59,6 +59,8 @@ pub struct UserProfileResponse {
     pub username: String,
     /// Email address
     pub email: Option<String>,
+    /// Gravatar email address used to derive the profile avatar
+    pub gravatar_email: Option<String>,
     /// Whether 2FA is enabled
     pub two_factor_enabled: bool,
     /// Whether password change is required
@@ -76,6 +78,7 @@ pub fn users_routes() -> Router<AppState> {
         .route("/2fa/disable", post(disable_2fa))
         .route("/change-password", post(change_password))
         .route("/change-email", post(change_email))
+        .route("/change-gravatar-email", post(change_gravatar_email))
 }
 
 // Define the public, unauthenticated routes for the users module
@@ -298,6 +301,7 @@ pub async fn get_user_profile(
             id: user.id.to_string(),
             username: user.name,
             email: user.email.clone(),
+            gravatar_email: user.gravatar_email.clone(),
             two_factor_enabled: user.two_factor_enabled,
             force_password_change: user.force_password_change,
         })),
@@ -336,6 +340,7 @@ pub async fn validate_session(
             id: user.id.to_string(),
             username: user.name,
             email: user.email.clone(),
+            gravatar_email: user.gravatar_email.clone(),
             two_factor_enabled: user.two_factor_enabled,
             force_password_change: user.force_password_change,
         })),
@@ -365,6 +370,11 @@ pub struct ChangePasswordRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ChangeEmailRequest {
     pub new_email: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ChangeGravatarEmailRequest {
+    pub gravatar_email: Option<String>,
 }
 
 /// Setup 2FA for user (protected)
@@ -524,6 +534,39 @@ pub async fn change_email(
         Err(crate::auth_service::AuthError::UserAlreadyExists) => Err(StatusCode::CONFLICT),
         Err(err) => {
             tracing::error!("Failed to change email: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Change gravatar avatar email (protected)
+#[utoipa::path(
+    post,
+    path = "/api/change-gravatar-email",
+    request_body = ChangeGravatarEmailRequest,
+    responses(
+        (status = 200, description = "Gravatar email changed successfully"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Authentication"
+)]
+pub async fn change_gravatar_email(
+    AuthenticatedUser(claims): AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(payload): Json<ChangeGravatarEmailRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let auth_service = AuthService::new(state.db_conn.clone());
+
+    match auth_service
+        .change_gravatar_email(claims.user_id, payload.gravatar_email)
+        .await
+    {
+        Ok(_) => Ok(Json(json!({ "message": "Gravatar email changed successfully" }))),
+        Err(err) => {
+            tracing::error!("Failed to change gravatar email: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

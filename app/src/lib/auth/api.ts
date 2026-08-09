@@ -12,6 +12,7 @@ export interface UserProfile {
     id: string;
     username: string;
     email: string | null;
+    gravatar_email: string | null;
     two_factor_enabled: boolean;
     force_password_change: boolean;
 }
@@ -149,6 +150,78 @@ export async function validateSession(token: string): Promise<UserProfile> {
     });
     if (!res.ok) throw new Error('session invalid');
     return res.json();
+}
+
+export async function changeEmail(token: string, newEmail: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/change-email`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ new_email: newEmail }),
+    });
+    if (!res.ok) throw new Error(`change-email failed: ${res.status}`);
+}
+
+export async function changeGravatarEmail(token: string, gravatarEmail: string | null): Promise<void> {
+    const res = await fetch(`${API_BASE}/change-gravatar-email`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ gravatar_email: gravatarEmail }),
+    });
+    if (!res.ok) throw new Error(`change-gravatar-email failed: ${res.status}`);
+}
+
+export async function gravatarUrl(email: string, size = 80): Promise<string> {
+    const normalized = email.trim().toLowerCase();
+    const encoded = new TextEncoder().encode(normalized);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    const hash = Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=404`;
+}
+
+export interface Setup2FAResponse {
+    secret: string;
+    qr_code: string;
+}
+
+export async function setup2FA(token: string): Promise<Setup2FAResponse> {
+    const res = await fetch(`${API_BASE}/2fa/setup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`2fa setup failed: ${res.status}`);
+    return res.json();
+}
+
+export async function enable2FA(token: string, code: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/2fa/enable`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error(`2fa enable failed: ${res.status}`);
+}
+
+export async function disable2FA(token: string, code: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/2fa/disable`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error(`2fa disable failed: ${res.status}`);
 }
 
 export class TwoFactorRequiredError extends Error {
