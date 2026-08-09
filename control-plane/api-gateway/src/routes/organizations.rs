@@ -350,6 +350,7 @@ async fn create_user(
         password: ActiveValue::Set(hashed_password),
         salt: ActiveValue::Set(salt),
         email: ActiveValue::Set(req.email.clone()),
+        gravatar_email: ActiveValue::NotSet,
         two_factor_secret: ActiveValue::NotSet,
         two_factor_enabled: ActiveValue::Set(false),
         force_password_change: ActiveValue::Set(req.force_password_change),

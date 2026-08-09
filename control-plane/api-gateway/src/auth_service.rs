@@ -83,6 +83,7 @@ impl AuthService {
             password: ActiveValue::Set(hashed_password),
             salt: ActiveValue::Set(salt),
             email: ActiveValue::NotSet,
+            gravatar_email: ActiveValue::NotSet,
             two_factor_secret: ActiveValue::NotSet,
             two_factor_enabled: ActiveValue::Set(false),
             force_password_change: ActiveValue::Set(false),
@@ -343,6 +344,20 @@ impl AuthService {
 
         let mut user_active: user::ActiveModel = user.into();
         user_active.email = Set(Some(new_email));
+        user_active.update(&self.db).await?;
+
+        Ok(())
+    }
+
+    pub async fn change_gravatar_email(
+        &self,
+        user_id: Uuid,
+        gravatar_email: Option<String>,
+    ) -> AuthResult<()> {
+        let user = self.get_user_by_id(user_id).await?;
+
+        let mut user_active: user::ActiveModel = user.into();
+        user_active.gravatar_email = Set(gravatar_email);
         user_active.update(&self.db).await?;
 
         Ok(())

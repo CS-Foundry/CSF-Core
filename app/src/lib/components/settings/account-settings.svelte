@@ -5,12 +5,36 @@
     import { Switch } from "$lib/components/ui/switch/index.js";
     import * as InputOTP from "$lib/components/ui/input-otp/index.js";
     import Spinner from "$lib/components/ui/spinner/spinner.svelte";
+    import * as Avatar from "$lib/components/ui/avatar/index.js";
     import { auth } from "$lib/auth/store.svelte";
-    import { changeEmail, changePassword, setup2FA, enable2FA, disable2FA } from "$lib/auth/api";
+    import {
+        changeEmail,
+        changeGravatarEmail,
+        changePassword,
+        gravatarUrl,
+        setup2FA,
+        enable2FA,
+        disable2FA,
+    } from "$lib/auth/api";
     import { toast } from "svelte-sonner";
 
     let email = $state(auth.user?.email ?? "");
     let emailSaving = $state(false);
+
+    let gravatarEmail = $state(auth.user?.gravatar_email ?? "");
+    let gravatarSaving = $state(false);
+    let avatarPreview = $state<string | null>(null);
+
+    const gravatarChanged = $derived(gravatarEmail.trim() !== (auth.user?.gravatar_email ?? ""));
+
+    $effect(() => {
+        const source = auth.user?.gravatar_email;
+        if (!source) {
+            avatarPreview = null;
+            return;
+        }
+        gravatarUrl(source, 96).then((url) => (avatarPreview = url));
+    });
 
     let oldPassword = $state("");
     let newPassword = $state("");
@@ -36,6 +60,21 @@
             toast.error("Failed to update email");
         } finally {
             emailSaving = false;
+        }
+    }
+
+    async function saveGravatarEmail() {
+        if (!auth.token || !gravatarChanged) return;
+        gravatarSaving = true;
+        try {
+            const trimmed = gravatarEmail.trim();
+            await changeGravatarEmail(auth.token, trimmed === "" ? null : trimmed);
+            auth.setUser({ ...auth.user!, gravatar_email: trimmed === "" ? null : trimmed });
+            toast.success("Gravatar updated");
+        } catch {
+            toast.error("Failed to update gravatar");
+        } finally {
+            gravatarSaving = false;
         }
     }
 
@@ -118,6 +157,33 @@
 <div class="flex flex-col gap-8 max-w-xl">
     <section class="flex flex-col gap-4">
         <h3 class="text-sm font-semibold">Profile</h3>
+        <div class="flex items-center gap-4">
+            <Avatar.Root class="size-16 rounded-lg">
+                {#if avatarPreview}
+                    <Avatar.Image src={avatarPreview} alt="Gravatar avatar" />
+                {/if}
+                <Avatar.Fallback class="rounded-lg text-lg">
+                    {(auth.user?.username ?? "??").slice(0, 2).toUpperCase()}
+                </Avatar.Fallback>
+            </Avatar.Root>
+            <div class="flex-1 flex flex-col gap-1.5">
+                <Label for="settings-gravatar" class="text-xs text-muted-foreground">Gravatar email</Label>
+                <div class="flex gap-2">
+                    <Input
+                        id="settings-gravatar"
+                        type="email"
+                        bind:value={gravatarEmail}
+                        placeholder="you@example.com"
+                    />
+                    <Button onclick={saveGravatarEmail} disabled={!gravatarChanged || gravatarSaving} size="sm">
+                        {#if gravatarSaving}<Spinner />{:else}Save{/if}
+                    </Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                    Avatar is pulled from <a href="https://gravatar.com/profile" target="_blank" rel="noreferrer" class="underline">gravatar.com</a>
+                </p>
+            </div>
+        </div>
         <div class="flex flex-col gap-1.5">
             <Label for="settings-username" class="text-xs text-muted-foreground">Username</Label>
             <Input id="settings-username" value={auth.user?.username ?? ""} disabled />

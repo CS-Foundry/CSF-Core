@@ -12,6 +12,7 @@ export interface UserProfile {
     id: string;
     username: string;
     email: string | null;
+    gravatar_email: string | null;
     two_factor_enabled: boolean;
     force_password_change: boolean;
 }
@@ -161,6 +162,28 @@ export async function changeEmail(token: string, newEmail: string): Promise<void
         body: JSON.stringify({ new_email: newEmail }),
     });
     if (!res.ok) throw new Error(`change-email failed: ${res.status}`);
+}
+
+export async function changeGravatarEmail(token: string, gravatarEmail: string | null): Promise<void> {
+    const res = await fetch(`${API_BASE}/change-gravatar-email`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ gravatar_email: gravatarEmail }),
+    });
+    if (!res.ok) throw new Error(`change-gravatar-email failed: ${res.status}`);
+}
+
+export async function gravatarUrl(email: string, size = 80): Promise<string> {
+    const normalized = email.trim().toLowerCase();
+    const encoded = new TextEncoder().encode(normalized);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    const hash = Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=404`;
 }
 
 export interface Setup2FAResponse {
