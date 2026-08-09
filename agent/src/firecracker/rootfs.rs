@@ -27,6 +27,7 @@ const WHITEOUT_OPAQUE_MARKER: &str = ".wh..wh..opq";
 
 pub struct RootfsBuilder {
     client: Client,
+    registry_mirror: Option<String>,
 }
 
 impl Default for RootfsBuilder {
@@ -37,17 +38,30 @@ impl Default for RootfsBuilder {
 
 impl RootfsBuilder {
     pub fn new() -> Self {
+        let registry_mirror = std::env::var("CSFX_REGISTRY_MIRROR")
+            .ok()
+            .filter(|value| !value.is_empty());
+
+        let protocol = match &registry_mirror {
+            Some(mirror) => ClientProtocol::HttpsExcept(vec![mirror.clone()]),
+            None => ClientProtocol::Https,
+        };
+
         Self {
             client: Client::new(ClientConfig {
-                protocol: ClientProtocol::Https,
+                protocol,
                 max_concurrent_download: 1,
                 ..Default::default()
             }),
+            registry_mirror,
         }
     }
 
     pub async fn ensure_rootfs(&self, image: &str) -> Result<PathBuf> {
-        let reference: Reference = image.parse().context("Invalid image reference")?;
+        let mut reference: Reference = image.parse().context("Invalid image reference")?;
+        if let Some(mirror) = &self.registry_mirror {
+            reference.set_mirror_registry(mirror.clone());
+        }
         let auth = RegistryAuth::Anonymous;
 
         let (_, digest) = self
