@@ -7,6 +7,7 @@
     import LogOutIcon from "@lucide/svelte/icons/log-out";
     import UserIcon from "@lucide/svelte/icons/user";
     import { auth } from "$lib/auth/store.svelte";
+    import { settingsDialog } from "$lib/components/settings/settings-store.svelte.js";
     import { goto } from "$app/navigation";
 
     const sidebar = useSidebar();
@@ -65,7 +66,7 @@
                 </DropdownMenu.Label>
                 <DropdownMenu.Separator />
                 <DropdownMenu.Group>
-                    <DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => settingsDialog.show()}>
                         <UserIcon />
                         Profile
                     </DropdownMenu.Item>

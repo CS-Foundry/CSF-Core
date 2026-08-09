@@ -151,6 +151,56 @@ export async function validateSession(token: string): Promise<UserProfile> {
     return res.json();
 }
 
+export async function changeEmail(token: string, newEmail: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/change-email`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ new_email: newEmail }),
+    });
+    if (!res.ok) throw new Error(`change-email failed: ${res.status}`);
+}
+
+export interface Setup2FAResponse {
+    secret: string;
+    qr_code: string;
+}
+
+export async function setup2FA(token: string): Promise<Setup2FAResponse> {
+    const res = await fetch(`${API_BASE}/2fa/setup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`2fa setup failed: ${res.status}`);
+    return res.json();
+}
+
+export async function enable2FA(token: string, code: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/2fa/enable`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error(`2fa enable failed: ${res.status}`);
+}
+
+export async function disable2FA(token: string, code: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/2fa/disable`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error(`2fa disable failed: ${res.status}`);
+}
+
 export class TwoFactorRequiredError extends Error {
     constructor(
         public readonly username: string,

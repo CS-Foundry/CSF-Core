@@ -2,6 +2,7 @@
     import { onMount, onDestroy } from "svelte";
     import * as Card from "$lib/components/ui/card/index.js";
     import { Button } from "$lib/components/ui/button/index.js";
+    import { Switch } from "$lib/components/ui/switch/index.js";
     import { auth } from "$lib/auth/store.svelte";
     import {
         getUpdateStatus,
@@ -216,18 +217,15 @@
                     <Card.Title>Available releases</Card.Title>
                     <Card.Description>Select a version to update or downgrade</Card.Description>
                 </div>
-                <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                    <div class="relative inline-flex">
-                        <input
-                            type="checkbox"
-                            bind:checked={includePre}
-                            onchange={fetchReleases}
-                            class="peer sr-only"
-                            id="include-pre"
-                        />
-                        <div class="w-8 h-4 rounded-full bg-muted border peer-checked:bg-primary transition-colors"></div>
-                        <div class="absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></div>
-                    </div>
+                <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none" for="include-pre">
+                    <Switch
+                        id="include-pre"
+                        checked={includePre}
+                        onCheckedChange={(value) => {
+                            includePre = value;
+                            fetchReleases();
+                        }}
+                    />
                     Pre-releases
                 </label>
             </div>
