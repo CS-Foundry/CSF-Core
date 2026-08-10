@@ -57,11 +57,26 @@ impl RootfsBuilder {
         }
     }
 
+    fn resolve_reference(&self, image: &str) -> Result<Reference> {
+        let reference: Reference = image.parse().context("Invalid image reference")?;
+        let Some(mirror) = &self.registry_mirror else {
+            return Ok(reference);
+        };
+
+        let tag_or_digest = match (reference.tag(), reference.digest()) {
+            (_, Some(digest)) => format!("@{digest}"),
+            (Some(tag), None) => format!(":{tag}"),
+            (None, None) => String::new(),
+        };
+        let mirrored = format!(
+            "{mirror}/{}{tag_or_digest}",
+            reference.repository()
+        );
+        mirrored.parse().context("Invalid mirrored image reference")
+    }
+
     pub async fn ensure_rootfs(&self, image: &str) -> Result<PathBuf> {
-        let mut reference: Reference = image.parse().context("Invalid image reference")?;
-        if let Some(mirror) = &self.registry_mirror {
-            reference.set_mirror_registry(mirror.clone());
-        }
+        let reference = self.resolve_reference(image)?;
         let auth = RegistryAuth::Anonymous;
 
         let (_, digest) = self
