@@ -10,6 +10,7 @@ members = [
     "control-plane/failover-controller",
     "control-plane/sdn-controller",
     "control-plane/volume-manager",
+    "control-plane/object-storage",
     "control-plane/registry",
     "control-plane/shared/entity",
     "control-plane/shared/migration",
