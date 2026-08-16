@@ -450,6 +450,14 @@ export async function deleteVolume(token: string, id: string): Promise<void> {
     if (!res.ok) throw new Error(`Failed to delete volume: ${res.status}`);
 }
 
+export async function listBuckets(token: string): Promise<Bucket[]> {
+    const res = await authedFetch(`${API_BASE}/buckets`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list buckets: ${res.status}`);
+    return res.json();
+}
+
 export async function listResourceGroupBuckets(token: string, rgId: string): Promise<Bucket[]> {
     const res = await authedFetch(`${API_BASE}/resource-groups/${rgId}/buckets`, {
         headers: { Authorization: `Bearer ${token}` },

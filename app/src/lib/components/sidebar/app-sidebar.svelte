@@ -57,7 +57,7 @@
         projects: [
             {
                 name: "S3 Buckets",
-                url: "#",
+                url: "/buckets",
                 icon: IconBucket,
             },
             {

@@ -124,6 +124,8 @@
     const RESOURCE_TYPES = [
         { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "logos:docker-icon" },
         { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "logos:docker-icon" },
+        { key: "volume", label: "Volume", description: "Add a block storage volume", icon: "mdi:database-outline" },
+        { key: "bucket", label: "S3 Bucket", description: "Add an S3-compatible object storage bucket", icon: "mdi:bucket-outline" },
     ] as const;
 
     let formImage = $state("");
@@ -376,8 +378,12 @@
         resourcePickerDialog?.close();
         if (key === "docker-container") {
             deployDialog?.showModal();
-        } else {
+        } else if (key === "docker-compose") {
             composeDialog?.showModal();
+        } else if (key === "volume") {
+            volumeDialog?.showModal();
+        } else {
+            bucketDialog?.showModal();
         }
     }
 
@@ -1802,9 +1808,6 @@
                 </Button>
                 <Button size="sm" variant="outline" onclick={() => volumeDialog?.showModal()}>
                     Add Volume
-                </Button>
-                <Button size="sm" variant="outline" onclick={() => bucketDialog?.showModal()}>
-                    Add Bucket
                 </Button>
                 <Button size="sm" onclick={() => resourcePickerDialog?.showModal()}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
