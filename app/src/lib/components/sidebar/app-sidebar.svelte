@@ -80,7 +80,6 @@
 </script>
 
 <script lang="ts">
-    import { onMount } from "svelte";
     import NavMain from "./nav-main.svelte";
     import NavProjects from "./nav-projects.svelte";
     import NavUser from "./nav-user.svelte";
@@ -100,14 +99,16 @@
     const sidebar = useSidebar();
     let version = $state<string | null>(null);
 
-    onMount(async () => {
-        if (!auth.token) return;
-        try {
-            const status = await getUpdateStatus(auth.token);
-            version = status.current_version;
-        } catch {
-            // non-fatal
-        }
+    $effect(() => {
+        const token = auth.token;
+        if (!token) return;
+        getUpdateStatus(token)
+            .then((status) => {
+                version = status.current_version;
+            })
+            .catch(() => {
+                // non-fatal
+            });
     });
 </script>
 
