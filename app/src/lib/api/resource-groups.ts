@@ -55,6 +55,47 @@ export interface Volume {
     created_at: string;
 }
 
+export interface Bucket {
+    id: string;
+    name: string;
+    global_alias: string;
+    exposure: 'internal' | 'external' | 'node_port';
+    quota_max_size: number | null;
+    quota_max_objects: number | null;
+    status: string;
+    resource_group_id: string | null;
+    created_at: string;
+    updated_at: string | null;
+}
+
+export interface BucketAccessKey {
+    id: string;
+    bucket_id: string;
+    name: string;
+    garage_key_id: string;
+    permissions: string;
+    expires_at: string | null;
+    last_rotated_at: string | null;
+    created_at: string;
+}
+
+export interface BucketAccessKeyCreated extends BucketAccessKey {
+    secret_access_key: string;
+}
+
+export interface CreateBucketRequest {
+    name: string;
+    resource_group_id?: string;
+    exposure?: 'internal' | 'external';
+    quota_max_size?: number;
+    quota_max_objects?: number;
+}
+
+export interface CreateBucketAccessKeyRequest {
+    name: string;
+    permissions?: string;
+}
+
 export interface Workload {
     id: string;
     name: string;
@@ -407,4 +448,176 @@ export async function deleteVolume(token: string, id: string): Promise<void> {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to delete volume: ${res.status}`);
+}
+
+export async function listBuckets(token: string): Promise<Bucket[]> {
+    const res = await authedFetch(`${API_BASE}/buckets`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list buckets: ${res.status}`);
+    return res.json();
+}
+
+export async function getBucket(token: string, id: string): Promise<Bucket> {
+    const res = await authedFetch(`${API_BASE}/buckets/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to get bucket: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function listResourceGroupBuckets(token: string, rgId: string): Promise<Bucket[]> {
+    const res = await authedFetch(`${API_BASE}/resource-groups/${rgId}/buckets`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list buckets: ${res.status}`);
+    return res.json();
+}
+
+export async function createBucket(token: string, req: CreateBucketRequest): Promise<Bucket> {
+    const res = await authedFetch(`${API_BASE}/buckets`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to create bucket: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function deleteBucket(token: string, id: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/buckets/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete bucket: ${res.status}`);
+}
+
+export async function listBucketKeys(token: string, bucketId: string): Promise<BucketAccessKey[]> {
+    const res = await authedFetch(`${API_BASE}/buckets/${bucketId}/keys`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list access keys: ${res.status}`);
+    return res.json();
+}
+
+export async function createBucketKey(
+    token: string,
+    bucketId: string,
+    req: CreateBucketAccessKeyRequest
+): Promise<BucketAccessKeyCreated> {
+    const res = await authedFetch(`${API_BASE}/buckets/${bucketId}/keys`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to create access key: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function deleteBucketKey(token: string, bucketId: string, keyId: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/buckets/${bucketId}/keys/${keyId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete access key: ${res.status}`);
+}
+
+export interface ObjectEntry {
+    key: string;
+    size: number;
+    last_modified: string;
+}
+
+export interface ListObjectsResult {
+    objects: ObjectEntry[];
+    folders: string[];
+    next_continuation_token: string | null;
+}
+
+export interface PresignResult {
+    url: string;
+    expires_in_seconds: number;
+}
+
+export async function listBucketObjects(
+    token: string,
+    bucketId: string,
+    prefix: string
+): Promise<ListObjectsResult> {
+    const res = await authedFetch(
+        `${API_BASE}/buckets/${bucketId}/objects?prefix=${encodeURIComponent(prefix)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to list objects: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function deleteBucketObject(token: string, bucketId: string, key: string): Promise<void> {
+    const res = await authedFetch(`${API_BASE}/buckets/${bucketId}/objects/${key}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete object: ${res.status}`);
+}
+
+export async function presignObjectUpload(
+    token: string,
+    bucketId: string,
+    key: string
+): Promise<PresignResult> {
+    const res = await authedFetch(`${API_BASE}/buckets/${bucketId}/objects/presign-upload`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ key }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to presign upload: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function presignObjectDownload(
+    token: string,
+    bucketId: string,
+    key: string
+): Promise<PresignResult> {
+    const res = await authedFetch(
+        `${API_BASE}/buckets/${bucketId}/objects/presign-download/${key}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to presign download: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function uploadObjectToPresignedUrl(url: string, file: File): Promise<void> {
+    const res = await fetch(url, {
+        method: 'PUT',
+        body: file,
+    });
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
 }

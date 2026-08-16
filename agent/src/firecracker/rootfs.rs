@@ -68,10 +68,7 @@ impl RootfsBuilder {
             (Some(tag), None) => format!(":{tag}"),
             (None, None) => String::new(),
         };
-        let mirrored = format!(
-            "{mirror}/{}{tag_or_digest}",
-            reference.repository()
-        );
+        let mirrored = format!("{mirror}/{}{tag_or_digest}", reference.repository());
         mirrored.parse().context("Invalid mirrored image reference")
     }
 

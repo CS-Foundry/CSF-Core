@@ -1,0 +1,225 @@
+use anyhow::Result;
+use entity::entities::{agents, garage_nodes};
+use sea_orm::{DatabaseConnection, EntityTrait};
+use tokio::time::{sleep, Duration};
+
+use crate::{
+    db::garage_nodes as garage_nodes_db,
+    garage::{client::LayoutRole, leader::LayoutLeader, GarageClient},
+    log_error, log_info, log_warn,
+};
+
+const RECONCILE_INTERVAL_SECONDS: u64 = 30;
+const MIN_STORAGE_NODES_FOR_FULL_REPLICATION: usize = 3;
+
+pub fn replication_factor_for(storage_node_count: usize) -> u32 {
+    if storage_node_count >= MIN_STORAGE_NODES_FOR_FULL_REPLICATION {
+        3
+    } else {
+        1
+    }
+}
+
+async fn peer_addrs(
+    db: &DatabaseConnection,
+    known_nodes: &[garage_nodes::Model],
+) -> Result<Vec<String>> {
+    let mut addrs = Vec::new();
+
+    for node in known_nodes {
+        let Some(garage_node_id) = &node.garage_node_id else {
+            continue;
+        };
+        let Some(agent_id) = node.agent_id else {
+            continue;
+        };
+        let Some(agent) = agents::Entity::find_by_id(agent_id).one(db).await? else {
+            continue;
+        };
+        let Some(wg_ip) = agent.wg_tunnel_ip else {
+            continue;
+        };
+        addrs.push(format!("{}@{}:3901", garage_node_id, wg_ip));
+    }
+
+    Ok(addrs)
+}
+
+async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Result<()> {
+    let known_nodes = garage_nodes_db::list(db).await?;
+
+    let addrs = peer_addrs(db, &known_nodes).await?;
+    if let Err(e) = garage.connect_cluster_nodes(&addrs).await {
+        log_warn!(
+            "garage::layout",
+            &format!("failed to connect garage cluster nodes err={}", e)
+        );
+    }
+
+    let status = match garage.get_cluster_status().await {
+        Ok(status) => status,
+        Err(e) => {
+            log_warn!(
+                "garage::layout",
+                &format!("failed to read garage cluster status err={}", e)
+            );
+            return Ok(());
+        }
+    };
+
+    for node in &known_nodes {
+        let is_up = status
+            .nodes
+            .iter()
+            .any(|n| Some(n.id.clone()) == node.garage_node_id && n.is_up);
+
+        if !is_up && node.status == "up" {
+            log_warn!(
+                "garage::layout",
+                &format!("garage node reported down id={}", node.id)
+            );
+            garage_nodes_db::mark_down(db, node.id).await?;
+        }
+    }
+
+    let storage_nodes: Vec<&garage_nodes::Model> = known_nodes
+        .iter()
+        .filter(|n| n.role == "storage" && n.capacity_bytes.is_some())
+        .collect();
+
+    if storage_nodes.is_empty() {
+        return Ok(());
+    }
+
+    let factor = replication_factor_for(storage_nodes.len());
+
+    let roles: Vec<LayoutRole> = known_nodes
+        .iter()
+        .filter_map(|n| {
+            n.garage_node_id.as_ref().map(|garage_id| LayoutRole {
+                id: garage_id.clone(),
+                zone: n.zone.clone(),
+                capacity: n.capacity_bytes,
+                tags: vec![],
+            })
+        })
+        .collect();
+
+    if roles.is_empty() {
+        return Ok(());
+    }
+
+    if let Err(e) = garage.update_cluster_layout(roles, factor).await {
+        log_error!(
+            "garage::layout",
+            &format!("failed to stage cluster layout err={}", e)
+        );
+        return Ok(());
+    }
+
+    if let Err(e) = garage.apply_cluster_layout(status.layout_version + 1).await {
+        log_error!(
+            "garage::layout",
+            &format!("failed to apply cluster layout err={}", e)
+        );
+        return Ok(());
+    }
+
+    log_info!(
+        "garage::layout",
+        &format!(
+            "applied cluster layout storage_nodes={} replication_factor={}",
+            storage_nodes.len(),
+            factor
+        )
+    );
+    Ok(())
+}
+
+pub async fn run_reconcile_loop(
+    db: DatabaseConnection,
+    garage: GarageClient,
+    leader: LayoutLeader,
+) {
+    loop {
+        sleep(Duration::from_secs(RECONCILE_INTERVAL_SECONDS)).await;
+
+        if !leader.is_leader() {
+            continue;
+        }
+
+        if let Err(e) = reconcile_once(&db, &garage).await {
+            log_error!(
+                "garage::layout",
+                &format!("reconcile loop iteration failed err={}", e)
+            );
+        }
+    }
+}
+
+const SELF_REGISTER_RETRY_SECONDS: u64 = 5;
+const SELF_REGISTER_MAX_ATTEMPTS: u32 = 60;
+
+pub async fn register_self_as_node(db: &DatabaseConnection, garage: &GarageClient, zone: &str) {
+    for attempt in 1..=SELF_REGISTER_MAX_ATTEMPTS {
+        match garage.get_cluster_status().await {
+            Ok(status) => {
+                let Some(self_node) = status.nodes.first() else {
+                    log_warn!(
+                        "garage::layout",
+                        "garage cluster status returned no nodes yet"
+                    );
+                    sleep(Duration::from_secs(SELF_REGISTER_RETRY_SECONDS)).await;
+                    continue;
+                };
+
+                let capacity_bytes = self_node.role.as_ref().and_then(|r| r.capacity);
+                let node_zone = self_node
+                    .role
+                    .as_ref()
+                    .map(|r| r.zone.as_str())
+                    .filter(|z| !z.is_empty())
+                    .unwrap_or(zone);
+
+                match crate::db::garage_nodes::upsert_self(
+                    db,
+                    &self_node.id,
+                    node_zone,
+                    capacity_bytes,
+                )
+                .await
+                {
+                    Ok(node) => {
+                        log_info!(
+                            "garage::layout",
+                            &format!("registered self as garage node id={}", node.id)
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log_error!(
+                            "garage::layout",
+                            &format!("failed to persist self garage node registration err={}", e)
+                        );
+                        return;
+                    }
+                }
+            }
+            Err(e) => {
+                log_warn!(
+                    "garage::layout",
+                    &format!(
+                        "self-registration attempt {}/{} failed err={}",
+                        attempt, SELF_REGISTER_MAX_ATTEMPTS, e
+                    )
+                );
+                sleep(Duration::from_secs(SELF_REGISTER_RETRY_SECONDS)).await;
+            }
+        }
+    }
+
+    log_error!(
+        "garage::layout",
+        "giving up on self garage node registration after max attempts"
+    );
+}

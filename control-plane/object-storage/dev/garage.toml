@@ -1,0 +1,19 @@
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "lmdb"
+
+replication_factor = 1
+compression_level = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "garage:3901"
+rpc_secret = "c4717cda58d14d9cd2eee1dce98ded1ff6fa2c0cc5372b769fad641e3d277676"
+
+[s3_api]
+s3_region = "csfx"
+api_bind_addr = "[::]:3900"
+root_domain = ""
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "dev-garage-admin-token"

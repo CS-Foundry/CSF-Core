@@ -3,11 +3,18 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
 
+use crate::rg_dns::RgDnsRegistry;
 use crate::spec::{rg_bridge_iface_name, second_host_ip};
 
 const RG_REGISTRY_DIR: &str = "/var/lib/csfx-agent/rg-networks";
+const S3_SERVICE_NAME: &str = "s3";
+const S3_DNAT_PORT: u16 = 3900;
 
-pub async fn ensure_bridge(resource_group_id: &str, cidr: Option<&str>) -> Result<String> {
+pub async fn ensure_bridge(
+    resource_group_id: &str,
+    cidr: Option<&str>,
+    rg_dns_registry: &RgDnsRegistry,
+) -> Result<String> {
     let iface = rg_bridge_iface_name(resource_group_id);
 
     write_registry_entry(resource_group_id).await?;
@@ -29,6 +36,18 @@ pub async fn ensure_bridge(resource_group_id: &str, cidr: Option<&str>) -> Resul
                 &iface,
             ])
             .await?;
+
+            if let Err(e) = rg_dns_registry
+                .upsert(resource_group_id, S3_SERVICE_NAME, &gateway)
+                .await
+            {
+                info!(resource_group_id = %resource_group_id, error = %e, "Failed to register s3 dns record");
+            }
+
+            if let Err(e) = crate::nftables::dnat_bridge_port(&iface, &gateway, S3_DNAT_PORT).await
+            {
+                info!(resource_group_id = %resource_group_id, error = %e, "Failed to set up s3 dnat rule");
+            }
         }
     }
 

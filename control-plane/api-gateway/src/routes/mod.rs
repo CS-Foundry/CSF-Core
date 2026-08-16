@@ -20,6 +20,7 @@ use tracing::{info_span, Span};
 pub mod agent_proxy;
 pub mod agent_stream;
 pub mod agents;
+pub mod buckets;
 pub mod events;
 pub mod logs;
 pub mod networks;
@@ -27,6 +28,7 @@ pub mod organizations;
 pub mod registry;
 pub mod releases;
 pub mod resource_groups;
+pub mod s3_proxy;
 pub mod settings;
 pub mod ssh_keys;
 pub mod system;
@@ -120,6 +122,7 @@ pub fn create_router() -> Router<AppState> {
     let rate_limited_router = Router::new()
         .merge(agent_proxy::agent_proxy_routes())
         .merge(agents::agents_routes())
+        .merge(buckets::buckets_routes())
         .merge(networks::networks_routes())
         .merge(organizations::routes())
         .merge(ssh_keys::ssh_keys_routes())
@@ -131,6 +134,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(resource_groups::resource_groups_routes())
         .merge(logs::logs_routes())
         .merge(settings::settings_routes())
+        .merge(s3_proxy::s3_proxy_routes())
         .layer(GovernorLayer::new(governor_config));
 
     let login_rate_limited_router = Router::new()
@@ -151,6 +155,7 @@ pub fn create_router() -> Router<AppState> {
 
     Router::new()
         .route("/metrics", get(metrics::metrics_handler))
+        .merge(s3_proxy::object_data_router())
         .logged_nest("/api", api_router)
         .logged_nest("/api", internal_api_router)
         .fallback_service(serve_dir)

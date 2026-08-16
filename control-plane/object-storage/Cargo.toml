@@ -1,0 +1,42 @@
+[package]
+name = "object-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "object-storage"
+path = "src/main.rs"
+
+[dependencies]
+shared = { path = "../shared/shared" }
+entity = { path = "../shared/entity" }
+
+tokio = { workspace = true, features = ["full"] }
+axum = { version = "0.8", features = ["macros"] }
+aws-sigv4 = "1.5"
+aws-credential-types = "1.2"
+aws-smithy-runtime-api = "1.7"
+http = "1"
+percent-encoding = "2.3"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
+sea-orm = { workspace = true }
+etcd-client = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+ring = { workspace = true }
+rustls = { workspace = true }
+prometheus = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+tracing-opentelemetry = { workspace = true }

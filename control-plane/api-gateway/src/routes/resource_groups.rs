@@ -8,8 +8,10 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::Utc;
 use entity::{
-    entities::{agents, networks, resource_group_vpn_peers, resource_groups, volumes, workloads},
-    Agents, Networks, ResourceGroupVpnPeers, ResourceGroups, Volumes, Workloads,
+    entities::{
+        agents, buckets, networks, resource_group_vpn_peers, resource_groups, volumes, workloads,
+    },
+    Agents, Buckets, Networks, ResourceGroupVpnPeers, ResourceGroups, Volumes, Workloads,
 };
 use ring::rand::{SecureRandom, SystemRandom};
 use sea_orm::{
@@ -483,6 +485,46 @@ pub async fn list_resource_group_volumes(
     Ok((StatusCode::OK, Json(json!(vols))))
 }
 
+pub async fn list_resource_group_buckets(
+    CanViewResourceGroups(_claims): CanViewResourceGroups,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = get_org_id(&state);
+
+    ResourceGroups::find_by_id(id)
+        .filter(resource_groups::Column::OrganizationId.eq(org_id))
+        .one(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to find resource group");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "resource group not found" })),
+            )
+        })?;
+
+    let buckets = Buckets::find()
+        .filter(buckets::Column::ResourceGroupId.eq(id))
+        .all(&state.db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list buckets");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database error" })),
+            )
+        })?;
+
+    Ok((StatusCode::OK, Json(json!(buckets))))
+}
+
 pub async fn list_resource_group_networks(
     CanViewResourceGroups(_claims): CanViewResourceGroups,
     State(state): State<AppState>,
@@ -949,6 +991,10 @@ pub fn resource_groups_routes() -> Router<AppState> {
         .route(
             "/resource-groups/{id}/volumes",
             get(list_resource_group_volumes),
+        )
+        .route(
+            "/resource-groups/{id}/buckets",
+            get(list_resource_group_buckets),
         )
         .route(
             "/resource-groups/{id}/networks",

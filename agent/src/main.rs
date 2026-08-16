@@ -137,8 +137,11 @@ async fn main() -> Result<()> {
         warn!(error = %e, "Failed to initialize nftables resource group isolation");
     }
 
+    let rg_dns_registry = Arc::new(rg_dns::RgDnsRegistry::new());
+
     let firecracker_runtime = Arc::new(firecracker::runtime::FirecrackerRuntime::new(
         wg_identity.private_key_b64.clone(),
+        Arc::clone(&rg_dns_registry),
     ));
 
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
@@ -152,8 +155,6 @@ async fn main() -> Result<()> {
 
     let service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>> =
         Arc::new(Mutex::new(HashMap::new()));
-
-    let rg_dns_registry = rg_dns::RgDnsRegistry::new();
 
     if let Some(port) = std::env::var("CSFX_AGENT_PORT")
         .ok()
@@ -363,7 +364,7 @@ async fn run_heartbeat_loop(
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>>,
-    rg_dns_registry: rg_dns::RgDnsRegistry,
+    rg_dns_registry: Arc<rg_dns::RgDnsRegistry>,
     mut assignment_signal: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));

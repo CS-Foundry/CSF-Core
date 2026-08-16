@@ -564,7 +564,9 @@ pub async fn change_gravatar_email(
         .change_gravatar_email(claims.user_id, payload.gravatar_email)
         .await
     {
-        Ok(_) => Ok(Json(json!({ "message": "Gravatar email changed successfully" }))),
+        Ok(_) => Ok(Json(
+            json!({ "message": "Gravatar email changed successfully" }),
+        )),
         Err(err) => {
             tracing::error!("Failed to change gravatar email: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)

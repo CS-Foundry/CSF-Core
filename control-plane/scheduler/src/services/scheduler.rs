@@ -25,8 +25,23 @@ impl SchedulerService {
 
     pub async fn schedule(
         &self,
-        req: CreateWorkloadRequest,
+        mut req: CreateWorkloadRequest,
     ) -> Result<CreateWorkloadResponse, String> {
+        if let Some(bindings) = req.bucket_bindings.clone() {
+            if !bindings.is_empty() {
+                let placeholder_id = Uuid::new_v4();
+                let bucket_env = crate::services::bucket_bindings::resolve_env_vars(
+                    placeholder_id,
+                    req.resource_group_id,
+                    &bindings,
+                )
+                .await;
+                req.env_vars
+                    .get_or_insert_with(std::collections::HashMap::new)
+                    .extend(bucket_env);
+            }
+        }
+
         let workload = crate::db::workloads::create(&self.db, &req)
             .await
             .map_err(|e| format!("Failed to persist workload: {}", e))?;
@@ -303,6 +318,7 @@ impl SchedulerService {
                 env_vars: service.env_vars.clone(),
                 ports: service.ports.clone(),
                 volume_mounts: None,
+                bucket_bindings: None,
                 resource_group_id: Some(resource_group_id),
                 stack_id: Some(stack_id),
                 service_name: Some(service.service_name.clone()),

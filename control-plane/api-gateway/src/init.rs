@@ -167,6 +167,18 @@ pub async fn initialize_database(
             "manage",
             "Manage log retention settings",
         ),
+        (
+            "buckets.view",
+            "buckets",
+            "view",
+            "View buckets and access keys",
+        ),
+        (
+            "buckets.manage",
+            "buckets",
+            "manage",
+            "Create, update and delete buckets and access keys",
+        ),
     ];
 
     let mut permission_map = std::collections::HashMap::new();
@@ -287,6 +299,8 @@ pub async fn initialize_database(
             "resource_groups.view",
             "resource_groups.manage",
             "logs.view",
+            "buckets.view",
+            "buckets.manage",
         ];
         for perm_name in operator_perms {
             if let Some(perm_id) = permission_map.get(perm_name) {
@@ -332,6 +346,7 @@ pub async fn initialize_database(
             "members.view",
             "resource_groups.view",
             "logs.view",
+            "buckets.view",
         ];
         for perm_name in viewer_perms {
             if let Some(perm_id) = permission_map.get(perm_name) {

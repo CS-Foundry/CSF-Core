@@ -22,11 +22,18 @@
         updateWorkload,
         createVolume,
         deleteVolume,
+        listResourceGroupBuckets,
+        createBucket,
+        deleteBucket,
+        listBucketKeys,
+        createBucketKey,
         streamWorkloadLogs,
         openWorkloadExecSocket,
         type ResourceGroup,
         type Workload,
         type Volume,
+        type Bucket,
+        type BucketAccessKey,
         type PortMapping,
         type VolumeMount,
     } from "$lib/api/resource-groups";
@@ -49,6 +56,7 @@
     let group = $state<ResourceGroup | null>(null);
     let workloads = $state<Workload[]>([]);
     let volumes = $state<Volume[]>([]);
+    let buckets = $state<Bucket[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
 
@@ -64,7 +72,7 @@
     let savingRgSettings = $state(false);
     let rgSettingsError = $state<string | null>(null);
 
-    let activeTab = $state<"all" | "container" | "volume">("all");
+    let activeTab = $state<"all" | "container" | "volume" | "bucket">("all");
     let filterText = $state("");
 
     let nodeIpCache = $state<Record<string, string | null>>({});
@@ -98,13 +106,17 @@
 
     let deployDialog = $state<HTMLDialogElement | null>(null);
     let volumeDialog = $state<HTMLDialogElement | null>(null);
+    let bucketDialog = $state<HTMLDialogElement | null>(null);
+    let bucketDetailDialog = $state<HTMLDialogElement | null>(null);
     let resourcePickerDialog = $state<HTMLDialogElement | null>(null);
     let composeDialog = $state<HTMLDialogElement | null>(null);
     let deploying = $state(false);
     let creatingVolume = $state(false);
+    let creatingBucket = $state(false);
     let deployingStack = $state(false);
     let deployError = $state<string | null>(null);
     let volumeError = $state<string | null>(null);
+    let bucketError = $state<string | null>(null);
     let composeError = $state<string | null>(null);
     let downloadingVpn = $state(false);
     let expandedStacks = $state<Set<string>>(new Set());
@@ -112,6 +124,8 @@
     const RESOURCE_TYPES = [
         { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "logos:docker-icon" },
         { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "logos:docker-icon" },
+        { key: "volume", label: "Volume", description: "Add a block storage volume", icon: "mdi:database-outline" },
+        { key: "bucket", label: "S3 Bucket", description: "Add an S3-compatible object storage bucket", icon: "fluent-emoji-high-contrast:bucket" },
     ] as const;
 
     let formImage = $state("");
@@ -147,6 +161,16 @@
     let volFormName = $state("");
     let volFormSize = $state("10");
 
+    let bucketFormName = $state("");
+    let bucketFormExposure = $state<"internal" | "external">("internal");
+
+    let activeBucket = $state<Bucket | null>(null);
+    let bucketKeys = $state<BucketAccessKey[]>([]);
+    let bucketKeysError = $state<string | null>(null);
+    let newKeyName = $state("");
+    let creatingKey = $state(false);
+    let createdKeySecret = $state<string | null>(null);
+
     let containerDialog = $state<HTMLDialogElement | null>(null);
     let containerDialogTab = $state<"logs" | "shell" | "insights" | "network" | "settings">("logs");
     let activeContainer = $state<Workload | null>(null);
@@ -173,10 +197,11 @@
     async function load() {
         if (!auth.token) return;
         try {
-            [group, workloads, volumes] = await Promise.all([
+            [group, workloads, volumes, buckets] = await Promise.all([
                 getResourceGroup(auth.token, rgId),
                 listResourceGroupWorkloads(auth.token, rgId),
                 listResourceGroupVolumes(auth.token, rgId),
+                listResourceGroupBuckets(auth.token, rgId),
             ]);
         } catch (e) {
             error = e instanceof Error ? e.message : "Failed to load";
@@ -353,8 +378,12 @@
         resourcePickerDialog?.close();
         if (key === "docker-container") {
             deployDialog?.showModal();
-        } else {
+        } else if (key === "docker-compose") {
             composeDialog?.showModal();
+        } else if (key === "volume") {
+            volumeDialog?.showModal();
+        } else {
+            bucketDialog?.showModal();
         }
     }
 
@@ -387,6 +416,74 @@
         } finally {
             creatingVolume = false;
         }
+    }
+
+    async function handleCreateBucket() {
+        if (!auth.token || !bucketFormName) return;
+        creatingBucket = true;
+        bucketError = null;
+        try {
+            await createBucket(auth.token, {
+                name: bucketFormName,
+                resource_group_id: rgId,
+                exposure: bucketFormExposure,
+            });
+            bucketDialog?.close();
+            bucketFormName = "";
+            bucketFormExposure = "internal";
+            buckets = await listResourceGroupBuckets(auth.token, rgId);
+        } catch (e) {
+            bucketError = e instanceof Error ? e.message : "Failed to create bucket";
+        } finally {
+            creatingBucket = false;
+        }
+    }
+
+    async function handleDeleteBucket(id: string) {
+        if (!auth.token) return;
+        try {
+            await deleteBucket(auth.token, id);
+            buckets = buckets.filter((b) => b.id !== id);
+        } catch (e) {
+            error = e instanceof Error ? e.message : "Failed to delete bucket";
+        }
+    }
+
+    async function openBucketDetail(bucket: Bucket) {
+        if (!auth.token) return;
+        activeBucket = bucket;
+        bucketKeysError = null;
+        createdKeySecret = null;
+        newKeyName = "";
+        bucketDetailDialog?.showModal();
+        try {
+            bucketKeys = await listBucketKeys(auth.token, bucket.id);
+        } catch (e) {
+            bucketKeysError = e instanceof Error ? e.message : "Failed to load access keys";
+        }
+    }
+
+    async function handleCreateBucketKey() {
+        if (!auth.token || !activeBucket || !newKeyName) return;
+        creatingKey = true;
+        bucketKeysError = null;
+        try {
+            const created = await createBucketKey(auth.token, activeBucket.id, { name: newKeyName });
+            createdKeySecret = created.secret_access_key;
+            newKeyName = "";
+            bucketKeys = await listBucketKeys(auth.token, activeBucket.id);
+        } catch (e) {
+            bucketKeysError = e instanceof Error ? e.message : "Failed to create access key";
+        } finally {
+            creatingKey = false;
+        }
+    }
+
+    function bucketEndpointUrl(bucket: Bucket): string {
+        if (bucket.exposure === "external") {
+            return `${window.location.origin}/api/s3/${bucket.global_alias}`;
+        }
+        return `http://s3.svc.${rgId}.internal:3900`;
     }
 
     function loadSettingsForm(workload: Workload) {
@@ -681,7 +778,8 @@
     type ResourceItem =
         | { kind: "container"; data: Workload }
         | { kind: "stack"; data: WorkloadStack }
-        | { kind: "volume"; data: Volume };
+        | { kind: "volume"; data: Volume }
+        | { kind: "bucket"; data: Bucket };
 
     function groupWorkloadsByStack(items: Workload[]): ResourceItem[] {
         const standalone: Workload[] = [];
@@ -717,12 +815,14 @@
     let allResources = $derived<ResourceItem[]>([
         ...groupWorkloadsByStack(workloads),
         ...volumes.map((v): ResourceItem => ({ kind: "volume", data: v })),
+        ...buckets.map((b): ResourceItem => ({ kind: "bucket", data: b })),
     ]);
 
     let filteredResources = $derived(
         allResources.filter((r) => {
-            if (activeTab === "container" && r.kind === "volume") return false;
+            if (activeTab === "container" && (r.kind === "volume" || r.kind === "bucket")) return false;
             if (activeTab === "volume" && r.kind !== "volume") return false;
+            if (activeTab === "bucket" && r.kind !== "bucket") return false;
             if (!filterText) return true;
             const q = filterText.toLowerCase();
             if (r.kind === "container") {
@@ -741,6 +841,7 @@
     function stackStatus(children: Workload[]): string {
         if (children.every((c) => c.status === "running")) return "running";
         if (children.some((c) => c.status === "failed" || c.status === "error")) return "failed";
+        if (children.every((c) => c.status === "stopped")) return "stopped";
         return "pending";
     }
 
@@ -1256,6 +1357,123 @@
 </dialog>
 
 <dialog
+    bind:this={bucketDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { bucketError = null; }}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Create Bucket</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => bucketDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <div class="grid grid-cols-1 gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="b-name">Name</label>
+                <input id="b-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="assets" bind:value={bucketFormName} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="b-exposure">Exposure</label>
+                <select id="b-exposure" class="border rounded px-3 py-1.5 text-sm bg-background" bind:value={bucketFormExposure}>
+                    <option value="internal">Internal (resource group only)</option>
+                    <option value="external">External (public endpoint)</option>
+                </select>
+            </div>
+        </div>
+        {#if bucketError}
+            <p class="text-xs text-destructive">{bucketError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => bucketDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleCreateBucket} disabled={creatingBucket || !bucketFormName}>
+                {creatingBucket ? "Creating..." : "Create"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
+    bind:this={bucketDetailDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-lg rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => { activeBucket = null; createdKeySecret = null; }}
+>
+    {#if activeBucket}
+        <div class="flex flex-col gap-5 p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold">{activeBucket.name}</h2>
+                    <p class="text-xs text-muted-foreground font-mono">{bucketEndpointUrl(activeBucket)}</p>
+                </div>
+                <button
+                    class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onclick={() => bucketDetailDialog?.close()}
+                    aria-label="Close"
+                    title="Close"
+                >
+                    <Icon icon="mdi:close" width={18} height={18} />
+                </button>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <p class="text-xs font-medium text-muted-foreground">Access Keys</p>
+                {#if bucketKeys.length === 0}
+                    <p class="text-xs text-muted-foreground">no access keys yet</p>
+                {:else}
+                    <div class="border rounded-lg divide-y">
+                        {#each bucketKeys as key (key.id)}
+                            <div class="flex items-center justify-between px-3 py-2 text-xs">
+                                <div>
+                                    <p class="font-medium">{key.name}</p>
+                                    <p class="text-muted-foreground font-mono">{key.garage_key_id}</p>
+                                </div>
+                                <span class="text-muted-foreground">{key.permissions}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
+            {#if createdKeySecret}
+                <div class="border rounded-lg p-3 bg-muted/30 flex flex-col gap-1.5">
+                    <p class="text-xs font-medium">Secret access key created</p>
+                    <p class="text-xs font-mono break-all">{createdKeySecret}</p>
+                    <p class="text-xs text-destructive">this will not be shown again, copy it now</p>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        class="self-start"
+                        onclick={() => copyToClipboard(createdKeySecret ?? "", "bucket-secret")}
+                    >
+                        {copiedKey === "bucket-secret" ? "Copied" : "Copy"}
+                    </Button>
+                </div>
+            {/if}
+
+            {#if bucketKeysError}
+                <p class="text-xs text-destructive">{bucketKeysError}</p>
+            {/if}
+
+            <div class="flex gap-2">
+                <input
+                    class="border rounded px-3 py-1.5 text-sm bg-background flex-1"
+                    placeholder="key name"
+                    bind:value={newKeyName}
+                />
+                <Button size="sm" onclick={handleCreateBucketKey} disabled={creatingKey || !newKeyName}>
+                    {creatingKey ? "Creating..." : "Create Key"}
+                </Button>
+            </div>
+        </div>
+    {/if}
+</dialog>
+
+<dialog
     bind:this={containerDialog}
     class="fixed inset-0 z-50 m-auto w-full max-w-4xl h-[80vh] rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
     onclose={() => closeContainer()}
@@ -1598,7 +1816,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div class="border rounded-lg p-4">
                 <p class="text-xs text-muted-foreground">Containers</p>
                 <p class="text-2xl font-semibold mt-1">{workloads.length}</p>
@@ -1608,6 +1826,11 @@
                 <p class="text-xs text-muted-foreground">Volumes</p>
                 <p class="text-2xl font-semibold mt-1">{volumes.length}</p>
                 <p class="text-xs text-muted-foreground mt-0.5">{totalDisk} GB total</p>
+            </div>
+            <div class="border rounded-lg p-4">
+                <p class="text-xs text-muted-foreground">Buckets</p>
+                <p class="text-2xl font-semibold mt-1">{buckets.length}</p>
+                <p class="text-xs text-muted-foreground mt-0.5">{buckets.filter(b => b.exposure === 'external').length} external</p>
             </div>
             <div class="border rounded-lg p-4">
                 <p class="text-xs text-muted-foreground">CPU Requested</p>
@@ -1628,7 +1851,7 @@
         <div class="border rounded-lg overflow-hidden">
             <div class="px-4 py-3 border-b flex items-center justify-between gap-4 flex-wrap">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.length}`], ["volume", `Volume ${volumes.length}`]] as [tab, label]}
+                    {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.length}`], ["volume", `Volume ${volumes.length}`], ["bucket", `Bucket ${buckets.length}`]] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {activeTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => (activeTab = tab as typeof activeTab)}
@@ -1809,7 +2032,7 @@
                                         {@render workloadRow(child, true)}
                                     {/each}
                                 {/if}
-                            {:else}
+                            {:else if item.kind === "volume"}
                                 {@const v = item.data}
                                 <tr class="border-t hover:bg-muted/20 transition-colors">
                                     <td class="px-4 py-3">
@@ -1850,6 +2073,54 @@
                                         >
                                             Delete
                                         </Button>
+                                    </td>
+                                </tr>
+                            {:else if item.kind === "bucket"}
+                                {@const b = item.data}
+                                <tr
+                                    class="border-t hover:bg-muted/20 transition-colors cursor-pointer"
+                                    onclick={() => openBucketDetail(b)}
+                                >
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center gap-2.5">
+                                            <Icon icon="fluent-emoji-high-contrast:bucket" width={20} height={20} class="shrink-0" />
+                                            <div>
+                                                <p class="font-medium leading-tight">{b.name}</p>
+                                                <p class="text-xs text-muted-foreground font-mono">{b.global_alias}</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="text-xs px-2 py-0.5 rounded border font-medium">Bucket</span>
+                                    </td>
+                                    <td class="px-4 py-3 text-xs text-muted-foreground">
+                                        {b.quota_max_size ? fmtBytes(b.quota_max_size) : "unlimited"}
+                                    </td>
+                                    <td class="px-4 py-3 text-xs text-muted-foreground">
+                                        {b.exposure}
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <StatusBadge status={b.status} />
+                                    </td>
+                                    <td class="px-4 py-3 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                class="h-7 px-2 text-xs"
+                                                onclick={(e) => { e.stopPropagation(); goto(`/buckets/${b.id}`); }}
+                                            >
+                                                Browse
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                class="text-destructive hover:text-destructive h-7 px-2 text-xs"
+                                                onclick={(e) => { e.stopPropagation(); handleDeleteBucket(b.id); }}
+                                            >
+                                                Delete
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             {/if}

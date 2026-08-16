@@ -1,3 +1,4 @@
+pub mod bucket_bindings;
 pub mod compose_parser;
 pub mod etcd;
 pub mod gateway_notify;

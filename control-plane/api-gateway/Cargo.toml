@@ -9,6 +9,8 @@ name = "api-gateway"
 path = "src/main.rs"
 
 [dependencies]
+percent-encoding = "2.3"
+
 # Internal dependencies
 entity = { path = "../shared/entity" }
 migration = { path = "../shared/migration" }

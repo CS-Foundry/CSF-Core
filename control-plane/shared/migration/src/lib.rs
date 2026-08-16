@@ -32,6 +32,9 @@ mod m20260712_010000_add_resource_group_vpn_peers;
 mod m20260723_000000_add_resource_group_appearance;
 mod m20260723_010000_runtime_class_default_firecracker;
 mod m20260809_000000_add_user_gravatar_email;
+mod m20260816_000000_add_object_storage;
+mod m20260816_010000_add_bucket_master_key;
+mod m20260816_020000_garage_nodes_agent_id_nullable;
 
 pub struct Migrator;
 
@@ -71,6 +74,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260723_000000_add_resource_group_appearance::Migration),
             Box::new(m20260723_010000_runtime_class_default_firecracker::Migration),
             Box::new(m20260809_000000_add_user_gravatar_email::Migration),
+            Box::new(m20260816_000000_add_object_storage::Migration),
+            Box::new(m20260816_010000_add_bucket_master_key::Migration),
+            Box::new(m20260816_020000_garage_nodes_agent_id_nullable::Migration),
         ]
     }
 }
