@@ -28,6 +28,7 @@ pub mod organizations;
 pub mod registry;
 pub mod releases;
 pub mod resource_groups;
+pub mod s3_proxy;
 pub mod settings;
 pub mod ssh_keys;
 pub mod system;
@@ -133,6 +134,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(resource_groups::resource_groups_routes())
         .merge(logs::logs_routes())
         .merge(settings::settings_routes())
+        .merge(s3_proxy::s3_proxy_routes())
         .layer(GovernorLayer::new(governor_config));
 
     let login_rate_limited_router = Router::new()
