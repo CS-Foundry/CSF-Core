@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 mod db;
 mod garage;
@@ -35,6 +36,23 @@ async fn main() -> anyhow::Result<()> {
     let admin_token = std::env::var("GARAGE_ADMIN_TOKEN")
         .expect("GARAGE_ADMIN_TOKEN must be set");
     let garage = garage::GarageClient::new(admin_url, admin_token);
+
+    let etcd_url =
+        std::env::var("ETCD_URL").unwrap_or_else(|_| "http://localhost:2379".to_string());
+    let etcd = etcd_client::Client::connect([etcd_url.as_str()], None)
+        .await
+        .expect("Failed to connect to etcd");
+    log_info!("main", "etcd connection established");
+
+    let node_id = Uuid::new_v4().to_string();
+    let leader = garage::leader::LayoutLeader::new(etcd, node_id);
+
+    tokio::spawn(leader.clone().run_campaign_loop());
+    tokio::spawn(garage::layout::run_reconcile_loop(
+        db.clone(),
+        garage.clone(),
+        leader,
+    ));
 
     let state = server::AppState::new(db, garage);
     let app = server::create_router(state);

@@ -45,6 +45,14 @@ pub struct AccessKeyCreatedResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ClusterStatusResponse {
+    pub storage_node_count: u32,
+    pub replication_factor: u32,
+    pub degraded: bool,
+    pub nodes: Vec<entity::entities::garage_nodes::Model>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BucketResponse {
     pub id: Uuid,
     pub name: String,

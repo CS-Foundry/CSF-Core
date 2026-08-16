@@ -3,7 +3,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::{
     garage::GarageClient,
-    handlers::{buckets, keys},
+    handlers::{buckets, cluster, keys},
     metrics,
 };
 
@@ -49,5 +49,6 @@ pub fn create_router(state: AppState) -> Router {
             "/buckets/{id}/keys/{key_id}",
             axum::routing::delete(keys::delete_key),
         )
+        .route("/cluster", get(cluster::get_cluster_status))
         .with_state(state)
 }

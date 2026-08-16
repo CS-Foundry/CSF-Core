@@ -41,6 +41,29 @@ pub struct GarageKey {
     pub secret_access_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ClusterStatusNode {
+    pub id: String,
+    #[serde(default)]
+    pub is_up: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClusterStatus {
+    #[serde(default)]
+    pub nodes: Vec<ClusterStatusNode>,
+    #[serde(rename = "layoutVersion", default)]
+    pub layout_version: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LayoutRole {
+    pub id: String,
+    pub zone: String,
+    pub capacity: Option<i64>,
+    pub tags: Vec<String>,
+}
+
 impl GarageClient {
     pub fn new(admin_url: String, admin_token: String) -> Self {
         Self {
@@ -184,6 +207,76 @@ impl GarageClient {
             .context("allow_bucket_key request failed")?;
 
         Self::check_status(response, "allow_bucket_key").await?;
+        Ok(())
+    }
+
+    pub async fn get_cluster_status(&self) -> Result<ClusterStatus> {
+        let response = self
+            .http
+            .get(self.url("/v2/GetClusterStatus"))
+            .bearer_auth(&self.admin_token)
+            .send()
+            .await
+            .context("get_cluster_status request failed")?;
+
+        let response = Self::check_status(response, "get_cluster_status").await?;
+        response
+            .json::<ClusterStatus>()
+            .await
+            .context("failed to parse get_cluster_status response")
+    }
+
+    pub async fn connect_cluster_nodes(&self, node_addrs: &[String]) -> Result<()> {
+        if node_addrs.is_empty() {
+            return Ok(());
+        }
+
+        let response = self
+            .http
+            .post(self.url("/v2/ConnectClusterNodes"))
+            .bearer_auth(&self.admin_token)
+            .json(node_addrs)
+            .send()
+            .await
+            .context("connect_cluster_nodes request failed")?;
+
+        Self::check_status(response, "connect_cluster_nodes").await?;
+        Ok(())
+    }
+
+    pub async fn update_cluster_layout(
+        &self,
+        roles: Vec<LayoutRole>,
+        parameters_replication_factor: u32,
+    ) -> Result<()> {
+        let response = self
+            .http
+            .post(self.url("/v2/UpdateClusterLayout"))
+            .bearer_auth(&self.admin_token)
+            .json(&json!({
+                "roles": roles,
+                "parameters": { "zone_redundancy": "maximum" },
+                "replication_factor": parameters_replication_factor,
+            }))
+            .send()
+            .await
+            .context("update_cluster_layout request failed")?;
+
+        Self::check_status(response, "update_cluster_layout").await?;
+        Ok(())
+    }
+
+    pub async fn apply_cluster_layout(&self, version: i64) -> Result<()> {
+        let response = self
+            .http
+            .post(self.url("/v2/ApplyClusterLayout"))
+            .bearer_auth(&self.admin_token)
+            .json(&json!({ "version": version }))
+            .send()
+            .await
+            .context("apply_cluster_layout request failed")?;
+
+        Self::check_status(response, "apply_cluster_layout").await?;
         Ok(())
     }
 }
