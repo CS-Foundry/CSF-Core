@@ -40,7 +40,10 @@ pub async fn create_key(
     let garage_key = match garage.create_key(&req.name).await {
         Ok(key) => key,
         Err(e) => {
-            log_error!("services::access_key", &format!("garage create_key failed name={} err={}", req.name, e));
+            log_error!(
+                "services::access_key",
+                &format!("garage create_key failed name={} err={}", req.name, e)
+            );
             bail!("failed to create access key in garage: {}", e);
         }
     };
@@ -49,7 +52,13 @@ pub async fn create_key(
         .allow_bucket_key(garage_bucket_id, &garage_key.access_key_id, &permissions)
         .await
     {
-        log_error!("services::access_key", &format!("garage allow_bucket_key failed key_id={} err={}", garage_key.access_key_id, e));
+        log_error!(
+            "services::access_key",
+            &format!(
+                "garage allow_bucket_key failed key_id={} err={}",
+                garage_key.access_key_id, e
+            )
+        );
         let _ = garage.delete_key(&garage_key.access_key_id).await;
         bail!("failed to grant bucket access: {}", e);
     }
@@ -64,7 +73,10 @@ pub async fn create_key(
     )
     .await?;
 
-    log_info!("services::access_key", &format!("access key created id={} bucket_id={}", model.id, bucket_id));
+    log_info!(
+        "services::access_key",
+        &format!("access key created id={} bucket_id={}", model.id, bucket_id)
+    );
 
     Ok(Some(AccessKeyCreatedResponse {
         key: into_response(model),
@@ -72,10 +84,7 @@ pub async fn create_key(
     }))
 }
 
-pub async fn list_keys(
-    db: &DatabaseConnection,
-    bucket_id: Uuid,
-) -> Result<Vec<AccessKeyResponse>> {
+pub async fn list_keys(db: &DatabaseConnection, bucket_id: Uuid) -> Result<Vec<AccessKeyResponse>> {
     let rows = keys_db::list_for_bucket(db, bucket_id).await?;
     Ok(rows.into_iter().map(into_response).collect())
 }
@@ -110,12 +119,24 @@ pub async fn rotate_key(
     };
 
     if let Err(e) = garage.delete_key(&existing.garage_key_id).await {
-        log_error!("services::access_key", &format!("garage delete_key on rotate failed old_key_id={} err={}", existing.garage_key_id, e));
+        log_error!(
+            "services::access_key",
+            &format!(
+                "garage delete_key on rotate failed old_key_id={} err={}",
+                existing.garage_key_id, e
+            )
+        );
     }
     keys_db::delete(db, key_id).await?;
     keys_db::touch_rotated(db, created.key.id).await?;
 
-    log_info!("services::access_key", &format!("access key rotated old_id={} new_id={}", key_id, created.key.id));
+    log_info!(
+        "services::access_key",
+        &format!(
+            "access key rotated old_id={} new_id={}",
+            key_id, created.key.id
+        )
+    );
 
     Ok(Some(created))
 }
@@ -136,6 +157,9 @@ pub async fn delete_key(
     garage.delete_key(&existing.garage_key_id).await?;
     keys_db::delete(db, key_id).await?;
 
-    log_info!("services::access_key", &format!("access key deleted id={}", key_id));
+    log_info!(
+        "services::access_key",
+        &format!("access key deleted id={}", key_id)
+    );
     Ok(true)
 }

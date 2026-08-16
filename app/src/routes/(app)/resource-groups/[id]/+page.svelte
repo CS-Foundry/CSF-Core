@@ -2105,14 +2105,24 @@
                                         <StatusBadge status={b.status} />
                                     </td>
                                     <td class="px-4 py-3 text-right">
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            class="text-destructive hover:text-destructive h-7 px-2 text-xs"
-                                            onclick={(e) => { e.stopPropagation(); handleDeleteBucket(b.id); }}
-                                        >
-                                            Delete
-                                        </Button>
+                                        <div class="flex items-center justify-end gap-1">
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                class="h-7 px-2 text-xs"
+                                                onclick={(e) => { e.stopPropagation(); goto(`/buckets/${b.id}`); }}
+                                            >
+                                                Browse
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                class="text-destructive hover:text-destructive h-7 px-2 text-xs"
+                                                onclick={(e) => { e.stopPropagation(); handleDeleteBucket(b.id); }}
+                                            >
+                                                Delete
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             {/if}

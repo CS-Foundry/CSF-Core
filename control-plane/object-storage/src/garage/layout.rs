@@ -20,7 +20,10 @@ pub fn replication_factor_for(storage_node_count: usize) -> u32 {
     }
 }
 
-async fn peer_addrs(db: &DatabaseConnection, known_nodes: &[garage_nodes::Model]) -> Result<Vec<String>> {
+async fn peer_addrs(
+    db: &DatabaseConnection,
+    known_nodes: &[garage_nodes::Model],
+) -> Result<Vec<String>> {
     let mut addrs = Vec::new();
 
     for node in known_nodes {
@@ -44,13 +47,19 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
 
     let addrs = peer_addrs(db, &known_nodes).await?;
     if let Err(e) = garage.connect_cluster_nodes(&addrs).await {
-        log_warn!("garage::layout", &format!("failed to connect garage cluster nodes err={}", e));
+        log_warn!(
+            "garage::layout",
+            &format!("failed to connect garage cluster nodes err={}", e)
+        );
     }
 
     let status = match garage.get_cluster_status().await {
         Ok(status) => status,
         Err(e) => {
-            log_warn!("garage::layout", &format!("failed to read garage cluster status err={}", e));
+            log_warn!(
+                "garage::layout",
+                &format!("failed to read garage cluster status err={}", e)
+            );
             return Ok(());
         }
     };
@@ -62,7 +71,10 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
             .any(|n| Some(n.id.clone()) == node.garage_node_id && n.is_up);
 
         if !is_up && node.status == "up" {
-            log_warn!("garage::layout", &format!("garage node reported down agent_id={}", node.agent_id));
+            log_warn!(
+                "garage::layout",
+                &format!("garage node reported down agent_id={}", node.agent_id)
+            );
             garage_nodes_db::mark_down(db, node.agent_id).await?;
         }
     }
@@ -95,20 +107,37 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
     }
 
     if let Err(e) = garage.update_cluster_layout(roles, factor).await {
-        log_error!("garage::layout", &format!("failed to stage cluster layout err={}", e));
+        log_error!(
+            "garage::layout",
+            &format!("failed to stage cluster layout err={}", e)
+        );
         return Ok(());
     }
 
     if let Err(e) = garage.apply_cluster_layout(status.layout_version + 1).await {
-        log_error!("garage::layout", &format!("failed to apply cluster layout err={}", e));
+        log_error!(
+            "garage::layout",
+            &format!("failed to apply cluster layout err={}", e)
+        );
         return Ok(());
     }
 
-    log_info!("garage::layout", &format!("applied cluster layout storage_nodes={} replication_factor={}", storage_nodes.len(), factor));
+    log_info!(
+        "garage::layout",
+        &format!(
+            "applied cluster layout storage_nodes={} replication_factor={}",
+            storage_nodes.len(),
+            factor
+        )
+    );
     Ok(())
 }
 
-pub async fn run_reconcile_loop(db: DatabaseConnection, garage: GarageClient, leader: LayoutLeader) {
+pub async fn run_reconcile_loop(
+    db: DatabaseConnection,
+    garage: GarageClient,
+    leader: LayoutLeader,
+) {
     loop {
         sleep(Duration::from_secs(RECONCILE_INTERVAL_SECONDS)).await;
 
@@ -117,7 +146,10 @@ pub async fn run_reconcile_loop(db: DatabaseConnection, garage: GarageClient, le
         }
 
         if let Err(e) = reconcile_once(&db, &garage).await {
-            log_error!("garage::layout", &format!("reconcile loop iteration failed err={}", e));
+            log_error!(
+                "garage::layout",
+                &format!("reconcile loop iteration failed err={}", e)
+            );
         }
     }
 }

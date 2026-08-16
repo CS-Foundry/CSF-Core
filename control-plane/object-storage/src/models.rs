@@ -45,6 +45,39 @@ pub struct AccessKeyCreatedResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ObjectEntry {
+    pub key: String,
+    pub size: i64,
+    pub last_modified: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListObjectsResponse {
+    pub objects: Vec<ObjectEntry>,
+    pub folders: Vec<String>,
+    pub next_continuation_token: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListObjectsQuery {
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub continuation_token: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignUploadRequest {
+    pub key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignResponse {
+    pub url: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterStatusResponse {
     pub storage_node_count: u32,
     pub replication_factor: u32,

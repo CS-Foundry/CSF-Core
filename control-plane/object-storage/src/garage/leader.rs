@@ -44,7 +44,11 @@ impl LayoutLeader {
         let lease_id = lease.id();
 
         let txn = Txn::new()
-            .when(vec![Compare::create_revision(LAYOUT_LOCK_KEY, CompareOp::Equal, 0)])
+            .when(vec![Compare::create_revision(
+                LAYOUT_LOCK_KEY,
+                CompareOp::Equal,
+                0,
+            )])
             .and_then(vec![TxnOp::put(
                 LAYOUT_LOCK_KEY,
                 self.node_id.as_bytes(),
@@ -56,7 +60,13 @@ impl LayoutLeader {
         if response.succeeded() {
             self.lease_id.store(lease_id, Ordering::SeqCst);
             self.is_leader.store(true, Ordering::SeqCst);
-            log_info!("garage::leader", &format!("became object-storage layout leader node_id={}", self.node_id));
+            log_info!(
+                "garage::leader",
+                &format!(
+                    "became object-storage layout leader node_id={}",
+                    self.node_id
+                )
+            );
             self.spawn_lease_renewal(lease_id);
         } else {
             let _ = self.etcd.lease_revoke(lease_id).await;
@@ -77,9 +87,15 @@ impl LayoutLeader {
                     break;
                 }
                 if let Err(e) = etcd.lease_keep_alive(lease_id).await {
-                    log_error!("garage::leader", &format!("lease renewal failed node_id={} err={}", node_id, e));
+                    log_error!(
+                        "garage::leader",
+                        &format!("lease renewal failed node_id={} err={}", node_id, e)
+                    );
                     is_leader.store(false, Ordering::SeqCst);
-                    log_warn!("garage::leader", &format!("lost object-storage layout leadership node_id={}", node_id));
+                    log_warn!(
+                        "garage::leader",
+                        &format!("lost object-storage layout leadership node_id={}", node_id)
+                    );
                     break;
                 }
             }
@@ -89,7 +105,10 @@ impl LayoutLeader {
     pub async fn run_campaign_loop(mut self) {
         loop {
             if let Err(e) = self.campaign().await {
-                log_error!("garage::leader", &format!("layout leader campaign failed err={}", e));
+                log_error!(
+                    "garage::leader",
+                    &format!("layout leader campaign failed err={}", e)
+                );
             }
             sleep(Duration::from_secs(5)).await;
         }

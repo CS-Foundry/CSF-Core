@@ -36,4 +36,3 @@ pub async fn mark_down(db: &DatabaseConnection, agent_id: Uuid) -> Result<()> {
     }
     Ok(())
 }
-

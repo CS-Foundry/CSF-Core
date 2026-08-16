@@ -13,6 +13,8 @@ pub struct Model {
     pub quota_max_size: Option<i64>,
     pub quota_max_objects: Option<i64>,
     pub status: String,
+    pub master_key_id: Option<String>,
+    pub master_key_secret_encrypted: Option<Vec<u8>>,
     pub organization_id: Option<Uuid>,
     pub resource_group_id: Option<Uuid>,
     pub created_at: chrono::NaiveDateTime,

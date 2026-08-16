@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { goto } from "$app/navigation";
     import { auth } from "$lib/auth/store.svelte";
     import { listBuckets, type Bucket } from "$lib/api/resource-groups";
     import * as Sidebar from "$lib/components/ui/sidebar/index.js";
@@ -116,7 +117,10 @@
                     </tr>
                 {:else}
                     {#each buckets as bucket (bucket.id)}
-                        <tr class="border-t hover:bg-muted/30 transition-colors">
+                        <tr
+                            class="border-t hover:bg-muted/30 transition-colors cursor-pointer"
+                            onclick={() => goto(`/buckets/${bucket.id}`)}
+                        >
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2.5">
                                     <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted/50">
@@ -138,6 +142,7 @@
                                     <a
                                         href="/resource-groups/{bucket.resource_group_id}"
                                         class="text-xs text-muted-foreground hover:text-foreground font-mono underline underline-offset-2"
+                                        onclick={(e) => e.stopPropagation()}
                                     >
                                         {bucket.resource_group_id.slice(0, 8)}
                                     </a>

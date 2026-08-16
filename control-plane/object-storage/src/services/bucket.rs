@@ -3,6 +3,7 @@ use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
 use crate::{
+    crypto::SecretBox,
     db::buckets as db,
     garage::GarageClient,
     log_error, log_info,
@@ -12,6 +13,7 @@ use crate::{
 pub async fn create_bucket(
     db_conn: &DatabaseConnection,
     garage: &GarageClient,
+    secret_box: &SecretBox,
     req: CreateBucketRequest,
 ) -> Result<BucketResponse> {
     let global_alias = format!("{}-{}", req.name, Uuid::new_v4().simple());
@@ -19,7 +21,10 @@ pub async fn create_bucket(
     let garage_bucket = match garage.create_bucket(&global_alias).await {
         Ok(bucket) => bucket,
         Err(e) => {
-            log_error!("services::bucket", &format!("garage create_bucket failed name={} err={}", req.name, e));
+            log_error!(
+                "services::bucket",
+                &format!("garage create_bucket failed name={} err={}", req.name, e)
+            );
             bail!("failed to create bucket in garage: {}", e);
         }
     };
@@ -29,22 +34,72 @@ pub async fn create_bucket(
             .update_bucket_quotas(&garage_bucket.id, req.quota_max_size, req.quota_max_objects)
             .await
         {
-            log_error!("services::bucket", &format!("garage update_bucket_quotas failed bucket_id={} err={}", garage_bucket.id, e));
+            log_error!(
+                "services::bucket",
+                &format!(
+                    "garage update_bucket_quotas failed bucket_id={} err={}",
+                    garage_bucket.id, e
+                )
+            );
             let _ = garage.delete_bucket(&garage_bucket.id).await;
             bail!("failed to apply bucket quota: {}", e);
         }
     }
 
-    let model = db::insert(db_conn, &req, &global_alias, &garage_bucket.id).await?;
-    log_info!("services::bucket", &format!("bucket created id={} garage_bucket_id={}", model.id, garage_bucket.id));
+    let master_key = match garage.create_key(&format!("{}-master", global_alias)).await {
+        Ok(key) => key,
+        Err(e) => {
+            log_error!(
+                "services::bucket",
+                &format!(
+                    "garage create_key for master key failed bucket_id={} err={}",
+                    garage_bucket.id, e
+                )
+            );
+            let _ = garage.delete_bucket(&garage_bucket.id).await;
+            bail!("failed to create master access key: {}", e);
+        }
+    };
+
+    if let Err(e) = garage
+        .allow_bucket_key(&garage_bucket.id, &master_key.access_key_id, "owner")
+        .await
+    {
+        log_error!(
+            "services::bucket",
+            &format!(
+                "garage allow_bucket_key for master key failed bucket_id={} err={}",
+                garage_bucket.id, e
+            )
+        );
+        let _ = garage.delete_key(&master_key.access_key_id).await;
+        let _ = garage.delete_bucket(&garage_bucket.id).await;
+        bail!("failed to grant master key access: {}", e);
+    }
+
+    let encrypted_secret = secret_box.encrypt(&master_key.secret_access_key)?;
+
+    let model = db::insert(
+        db_conn,
+        &req,
+        &global_alias,
+        &garage_bucket.id,
+        &master_key.access_key_id,
+        encrypted_secret,
+    )
+    .await?;
+    log_info!(
+        "services::bucket",
+        &format!(
+            "bucket created id={} garage_bucket_id={}",
+            model.id, garage_bucket.id
+        )
+    );
 
     Ok(db::into_response(model))
 }
 
-pub async fn get_bucket(
-    db_conn: &DatabaseConnection,
-    id: Uuid,
-) -> Result<Option<BucketResponse>> {
+pub async fn get_bucket(db_conn: &DatabaseConnection, id: Uuid) -> Result<Option<BucketResponse>> {
     Ok(db::get_by_id(db_conn, id).await?.map(db::into_response))
 }
 

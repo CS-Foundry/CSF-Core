@@ -1,0 +1,107 @@
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
+use serde_json::json;
+use uuid::Uuid;
+
+use crate::{
+    models::{ListObjectsQuery, PresignUploadRequest},
+    server::AppState,
+    services::object as service,
+};
+
+pub async fn list_objects(
+    State(state): State<AppState>,
+    Path(bucket_id): Path<Uuid>,
+    Query(query): Query<ListObjectsQuery>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    match service::list_objects(
+        &state.db,
+        &state.s3,
+        &state.secret_box,
+        bucket_id,
+        &query.prefix,
+        query.continuation_token.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(result)) => Ok(Json(json!(result))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Bucket not found"})),
+        )),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to list objects");
+            Err((
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
+    }
+}
+
+pub async fn delete_object(
+    State(state): State<AppState>,
+    Path((bucket_id, key)): Path<(Uuid, String)>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    match service::delete_object(&state.db, &state.s3, &state.secret_box, bucket_id, &key).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Bucket not found"})),
+        )),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to delete object");
+            Err((
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
+    }
+}
+
+pub async fn presign_upload(
+    State(state): State<AppState>,
+    Path(bucket_id): Path<Uuid>,
+    Json(req): Json<PresignUploadRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    match service::presign_upload(&state.db, &state.s3, &state.secret_box, bucket_id, &req.key)
+        .await
+    {
+        Ok(Some(result)) => Ok(Json(json!(result))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Bucket not found"})),
+        )),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to presign upload");
+            Err((
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
+    }
+}
+
+pub async fn presign_download(
+    State(state): State<AppState>,
+    Path((bucket_id, key)): Path<(Uuid, String)>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    match service::presign_download(&state.db, &state.s3, &state.secret_box, bucket_id, &key).await
+    {
+        Ok(Some(result)) => Ok(Json(json!(result))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Bucket not found"})),
+        )),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to presign download");
+            Err((
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
+    }
+}

@@ -83,7 +83,12 @@ impl GarageClient {
         }
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        bail!("garage admin api error context={} status={} body={}", context, status, body)
+        bail!(
+            "garage admin api error context={} status={} body={}",
+            context,
+            status,
+            body
+        )
     }
 
     pub async fn create_bucket(&self, global_alias: &str) -> Result<GarageBucket> {

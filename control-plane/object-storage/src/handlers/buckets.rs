@@ -23,7 +23,7 @@ pub async fn create_bucket(
     State(state): State<AppState>,
     Json(req): Json<CreateBucketRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    match service::create_bucket(&state.db, &state.garage, req).await {
+    match service::create_bucket(&state.db, &state.garage, &state.secret_box, req).await {
         Ok(bucket) => Ok((StatusCode::CREATED, Json(json!(bucket)))),
         Err(e) => {
             tracing::error!(error = %e, "failed to create bucket");

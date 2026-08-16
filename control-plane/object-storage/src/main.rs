@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use uuid::Uuid;
 
+mod crypto;
 mod db;
 mod garage;
 mod handlers;
@@ -31,11 +32,14 @@ async fn main() -> anyhow::Result<()> {
     log_info!("main", "Database connection established");
     shared::spawn_log_writer(log_receiver, db.clone());
 
-    let admin_url = std::env::var("GARAGE_ADMIN_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:3903".to_string());
-    let admin_token = std::env::var("GARAGE_ADMIN_TOKEN")
-        .expect("GARAGE_ADMIN_TOKEN must be set");
+    let admin_url =
+        std::env::var("GARAGE_ADMIN_URL").unwrap_or_else(|_| "http://127.0.0.1:3903".to_string());
+    let admin_token = std::env::var("GARAGE_ADMIN_TOKEN").expect("GARAGE_ADMIN_TOKEN must be set");
     let garage = garage::GarageClient::new(admin_url, admin_token);
+
+    let s3_url =
+        std::env::var("GARAGE_S3_URL").unwrap_or_else(|_| "http://127.0.0.1:3900".to_string());
+    let s3_client = garage::S3Client::new(s3_url);
 
     let etcd_url =
         std::env::var("ETCD_URL").unwrap_or_else(|_| "http://localhost:2379".to_string());
@@ -54,7 +58,11 @@ async fn main() -> anyhow::Result<()> {
         leader,
     ));
 
-    let state = server::AppState::new(db, garage);
+    let secret_box = std::sync::Arc::new(
+        crypto::SecretBox::from_env().expect("Failed to initialize encryption key"),
+    );
+
+    let state = server::AppState::new(db, garage, s3_client, secret_box);
     let app = server::create_router(state);
 
     let port = std::env::var("OBJECT_STORAGE_PORT")

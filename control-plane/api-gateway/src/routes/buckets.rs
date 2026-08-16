@@ -1,11 +1,12 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
@@ -227,6 +228,89 @@ pub async fn get_cluster_status(
     .await
 }
 
+#[derive(Deserialize)]
+pub struct ListObjectsQuery {
+    #[serde(default)]
+    prefix: String,
+    #[serde(default)]
+    continuation_token: Option<String>,
+}
+
+pub async fn list_objects(
+    CanViewBuckets(_claims): CanViewBuckets,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<ListObjectsQuery>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    let mut path = format!(
+        "/buckets/{}/objects?prefix={}",
+        id,
+        percent_encoding::utf8_percent_encode(&query.prefix, percent_encoding::NON_ALPHANUMERIC)
+    );
+    if let Some(token) = &query.continuation_token {
+        path.push_str(&format!(
+            "&continuation_token={}",
+            percent_encoding::utf8_percent_encode(token, percent_encoding::NON_ALPHANUMERIC)
+        ));
+    }
+    proxy_to_object_storage(&state, reqwest::Method::GET, &path, None, Some(header_map)).await
+}
+
+pub async fn delete_object(
+    CanManageBuckets(_claims): CanManageBuckets,
+    State(state): State<AppState>,
+    Path((bucket_id, key)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_object_storage(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/buckets/{}/objects/{}", bucket_id, key),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn presign_upload(
+    CanManageBuckets(_claims): CanManageBuckets,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: String,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let body_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    let header_map = header_vec(&headers);
+    proxy_to_object_storage(
+        &state,
+        reqwest::Method::POST,
+        &format!("/buckets/{}/objects/presign-upload", id),
+        body_json,
+        Some(header_map),
+    )
+    .await
+}
+
+pub async fn presign_download(
+    CanViewBuckets(_claims): CanViewBuckets,
+    State(state): State<AppState>,
+    Path((bucket_id, key)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let header_map = header_vec(&headers);
+    proxy_to_object_storage(
+        &state,
+        reqwest::Method::GET,
+        &format!("/buckets/{}/objects/presign-download/{}", bucket_id, key),
+        None,
+        Some(header_map),
+    )
+    .await
+}
+
 pub fn buckets_routes() -> Router<AppState> {
     Router::new()
         .route("/buckets", post(create_bucket))
@@ -236,10 +320,23 @@ pub fn buckets_routes() -> Router<AppState> {
         .route("/buckets/{id}", axum::routing::delete(delete_bucket))
         .route("/buckets/{id}/keys", get(list_keys))
         .route("/buckets/{id}/keys", post(create_key))
-        .route("/buckets/{bucket_id}/keys/{key_id}/rotate", post(rotate_key))
+        .route(
+            "/buckets/{bucket_id}/keys/{key_id}/rotate",
+            post(rotate_key),
+        )
         .route(
             "/buckets/{bucket_id}/keys/{key_id}",
             axum::routing::delete(delete_key),
+        )
+        .route("/buckets/{id}/objects", get(list_objects))
+        .route("/buckets/{id}/objects/presign-upload", post(presign_upload))
+        .route(
+            "/buckets/{bucket_id}/objects/presign-download/{*key}",
+            get(presign_download),
+        )
+        .route(
+            "/buckets/{bucket_id}/objects/{*key}",
+            axum::routing::delete(delete_object),
         )
         .route("/object-storage/cluster", get(get_cluster_status))
 }

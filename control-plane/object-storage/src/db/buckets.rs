@@ -29,16 +29,23 @@ pub async fn insert(
     req: &CreateBucketRequest,
     global_alias: &str,
     garage_bucket_id: &str,
+    master_key_id: &str,
+    master_key_secret_encrypted: Vec<u8>,
 ) -> Result<buckets::Model> {
     let model = buckets::ActiveModel {
         id: Set(Uuid::new_v4()),
         name: Set(req.name.clone()),
         garage_bucket_id: Set(Some(garage_bucket_id.to_string())),
         global_alias: Set(global_alias.to_string()),
-        exposure: Set(req.exposure.clone().unwrap_or_else(|| "internal".to_string())),
+        exposure: Set(req
+            .exposure
+            .clone()
+            .unwrap_or_else(|| "internal".to_string())),
         quota_max_size: Set(req.quota_max_size),
         quota_max_objects: Set(req.quota_max_objects),
         status: Set("active".to_string()),
+        master_key_id: Set(Some(master_key_id.to_string())),
+        master_key_secret_encrypted: Set(Some(master_key_secret_encrypted)),
         organization_id: Set(req.organization_id),
         resource_group_id: Set(req.resource_group_id),
         created_at: Set(Utc::now().naive_utc()),

@@ -1,7 +1,14 @@
-use axum::{extract::State, http::StatusCode, response::{IntoResponse, Json}};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
 use serde_json::json;
 
-use crate::{db::garage_nodes, garage::layout::replication_factor_for, models::ClusterStatusResponse, server::AppState};
+use crate::{
+    db::garage_nodes, garage::layout::replication_factor_for, models::ClusterStatusResponse,
+    server::AppState,
+};
 
 pub async fn get_cluster_status(
     State(state): State<AppState>,

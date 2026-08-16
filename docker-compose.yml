@@ -180,7 +180,7 @@ services:
     command: cargo watch -x "run -p volume-manager"
 
   garage:
-    image: dxflrs/garage:v1.0.1
+    image: dxflrs/garage:v2.3.0
     container_name: csfx-garage-dev
     volumes:
       - ./control-plane/object-storage/dev/garage.toml:/etc/garage.toml:ro
@@ -193,18 +193,17 @@ services:
       - csfx-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "garage", "-c", "/etc/garage.toml", "status"]
+      test: ["CMD", "/garage", "-c", "/etc/garage.toml", "status"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 5s
 
   garage-bootstrap:
-    image: dxflrs/garage:v1.0.1
+    image: alpine:3.20
     container_name: csfx-garage-bootstrap-dev
-    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache curl jq >/dev/null && /bootstrap.sh"]
     volumes:
-      - ./control-plane/object-storage/dev/garage.toml:/etc/garage.toml:ro
       - ./control-plane/object-storage/dev/bootstrap.sh:/bootstrap.sh:ro
     networks:
       - csfx-network
@@ -222,6 +221,8 @@ services:
       LISTEN_ADDR: "0.0.0.0"
       GARAGE_ADMIN_URL: http://garage:3903
       GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-dev-garage-admin-token}
+      GARAGE_S3_URL: http://garage:3900
+      OBJECT_STORAGE_ENCRYPTION_KEY: ${OBJECT_STORAGE_ENCRYPTION_KEY:-9a29b5d4c92cbfd4abe14c2a645f39eff6b57b1fa13305d3a946a2221e630c29}
       RUST_LOG: ${RUST_LOG:-debug}
     ports:
       - "8006:8006"
