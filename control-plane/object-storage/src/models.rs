@@ -19,6 +19,32 @@ pub struct UpdateBucketRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct CreateAccessKeyRequest {
+    pub name: String,
+    pub permissions: Option<String>,
+    pub expires_at: Option<chrono::NaiveDateTime>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccessKeyResponse {
+    pub id: Uuid,
+    pub bucket_id: Uuid,
+    pub name: String,
+    pub garage_key_id: String,
+    pub permissions: String,
+    pub expires_at: Option<chrono::NaiveDateTime>,
+    pub last_rotated_at: Option<chrono::NaiveDateTime>,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccessKeyCreatedResponse {
+    #[serde(flatten)]
+    pub key: AccessKeyResponse,
+    pub secret_access_key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BucketResponse {
     pub id: Uuid,
     pub name: String,

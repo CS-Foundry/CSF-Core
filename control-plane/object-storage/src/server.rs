@@ -1,7 +1,11 @@
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use sea_orm::DatabaseConnection;
 
-use crate::{garage::GarageClient, handlers::buckets, metrics};
+use crate::{
+    garage::GarageClient,
+    handlers::{buckets, keys},
+    metrics,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -32,6 +36,18 @@ pub fn create_router(state: AppState) -> Router {
             get(buckets::get_bucket)
                 .patch(buckets::update_bucket)
                 .delete(buckets::delete_bucket),
+        )
+        .route(
+            "/buckets/{id}/keys",
+            get(keys::list_keys).post(keys::create_key),
+        )
+        .route(
+            "/buckets/{id}/keys/{key_id}/rotate",
+            axum::routing::post(keys::rotate_key),
+        )
+        .route(
+            "/buckets/{id}/keys/{key_id}",
+            axum::routing::delete(keys::delete_key),
         )
         .with_state(state)
 }

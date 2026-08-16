@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Clone)]
 pub struct GarageClient {
@@ -30,6 +31,14 @@ struct UpdateBucketQuotas {
     max_size: Option<i64>,
     #[serde(rename = "maxObjects", skip_serializing_if = "Option::is_none")]
     max_objects: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GarageKey {
+    #[serde(rename = "accessKeyId")]
+    pub access_key_id: String,
+    #[serde(rename = "secretAccessKey")]
+    pub secret_access_key: String,
 }
 
 impl GarageClient {
@@ -114,4 +123,67 @@ impl GarageClient {
         Ok(())
     }
 
+    pub async fn create_key(&self, name: &str) -> Result<GarageKey> {
+        let response = self
+            .http
+            .post(self.url("/v2/CreateKey"))
+            .bearer_auth(&self.admin_token)
+            .json(&json!({ "name": name }))
+            .send()
+            .await
+            .context("create_key request failed")?;
+
+        let response = Self::check_status(response, "create_key").await?;
+        response
+            .json::<GarageKey>()
+            .await
+            .context("failed to parse create_key response")
+    }
+
+    pub async fn delete_key(&self, garage_key_id: &str) -> Result<()> {
+        let response = self
+            .http
+            .delete(self.url(&format!("/v2/DeleteKey?id={}", garage_key_id)))
+            .bearer_auth(&self.admin_token)
+            .send()
+            .await
+            .context("delete_key request failed")?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+
+        Self::check_status(response, "delete_key").await?;
+        Ok(())
+    }
+
+    pub async fn allow_bucket_key(
+        &self,
+        garage_bucket_id: &str,
+        garage_key_id: &str,
+        permissions: &str,
+    ) -> Result<()> {
+        let (read, write, owner) = match permissions {
+            "read" => (true, false, false),
+            "readwrite" => (true, true, false),
+            "owner" => (true, true, true),
+            other => bail!("unknown bucket key permission permissions={}", other),
+        };
+
+        let response = self
+            .http
+            .post(self.url("/v2/AllowBucketKey"))
+            .bearer_auth(&self.admin_token)
+            .json(&json!({
+                "bucketId": garage_bucket_id,
+                "accessKeyId": garage_key_id,
+                "permissions": { "read": read, "write": write, "owner": owner },
+            }))
+            .send()
+            .await
+            .context("allow_bucket_key request failed")?;
+
+        Self::check_status(response, "allow_bucket_key").await?;
+        Ok(())
+    }
 }
