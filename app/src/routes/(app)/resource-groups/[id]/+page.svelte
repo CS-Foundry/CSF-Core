@@ -741,6 +741,7 @@
     function stackStatus(children: Workload[]): string {
         if (children.every((c) => c.status === "running")) return "running";
         if (children.some((c) => c.status === "failed" || c.status === "error")) return "failed";
+        if (children.every((c) => c.status === "stopped")) return "stopped";
         return "pending";
     }
 
