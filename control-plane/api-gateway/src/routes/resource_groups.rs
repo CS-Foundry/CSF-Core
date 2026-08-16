@@ -8,7 +8,9 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::Utc;
 use entity::{
-    entities::{agents, buckets, networks, resource_group_vpn_peers, resource_groups, volumes, workloads},
+    entities::{
+        agents, buckets, networks, resource_group_vpn_peers, resource_groups, volumes, workloads,
+    },
     Agents, Buckets, Networks, ResourceGroupVpnPeers, ResourceGroups, Volumes, Workloads,
 };
 use ring::rand::{SecureRandom, SystemRandom};

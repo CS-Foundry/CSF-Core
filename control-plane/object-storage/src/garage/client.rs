@@ -137,7 +137,7 @@ impl GarageClient {
     pub async fn delete_bucket(&self, garage_bucket_id: &str) -> Result<()> {
         let response = self
             .http
-            .delete(self.url(&format!("/v2/DeleteBucket?id={}", garage_bucket_id)))
+            .post(self.url(&format!("/v2/DeleteBucket?id={}", garage_bucket_id)))
             .bearer_auth(&self.admin_token)
             .send()
             .await
@@ -171,7 +171,7 @@ impl GarageClient {
     pub async fn delete_key(&self, garage_key_id: &str) -> Result<()> {
         let response = self
             .http
-            .delete(self.url(&format!("/v2/DeleteKey?id={}", garage_key_id)))
+            .post(self.url(&format!("/v2/DeleteKey?id={}", garage_key_id)))
             .bearer_auth(&self.admin_token)
             .send()
             .await

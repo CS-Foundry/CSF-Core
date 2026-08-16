@@ -38,6 +38,37 @@ pub mod volumes;
 pub mod workloads;
 
 /// Creates the main application router and logs all registered routes.
+pub fn create_object_data_router() -> Router<AppState> {
+    let frontend_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+
+    let allowed_origins = vec![
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        &frontend_url,
+    ];
+
+    let cors = CorsLayer::new()
+        .allow_origin(
+            allowed_origins
+                .into_iter()
+                .filter_map(|origin| origin.parse::<HeaderValue>().ok())
+                .collect::<Vec<_>>(),
+        )
+        .allow_methods(vec![
+            Method::GET,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers(tower_http::cors::Any)
+        .expose_headers(tower_http::cors::Any);
+
+    s3_proxy::object_data_router().layer(cors)
+}
+
 pub fn create_router() -> Router<AppState> {
     let rate_limit_per_second: u64 = std::env::var("RATE_LIMIT_PER_SECOND")
         .ok()

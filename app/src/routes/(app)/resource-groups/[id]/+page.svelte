@@ -125,7 +125,7 @@
         { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "logos:docker-icon" },
         { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "logos:docker-icon" },
         { key: "volume", label: "Volume", description: "Add a block storage volume", icon: "mdi:database-outline" },
-        { key: "bucket", label: "S3 Bucket", description: "Add an S3-compatible object storage bucket", icon: "mdi:bucket-outline" },
+        { key: "bucket", label: "S3 Bucket", description: "Add an S3-compatible object storage bucket", icon: "fluent-emoji-high-contrast:bucket" },
     ] as const;
 
     let formImage = $state("");
@@ -2083,9 +2083,7 @@
                                 >
                                     <td class="px-4 py-3">
                                         <div class="flex items-center gap-2.5">
-                                            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted/50">
-                                                <Icon icon="mdi:bucket-outline" width={14} height={14} />
-                                            </div>
+                                            <Icon icon="fluent-emoji-high-contrast:bucket" width={20} height={20} class="shrink-0" />
                                             <div>
                                                 <p class="font-medium leading-tight">{b.name}</p>
                                                 <p class="text-xs text-muted-foreground font-mono">{b.global_alias}</p>

@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{OriginalUri, Path, State},
     http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Json},
     routing::any,
@@ -17,6 +17,7 @@ const S3_PORT: u16 = 3900;
 async fn resolve_bucket_target(
     state: &AppState,
     global_alias: &str,
+    require_external: bool,
 ) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
     let bucket = buckets::Entity::find()
         .filter(buckets::Column::GlobalAlias.eq(global_alias))
@@ -35,7 +36,7 @@ async fn resolve_bucket_target(
             )
         })?;
 
-    if bucket.exposure != "external" {
+    if require_external && bucket.exposure != "external" {
         return Err((
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "bucket not found" })),
@@ -85,28 +86,33 @@ async fn resolve_bucket_target(
     Ok(tunnel_ip)
 }
 
-pub async fn proxy_s3_request(
-    State(state): State<AppState>,
-    Path((bucket, path)): Path<(String, String)>,
+async fn proxy(
+    state: &AppState,
+    bucket: &str,
+    path: &str,
+    query: Option<&str>,
+    require_external: bool,
     method: Method,
     headers: HeaderMap,
     body: Body,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let tunnel_ip = resolve_bucket_target(&state, &bucket).await?;
+    let tunnel_ip = resolve_bucket_target(state, bucket, require_external).await?;
 
-    let url = format!("http://{}:{}/{}/{}", tunnel_ip, S3_PORT, bucket, path);
+    let mut url = format!("http://{}:{}/{}/{}", tunnel_ip, S3_PORT, bucket, path);
+    if let Some(query) = query {
+        url.push('?');
+        url.push_str(query);
+    }
 
-    let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
-        .unwrap_or(reqwest::Method::GET);
+    let reqwest_method =
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
 
-    let body_bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("failed to read request body: {}", e) })),
-            )
-        })?;
+    let body_bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("failed to read request body: {}", e) })),
+        )
+    })?;
 
     let client = reqwest::Client::new();
     let mut request = client.request(reqwest_method, &url).body(body_bytes);
@@ -140,6 +146,52 @@ pub async fn proxy_s3_request(
     Ok((status, response_headers, Body::from_stream(stream)))
 }
 
+pub async fn proxy_s3_request(
+    State(state): State<AppState>,
+    Path((bucket, path)): Path<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
+    body: Body,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    proxy(
+        &state,
+        &bucket,
+        &path,
+        uri.query(),
+        true,
+        method,
+        headers,
+        body,
+    )
+    .await
+}
+
+pub async fn proxy_object_data(
+    State(state): State<AppState>,
+    Path((bucket, key)): Path<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
+    body: Body,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    proxy(
+        &state,
+        &bucket,
+        &key,
+        uri.query(),
+        false,
+        method,
+        headers,
+        body,
+    )
+    .await
+}
+
 pub fn s3_proxy_routes() -> Router<AppState> {
     Router::new().route("/s3/{bucket}/{*path}", any(proxy_s3_request))
+}
+
+pub fn object_data_router() -> Router<AppState> {
+    Router::new().route("/{bucket}/{*key}", any(proxy_object_data))
 }

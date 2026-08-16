@@ -5,4 +5,4 @@
 	let { class: className, ...restProps }: HTMLAttributes<HTMLSpanElement> = $props();
 </script>
 
-<Icon icon="tabler:bucket" class={className} {...restProps} />
+<Icon icon="fluent-emoji-high-contrast:bucket" class={className} {...restProps} />

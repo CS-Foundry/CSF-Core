@@ -9,10 +9,12 @@ use std::time::{Duration, SystemTime};
 
 const S3_REGION: &str = "csfx";
 const S3_SERVICE: &str = "s3";
+const EMPTY_BODY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 #[derive(Clone)]
 pub struct S3Client {
     s3_url: String,
+    public_s3_url: String,
     http: reqwest::Client,
 }
 
@@ -30,9 +32,10 @@ pub struct ListObjectsResult {
 }
 
 impl S3Client {
-    pub fn new(s3_url: String) -> Self {
+    pub fn new(s3_url: String, public_s3_url: String) -> Self {
         Self {
             s3_url,
+            public_s3_url,
             http: reqwest::Client::new(),
         }
     }
@@ -91,9 +94,13 @@ impl S3Client {
         let identity = Self::identity(access_key_id, secret_access_key);
         let params = Self::signing_params(&identity, SigningSettings::default())?;
 
-        let signable =
-            SignableRequest::new("GET", &url, std::iter::empty(), SignableBody::Bytes(&[]))
-                .context("failed to build signable request")?;
+        let signable = SignableRequest::new(
+            "GET",
+            &url,
+            std::iter::once(("x-amz-content-sha256", EMPTY_BODY_SHA256)),
+            SignableBody::Bytes(&[]),
+        )
+        .context("failed to build signable request")?;
 
         let signed_headers: Vec<(String, String)> = sign(signable, &params.into())
             .context("failed to sign request")?
@@ -106,6 +113,7 @@ impl S3Client {
         let mut request = self
             .http
             .get(&url)
+            .header("x-amz-content-sha256", EMPTY_BODY_SHA256)
             .build()
             .context("failed to build request")?;
         for (name, value) in signed_headers {
@@ -152,9 +160,13 @@ impl S3Client {
         let identity = Self::identity(access_key_id, secret_access_key);
         let params = Self::signing_params(&identity, SigningSettings::default())?;
 
-        let signable =
-            SignableRequest::new("DELETE", &url, std::iter::empty(), SignableBody::Bytes(&[]))
-                .context("failed to build signable request")?;
+        let signable = SignableRequest::new(
+            "DELETE",
+            &url,
+            std::iter::once(("x-amz-content-sha256", EMPTY_BODY_SHA256)),
+            SignableBody::Bytes(&[]),
+        )
+        .context("failed to build signable request")?;
 
         let signed_headers: Vec<(String, String)> = sign(signable, &params.into())
             .context("failed to sign request")?
@@ -167,6 +179,7 @@ impl S3Client {
         let mut request = self
             .http
             .delete(&url)
+            .header("x-amz-content-sha256", EMPTY_BODY_SHA256)
             .build()
             .context("failed to build request")?;
         for (name, value) in signed_headers {
@@ -203,7 +216,7 @@ impl S3Client {
     ) -> Result<String> {
         let url = format!(
             "{}/{}/{}",
-            self.s3_url,
+            self.public_s3_url,
             bucket,
             percent_encoding::utf8_percent_encode(key, percent_encoding::NON_ALPHANUMERIC)
         );

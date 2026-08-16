@@ -123,9 +123,7 @@
                         >
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2.5">
-                                    <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted/50">
-                                        <Icon icon="mdi:bucket-outline" width={14} height={14} />
-                                    </div>
+                                    <Icon icon="fluent-emoji-high-contrast:bucket" width={20} height={20} class="shrink-0" />
                                     <span class="font-medium">{bucket.name}</span>
                                 </div>
                             </td>
