@@ -193,7 +193,7 @@ services:
       - csfx-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3903/health"]
+      test: ["CMD", "garage", "-c", "/etc/garage.toml", "status"]
       interval: 5s
       timeout: 3s
       retries: 10
