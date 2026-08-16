@@ -3,6 +3,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::Command;
@@ -153,16 +154,21 @@ struct GuestNetwork {
 pub struct FirecrackerRuntime {
     wg_private_key_b64: String,
     dns_supervisor: RgDnsProcessSupervisor,
+    rg_dns_registry: Arc<crate::rg_dns::RgDnsRegistry>,
     handles: Mutex<HashMap<String, VmHandle>>,
     next_cid: Mutex<u32>,
     reconciled: AtomicBool,
 }
 
 impl FirecrackerRuntime {
-    pub fn new(wg_private_key_b64: String) -> Self {
+    pub fn new(
+        wg_private_key_b64: String,
+        rg_dns_registry: Arc<crate::rg_dns::RgDnsRegistry>,
+    ) -> Self {
         Self {
             wg_private_key_b64,
             dns_supervisor: RgDnsProcessSupervisor::new(),
+            rg_dns_registry,
             handles: Mutex::new(HashMap::new()),
             next_cid: Mutex::new(next_free_cid_on_host()),
             reconciled: AtomicBool::new(false),
@@ -194,9 +200,13 @@ impl FirecrackerRuntime {
         resource_group_id: &str,
         resource_group_cidr: Option<&str>,
     ) -> Result<String> {
-        let iface = crate::rg_network::ensure_bridge(resource_group_id, resource_group_cidr)
-            .await
-            .context("Failed to ensure resource group bridge")?;
+        let iface = crate::rg_network::ensure_bridge(
+            resource_group_id,
+            resource_group_cidr,
+            &self.rg_dns_registry,
+        )
+        .await
+        .context("Failed to ensure resource group bridge")?;
 
         if let Some(cidr) = resource_group_cidr {
             self.dns_supervisor

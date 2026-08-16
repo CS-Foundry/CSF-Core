@@ -130,6 +130,30 @@ pub async fn add_rg_port_dnat(
     .await
 }
 
+pub async fn dnat_bridge_port(bridge_name: &str, rg_gateway_ip: &str, port: u16) -> Result<()> {
+    run_nft(&[
+        "add",
+        "rule",
+        "ip",
+        NAT_TABLE_NAME,
+        NAT_CHAIN_NAME,
+        "iifname",
+        bridge_name,
+        "ip",
+        "daddr",
+        rg_gateway_ip,
+        "tcp",
+        "dport",
+        &port.to_string(),
+        "dnat",
+        "to",
+        &format!("127.0.0.1:{}", port),
+        "comment",
+        &format!("\"{}-s3\"", bridge_name),
+    ])
+    .await
+}
+
 pub async fn remove_node_port_rules(workload_id: &str) -> Result<()> {
     let output = Command::new("nft")
         .args(["-a", "list", "chain", "ip", NAT_TABLE_NAME, NAT_CHAIN_NAME])
