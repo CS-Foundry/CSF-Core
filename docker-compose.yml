@@ -78,6 +78,7 @@ services:
       VOLUME_MANAGER_URL: http://volume-manager:8003
       FAILOVER_CONTROLLER_URL: http://failover-controller:8004
       SDN_CONTROLLER_URL: http://sdn-controller:8005
+      OBJECT_STORAGE_URL: http://object-storage:8006
       FRONTEND_URL: http://localhost:5173
       CSFX_INCLUDE_CONTAINERS: "true"
       TLS_ENABLED: "false"
@@ -177,6 +178,32 @@ services:
       - ./control-plane/shared:/app/control-plane/shared
       - cargo_target_volume_manager:/app/target
     command: cargo watch -x "run -p volume-manager"
+
+  object-storage:
+    <<: *rust-service
+    container_name: csfx-object-storage-dev
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-csfx_user}:${POSTGRES_PASSWORD:-csfx_password}@postgres:5432/${POSTGRES_DB:-csfx_core}
+      ETCD_URL: http://etcd:2379
+      OBJECT_STORAGE_PORT: "8006"
+      LISTEN_ADDR: "0.0.0.0"
+      GARAGE_ADMIN_URL: http://127.0.0.1:3903
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-dev-garage-admin-token}
+      RUST_LOG: ${RUST_LOG:-debug}
+    ports:
+      - "8006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./control-plane/object-storage:/app/control-plane/object-storage
+      - ./control-plane/shared:/app/control-plane/shared
+      - cargo_target_object_storage:/app/target
+    command: cargo watch -x "run -p object-storage"
 
   failover-controller:
     <<: *rust-service
@@ -320,6 +347,7 @@ volumes:
   cargo_target_volume_manager:
   cargo_target_failover_controller:
   cargo_target_sdn_controller:
+  cargo_target_object_storage:
   cargo_target_agent:
   agent_state_1:
   agent_state_2:
