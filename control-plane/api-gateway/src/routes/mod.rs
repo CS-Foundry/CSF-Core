@@ -20,6 +20,7 @@ use tracing::{info_span, Span};
 pub mod agent_proxy;
 pub mod agent_stream;
 pub mod agents;
+pub mod buckets;
 pub mod events;
 pub mod logs;
 pub mod networks;
@@ -120,6 +121,7 @@ pub fn create_router() -> Router<AppState> {
     let rate_limited_router = Router::new()
         .merge(agent_proxy::agent_proxy_routes())
         .merge(agents::agents_routes())
+        .merge(buckets::buckets_routes())
         .merge(networks::networks_routes())
         .merge(organizations::routes())
         .merge(ssh_keys::ssh_keys_routes())
