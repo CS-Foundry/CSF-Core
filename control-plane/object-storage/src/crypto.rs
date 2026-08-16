@@ -58,7 +58,7 @@ impl SecretBox {
 }
 
 fn hex_decode(input: &str) -> Result<Vec<u8>> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         bail!("hex string must have even length");
     }
     (0..input.len())

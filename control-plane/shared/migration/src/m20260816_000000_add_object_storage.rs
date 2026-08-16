@@ -22,7 +22,11 @@ impl MigrationTrait for Migration {
                             .default("internal"),
                     )
                     .col(ColumnDef::new(Buckets::QuotaMaxSize).big_integer().null())
-                    .col(ColumnDef::new(Buckets::QuotaMaxObjects).big_integer().null())
+                    .col(
+                        ColumnDef::new(Buckets::QuotaMaxObjects)
+                            .big_integer()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(Buckets::Status)
                             .string()
@@ -55,11 +59,7 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(BucketAccessKeys::BucketId)
-                            .uuid()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(BucketAccessKeys::BucketId).uuid().not_null())
                     .col(ColumnDef::new(BucketAccessKeys::Name).string().not_null())
                     .col(
                         ColumnDef::new(BucketAccessKeys::GarageKeyId)
@@ -71,7 +71,11 @@ impl MigrationTrait for Migration {
                             .string()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(BucketAccessKeys::ExpiresAt).date_time().null())
+                    .col(
+                        ColumnDef::new(BucketAccessKeys::ExpiresAt)
+                            .date_time()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(BucketAccessKeys::LastRotatedAt)
                             .date_time()
@@ -106,7 +110,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(GarageNodes::AgentId).uuid().not_null())
                     .col(ColumnDef::new(GarageNodes::GarageNodeId).string().null())
                     .col(ColumnDef::new(GarageNodes::Zone).string().not_null())
-                    .col(ColumnDef::new(GarageNodes::CapacityBytes).big_integer().null())
+                    .col(
+                        ColumnDef::new(GarageNodes::CapacityBytes)
+                            .big_integer()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(GarageNodes::Role)
                             .string()
@@ -121,7 +129,11 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(GarageNodes::LayoutVersion).integer().null())
                     .col(ColumnDef::new(GarageNodes::LastSeenAt).date_time().null())
-                    .col(ColumnDef::new(GarageNodes::CreatedAt).date_time().not_null())
+                    .col(
+                        ColumnDef::new(GarageNodes::CreatedAt)
+                            .date_time()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(GarageNodes::UpdatedAt).date_time().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -203,11 +215,7 @@ impl MigrationTrait for Migration {
             .drop_index(Index::drop().name("idx_buckets_global_alias").to_owned())
             .await?;
         manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_buckets_organization_id")
-                    .to_owned(),
-            )
+            .drop_index(Index::drop().name("idx_buckets_organization_id").to_owned())
             .await?;
         manager
             .drop_index(
