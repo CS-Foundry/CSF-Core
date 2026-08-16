@@ -30,7 +30,10 @@ async fn peer_addrs(
         let Some(garage_node_id) = &node.garage_node_id else {
             continue;
         };
-        let Some(agent) = agents::Entity::find_by_id(node.agent_id).one(db).await? else {
+        let Some(agent_id) = node.agent_id else {
+            continue;
+        };
+        let Some(agent) = agents::Entity::find_by_id(agent_id).one(db).await? else {
             continue;
         };
         let Some(wg_ip) = agent.wg_tunnel_ip else {
@@ -73,9 +76,9 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
         if !is_up && node.status == "up" {
             log_warn!(
                 "garage::layout",
-                &format!("garage node reported down agent_id={}", node.agent_id)
+                &format!("garage node reported down id={}", node.id)
             );
-            garage_nodes_db::mark_down(db, node.agent_id).await?;
+            garage_nodes_db::mark_down(db, node.id).await?;
         }
     }
 
@@ -152,4 +155,56 @@ pub async fn run_reconcile_loop(
             );
         }
     }
+}
+
+const SELF_REGISTER_RETRY_SECONDS: u64 = 5;
+const SELF_REGISTER_MAX_ATTEMPTS: u32 = 60;
+
+pub async fn register_self_as_node(db: &DatabaseConnection, garage: &GarageClient, zone: &str) {
+    for attempt in 1..=SELF_REGISTER_MAX_ATTEMPTS {
+        match garage.get_cluster_status().await {
+            Ok(status) => {
+                let Some(self_node) = status.nodes.first() else {
+                    log_warn!(
+                        "garage::layout",
+                        "garage cluster status returned no nodes yet"
+                    );
+                    sleep(Duration::from_secs(SELF_REGISTER_RETRY_SECONDS)).await;
+                    continue;
+                };
+
+                match crate::db::garage_nodes::upsert_self(db, &self_node.id, zone, None).await {
+                    Ok(node) => {
+                        log_info!(
+                            "garage::layout",
+                            &format!("registered self as garage node id={}", node.id)
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log_error!(
+                            "garage::layout",
+                            &format!("failed to persist self garage node registration err={}", e)
+                        );
+                        return;
+                    }
+                }
+            }
+            Err(e) => {
+                log_warn!(
+                    "garage::layout",
+                    &format!(
+                        "self-registration attempt {}/{} failed err={}",
+                        attempt, SELF_REGISTER_MAX_ATTEMPTS, e
+                    )
+                );
+                sleep(Duration::from_secs(SELF_REGISTER_RETRY_SECONDS)).await;
+            }
+        }
+    }
+
+    log_error!(
+        "garage::layout",
+        "giving up on self garage node registration after max attempts"
+    );
 }

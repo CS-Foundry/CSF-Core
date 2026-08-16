@@ -59,6 +59,15 @@ async fn main() -> anyhow::Result<()> {
         leader,
     ));
 
+    let self_register_zone = std::env::var("GARAGE_ZONE").unwrap_or_else(|_| "dev".to_string());
+    tokio::spawn({
+        let db = db.clone();
+        let garage = garage.clone();
+        async move {
+            garage::layout::register_self_as_node(&db, &garage, &self_register_zone).await;
+        }
+    });
+
     let secret_box = std::sync::Arc::new(
         crypto::SecretBox::from_env().expect("Failed to initialize encryption key"),
     );

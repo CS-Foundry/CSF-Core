@@ -60,7 +60,11 @@ async fn resolve_bucket_target(
             )
         })?;
 
-    let agent = agents::Entity::find_by_id(node.agent_id)
+    let Some(agent_id) = node.agent_id else {
+        return Ok(std::env::var("GARAGE_INTERNAL_HOST").unwrap_or_else(|_| "garage".to_string()));
+    };
+
+    let agent = agents::Entity::find_by_id(agent_id)
         .one(&state.db_conn)
         .await
         .map_err(|e| {
