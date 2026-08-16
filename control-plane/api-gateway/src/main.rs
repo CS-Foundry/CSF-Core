@@ -177,29 +177,7 @@ async fn main() {
 
     let app = routes::create_router()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .with_state(state.clone());
-
-    let object_data_app = routes::create_object_data_router().with_state(state);
-
-    let object_data_port = std::env::var("OBJECT_DATA_PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(8007);
-    let object_data_listen_addr =
-        std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let object_data_addr: SocketAddr = format!("{}:{}", object_data_listen_addr, object_data_port)
-        .parse()
-        .unwrap();
-
-    tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(object_data_addr)
-            .await
-            .expect("failed to bind object data port");
-        tracing::info!(addr = %object_data_addr, "object data proxy listening");
-        axum::serve(listener, object_data_app.into_make_service())
-            .await
-            .expect("object data proxy server failed");
-    });
+        .with_state(state);
 
     let port = std::env::var("GATEWAY_PORT")
         .ok()

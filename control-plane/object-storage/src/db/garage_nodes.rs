@@ -44,6 +44,11 @@ pub async fn upsert_self(
         let mut model: garage_nodes::ActiveModel = existing.into();
         model.status = Set("up".to_string());
         model.capacity_bytes = Set(capacity_bytes);
+        model.role = Set(if capacity_bytes.is_some() {
+            "storage".to_string()
+        } else {
+            "gateway".to_string()
+        });
         model.last_seen_at = Set(Some(now));
         model.updated_at = Set(Some(now));
         return model

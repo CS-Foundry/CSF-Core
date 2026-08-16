@@ -4,12 +4,19 @@ use aws_sigv4::http_request::{
     sign, PercentEncodingMode, SignableBody, SignableRequest, SignatureLocation, SigningSettings,
 };
 use aws_sigv4::sign::v4;
+use percent_encoding::AsciiSet;
 use serde::Deserialize;
 use std::time::{Duration, SystemTime};
 
 const S3_REGION: &str = "csfx";
 const S3_SERVICE: &str = "s3";
 const EMPTY_BODY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+const SIGV4_UNRESERVED: &AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 #[derive(Clone)]
 pub struct S3Client {
@@ -81,13 +88,13 @@ impl S3Client {
             "{}/{}?list-type=2&prefix={}&delimiter={}",
             self.s3_url,
             bucket,
-            percent_encoding::utf8_percent_encode(prefix, percent_encoding::NON_ALPHANUMERIC),
-            percent_encoding::utf8_percent_encode(delimiter, percent_encoding::NON_ALPHANUMERIC),
+            percent_encoding::utf8_percent_encode(prefix, SIGV4_UNRESERVED),
+            percent_encoding::utf8_percent_encode(delimiter, SIGV4_UNRESERVED),
         );
         if let Some(token) = continuation_token {
             url.push_str(&format!(
                 "&continuation-token={}",
-                percent_encoding::utf8_percent_encode(token, percent_encoding::NON_ALPHANUMERIC)
+                percent_encoding::utf8_percent_encode(token, SIGV4_UNRESERVED)
             ));
         }
 
@@ -154,7 +161,7 @@ impl S3Client {
             "{}/{}/{}",
             self.s3_url,
             bucket,
-            percent_encoding::utf8_percent_encode(key, percent_encoding::NON_ALPHANUMERIC)
+            percent_encoding::utf8_percent_encode(key, SIGV4_UNRESERVED)
         );
 
         let identity = Self::identity(access_key_id, secret_access_key);
@@ -218,7 +225,7 @@ impl S3Client {
             "{}/{}/{}",
             self.public_s3_url,
             bucket,
-            percent_encoding::utf8_percent_encode(key, percent_encoding::NON_ALPHANUMERIC)
+            percent_encoding::utf8_percent_encode(key, SIGV4_UNRESERVED)
         );
 
         let identity = Self::identity(access_key_id, secret_access_key);

@@ -44,8 +44,18 @@ pub struct GarageKey {
 #[derive(Debug, Deserialize)]
 pub struct ClusterStatusNode {
     pub id: String,
-    #[serde(default)]
+    #[serde(rename = "isUp", default)]
     pub is_up: bool,
+    #[serde(default)]
+    pub role: Option<ClusterStatusNodeRole>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClusterStatusNodeRole {
+    #[serde(default)]
+    pub zone: String,
+    #[serde(default)]
+    pub capacity: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

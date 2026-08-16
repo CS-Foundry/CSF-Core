@@ -173,7 +173,22 @@ pub async fn register_self_as_node(db: &DatabaseConnection, garage: &GarageClien
                     continue;
                 };
 
-                match crate::db::garage_nodes::upsert_self(db, &self_node.id, zone, None).await {
+                let capacity_bytes = self_node.role.as_ref().and_then(|r| r.capacity);
+                let node_zone = self_node
+                    .role
+                    .as_ref()
+                    .map(|r| r.zone.as_str())
+                    .filter(|z| !z.is_empty())
+                    .unwrap_or(zone);
+
+                match crate::db::garage_nodes::upsert_self(
+                    db,
+                    &self_node.id,
+                    node_zone,
+                    capacity_bytes,
+                )
+                .await
+                {
                     Ok(node) => {
                         log_info!(
                             "garage::layout",
