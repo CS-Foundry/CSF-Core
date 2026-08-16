@@ -50,6 +50,13 @@ pub struct VolumeMount {
     pub mount_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketBinding {
+    pub bucket_id: Uuid,
+    #[serde(default)]
+    pub permissions: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RestartPolicy {
@@ -153,6 +160,8 @@ pub struct CreateWorkloadRequest {
     pub env_vars: Option<HashMap<String, String>>,
     pub ports: Option<Vec<PortMapping>>,
     pub volume_mounts: Option<Vec<VolumeMount>>,
+    #[serde(default)]
+    pub bucket_bindings: Option<Vec<BucketBinding>>,
     pub resource_group_id: Option<Uuid>,
     #[serde(default)]
     pub stack_id: Option<Uuid>,
