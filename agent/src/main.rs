@@ -364,7 +364,7 @@ async fn run_heartbeat_loop(
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     service_dns_registry: Arc<Mutex<HashMap<String, (String, String)>>>,
-    rg_dns_registry: rg_dns::RgDnsRegistry,
+    rg_dns_registry: Arc<rg_dns::RgDnsRegistry>,
     mut assignment_signal: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
