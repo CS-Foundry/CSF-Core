@@ -27,6 +27,7 @@ COPY control-plane/scheduler/Cargo.toml ./control-plane/scheduler/
 COPY control-plane/failover-controller/Cargo.toml ./control-plane/failover-controller/
 COPY control-plane/sdn-controller/Cargo.toml ./control-plane/sdn-controller/
 COPY control-plane/volume-manager/Cargo.toml ./control-plane/volume-manager/
+COPY control-plane/object-storage/Cargo.toml ./control-plane/object-storage/
 COPY control-plane/registry/Cargo.toml ./control-plane/registry/
 COPY control-plane/shared/entity/Cargo.toml ./control-plane/shared/entity/
 COPY control-plane/shared/migration/Cargo.toml ./control-plane/shared/migration/
@@ -41,6 +42,7 @@ RUN mkdir -p agent/src \
     control-plane/failover-controller/src \
     control-plane/sdn-controller/src \
     control-plane/volume-manager/src \
+    control-plane/object-storage/src \
     control-plane/registry/src \
     control-plane/shared/entity/src \
     control-plane/shared/migration/src \
@@ -54,6 +56,7 @@ RUN mkdir -p agent/src \
     && echo "fn main() {}" > control-plane/failover-controller/src/main.rs \
     && echo "fn main() {}" > control-plane/sdn-controller/src/main.rs \
     && echo "fn main() {}" > control-plane/volume-manager/src/main.rs \
+    && echo "fn main() {}" > control-plane/object-storage/src/main.rs \
     && echo "fn main() {}" > control-plane/registry/src/main.rs \
     && echo "fn main() {}" > control-plane/csfx-migrate/src/main.rs \
     && echo "fn main() {}" > control-plane/csfx-updater/src/main.rs \
