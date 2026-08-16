@@ -159,6 +159,7 @@ jobs:
           - volume-manager
           - failover-controller
           - sdn-controller
+          - object-storage
           - csfx-migrate
         arch:
           - amd64
@@ -230,7 +231,7 @@ jobs:
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           CP_BINS=""
-          for svc in api-gateway registry scheduler volume-manager failover-controller sdn-controller csfx-migrate; do
+          for svc in api-gateway registry scheduler volume-manager failover-controller sdn-controller object-storage csfx-migrate; do
             for arch in amd64 arm64; do
               CP_BINS="${CP_BINS} csfx-cp-${svc}-${arch} csfx-cp-${svc}-${arch}.sha256"
             done
@@ -420,6 +421,16 @@ jobs:
                   arm64 = {
                     url    = "${RELEASE_BASE}/csfx-cp-sdn-controller-arm64";
                     sha256 = "$(get_cp_sha256 csfx-cp-sdn-controller-arm64)";
+                  };
+                };
+                object-storage = {
+                  amd64 = {
+                    url    = "${RELEASE_BASE}/csfx-cp-object-storage-amd64";
+                    sha256 = "$(get_cp_sha256 csfx-cp-object-storage-amd64)";
+                  };
+                  arm64 = {
+                    url    = "${RELEASE_BASE}/csfx-cp-object-storage-arm64";
+                    sha256 = "$(get_cp_sha256 csfx-cp-object-storage-arm64)";
                   };
                 };
                 csfx-updater = {
