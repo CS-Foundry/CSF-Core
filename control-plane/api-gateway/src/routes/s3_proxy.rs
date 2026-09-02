@@ -197,5 +197,5 @@ pub fn s3_proxy_routes() -> Router<AppState> {
 }
 
 pub fn object_data_router() -> Router<AppState> {
-    Router::new().route("/{bucket}/{*key}", any(proxy_object_data))
+    Router::new().route("/s3data/{bucket}/{*key}", any(proxy_object_data))
 }
