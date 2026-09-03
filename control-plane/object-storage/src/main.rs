@@ -60,11 +60,19 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let self_register_zone = std::env::var("GARAGE_ZONE").unwrap_or_else(|_| "dev".to_string());
+    let self_register_data_dir =
+        std::env::var("GARAGE_DATA_DIR").unwrap_or_else(|_| "/var/lib/garage/data".to_string());
     tokio::spawn({
         let db = db.clone();
         let garage = garage.clone();
         async move {
-            garage::layout::register_self_as_node(&db, &garage, &self_register_zone).await;
+            garage::layout::register_self_as_node(
+                &db,
+                &garage,
+                &self_register_zone,
+                &self_register_data_dir,
+            )
+            .await;
         }
     });
 

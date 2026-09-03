@@ -3418,6 +3418,7 @@ dependencies = [
  "entity",
  "etcd-client",
  "http 1.4.2",
+ "nix 0.31.3",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",

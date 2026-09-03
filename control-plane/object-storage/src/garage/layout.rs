@@ -160,7 +160,31 @@ pub async fn run_reconcile_loop(
 const SELF_REGISTER_RETRY_SECONDS: u64 = 5;
 const SELF_REGISTER_MAX_ATTEMPTS: u32 = 60;
 
-pub async fn register_self_as_node(db: &DatabaseConnection, garage: &GarageClient, zone: &str) {
+fn available_capacity_bytes(data_dir: &str) -> Option<i64> {
+    match nix::sys::statvfs::statvfs(data_dir) {
+        Ok(stats) => {
+            let bytes = stats.blocks_available() as u64 * stats.fragment_size() as u64;
+            Some(bytes as i64)
+        }
+        Err(e) => {
+            log_warn!(
+                "garage::layout",
+                &format!(
+                    "failed to read available capacity path={} err={}",
+                    data_dir, e
+                )
+            );
+            None
+        }
+    }
+}
+
+pub async fn register_self_as_node(
+    db: &DatabaseConnection,
+    garage: &GarageClient,
+    zone: &str,
+    data_dir: &str,
+) {
     for attempt in 1..=SELF_REGISTER_MAX_ATTEMPTS {
         match garage.get_cluster_status().await {
             Ok(status) => {
@@ -173,7 +197,11 @@ pub async fn register_self_as_node(db: &DatabaseConnection, garage: &GarageClien
                     continue;
                 };
 
-                let capacity_bytes = self_node.role.as_ref().and_then(|r| r.capacity);
+                let capacity_bytes = self_node
+                    .role
+                    .as_ref()
+                    .and_then(|r| r.capacity)
+                    .or_else(|| available_capacity_bytes(data_dir));
                 let node_zone = self_node
                     .role
                     .as_ref()
