@@ -91,8 +91,6 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
         return Ok(());
     }
 
-    let factor = replication_factor_for(storage_nodes.len());
-
     let roles: Vec<LayoutRole> = known_nodes
         .iter()
         .filter_map(|n| {
@@ -109,7 +107,7 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
         return Ok(());
     }
 
-    if let Err(e) = garage.update_cluster_layout(roles, factor).await {
+    if let Err(e) = garage.update_cluster_layout(roles).await {
         log_error!(
             "garage::layout",
             &format!("failed to stage cluster layout err={}", e)
@@ -130,7 +128,7 @@ async fn reconcile_once(db: &DatabaseConnection, garage: &GarageClient) -> Resul
         &format!(
             "applied cluster layout storage_nodes={} replication_factor={}",
             storage_nodes.len(),
-            factor
+            replication_factor_for(storage_nodes.len())
         )
     );
     Ok(())

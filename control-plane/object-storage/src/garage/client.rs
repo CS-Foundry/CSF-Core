@@ -259,19 +259,14 @@ impl GarageClient {
         Ok(())
     }
 
-    pub async fn update_cluster_layout(
-        &self,
-        roles: Vec<LayoutRole>,
-        parameters_replication_factor: u32,
-    ) -> Result<()> {
+    pub async fn update_cluster_layout(&self, roles: Vec<LayoutRole>) -> Result<()> {
         let response = self
             .http
             .post(self.url("/v2/UpdateClusterLayout"))
             .bearer_auth(&self.admin_token)
             .json(&json!({
                 "roles": roles,
-                "parameters": { "zone_redundancy": "maximum" },
-                "replication_factor": parameters_replication_factor,
+                "parameters": { "zoneRedundancy": "maximum" },
             }))
             .send()
             .await
