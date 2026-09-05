@@ -93,8 +93,7 @@ async fn resolve_bucket_target(
 async fn proxy(
     state: &AppState,
     bucket: &str,
-    path: &str,
-    query: Option<&str>,
+    raw_path_and_query: &str,
     require_external: bool,
     method: Method,
     headers: HeaderMap,
@@ -102,11 +101,7 @@ async fn proxy(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let tunnel_ip = resolve_bucket_target(state, bucket, require_external).await?;
 
-    let mut url = format!("http://{}:{}/{}/{}", tunnel_ip, S3_PORT, bucket, path);
-    if let Some(query) = query {
-        url.push('?');
-        url.push_str(query);
-    }
+    let url = format!("http://{}:{}{}", tunnel_ip, S3_PORT, raw_path_and_query);
 
     let reqwest_method =
         reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
@@ -152,17 +147,25 @@ async fn proxy(
 
 pub async fn proxy_s3_request(
     State(state): State<AppState>,
-    Path((bucket, path)): Path<(String, String)>,
+    Path((bucket, _path)): Path<(String, String)>,
     OriginalUri(uri): OriginalUri,
     method: Method,
     headers: HeaderMap,
     body: Body,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let raw = uri
+        .path()
+        .strip_prefix("/api/s3")
+        .unwrap_or_else(|| uri.path());
+    let raw_path_and_query = match uri.query() {
+        Some(query) => format!("{}?{}", raw, query),
+        None => raw.to_string(),
+    };
+
     proxy(
         &state,
         &bucket,
-        &path,
-        uri.query(),
+        &raw_path_and_query,
         true,
         method,
         headers,
@@ -173,17 +176,22 @@ pub async fn proxy_s3_request(
 
 pub async fn proxy_object_data(
     State(state): State<AppState>,
-    Path((bucket, key)): Path<(String, String)>,
+    Path((bucket, _key)): Path<(String, String)>,
     OriginalUri(uri): OriginalUri,
     method: Method,
     headers: HeaderMap,
     body: Body,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let raw = uri.path().strip_prefix("/s3data").unwrap_or_else(|| uri.path());
+    let raw_path_and_query = match uri.query() {
+        Some(query) => format!("{}?{}", raw, query),
+        None => raw.to_string(),
+    };
+
     proxy(
         &state,
         &bucket,
-        &key,
-        uri.query(),
+        &raw_path_and_query,
         false,
         method,
         headers,

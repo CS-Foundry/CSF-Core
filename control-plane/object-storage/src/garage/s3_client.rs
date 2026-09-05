@@ -254,7 +254,13 @@ impl S3Client {
             .context("failed to build presign request")?;
         instructions.apply_to_request_http1x(&mut request);
 
-        Ok(request.uri().to_string())
+        let path_and_query = request
+            .uri()
+            .path_and_query()
+            .context("presigned uri has no path")?
+            .as_str();
+
+        Ok(format!("{}/s3data{}", self.public_s3_url, path_and_query))
     }
 }
 
