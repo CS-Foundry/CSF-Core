@@ -293,7 +293,14 @@ async fn ensure_iso_cached(workload_id: &str, iso_url: &str) -> Result<PathBuf> 
 
     info!(workload_id = %workload_id, "Downloading vm iso image");
 
-    let response = reqwest::get(iso_url)
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .context("Failed to build iso download client")?;
+
+    let response = client
+        .get(iso_url)
+        .send()
         .await
         .context("Failed to request iso image")?
         .error_for_status()
