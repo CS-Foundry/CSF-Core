@@ -2030,7 +2030,7 @@
                         {#snippet workloadRow(w: Workload, indented: boolean)}
                             <tr
                                 class="border-t hover:bg-muted/20 transition-colors cursor-pointer"
-                                onclick={() => openContainer(w)}
+                                onclick={() => w.runtime_class === "vm" ? goto(`/resource-groups/${rgId}/vm/${w.id}`) : openContainer(w)}
                             >
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2.5" class:ps-6={indented}>
