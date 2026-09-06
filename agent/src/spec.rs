@@ -28,6 +28,14 @@ pub struct WorkloadSpec {
     pub service_name: Option<String>,
     pub resource_group_id: Option<String>,
     pub resource_group_cidr: Option<String>,
+    pub vm_spec: Option<VmSpec>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VmSpec {
+    pub boot_disk_path: String,
+    pub boot_disk_size_bytes: i64,
+    pub iso_url: Option<String>,
 }
 
 pub fn rg_network_name(resource_group_id: &str) -> String {

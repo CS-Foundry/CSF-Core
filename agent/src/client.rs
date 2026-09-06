@@ -106,6 +106,9 @@ pub struct AssignedWorkload {
     pub resource_group_cidr: Option<String>,
     #[serde(default)]
     pub restart_requested: bool,
+    #[serde(default)]
+    pub runtime_class: String,
+    pub disk_bytes: i64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
