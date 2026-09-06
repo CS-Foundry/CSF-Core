@@ -106,21 +106,13 @@ async fn proxy(
     let reqwest_method =
         reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
 
-    let body_bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("failed to read request body: {}", e) })),
-        )
-    })?;
+    let body_stream = body.into_data_stream();
+    let request_body = reqwest::Body::wrap_stream(body_stream);
 
     let client = reqwest::Client::new();
-    let mut request = client.request(reqwest_method, &url).body(body_bytes);
+    let mut request = client.request(reqwest_method, &url).body(request_body);
 
     for (key, value) in headers.iter() {
-        let key_lower = key.as_str().to_lowercase();
-        if key_lower == "content-length" {
-            continue;
-        }
         if let Ok(value_str) = value.to_str() {
             request = request.header(key.as_str(), value_str);
         }
