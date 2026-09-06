@@ -1616,7 +1616,7 @@
         <div class="flex flex-col h-full">
             <div class="flex items-center justify-between px-6 py-4 border-b shrink-0 gap-4">
                 <div class="flex items-center gap-2.5 min-w-0">
-                    <Icon icon={resolveImageIcon(activeContainer.image)} width={20} height={20} class="shrink-0" />
+                    <Icon icon={activeContainer.runtime_class === "vm" ? "mdi:monitor" : resolveImageIcon(activeContainer.image)} width={20} height={20} class="shrink-0" />
                     <div class="min-w-0">
                         <h2 class="text-base font-semibold leading-tight truncate">{activeContainer.service_name ?? activeContainer.name}</h2>
                         <p class="text-xs text-muted-foreground font-mono truncate">{activeContainer.image}</p>
@@ -2035,13 +2035,13 @@
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2.5" class:ps-6={indented}>
                                         <div class="flex w-5 shrink-0 items-center justify-center">
-                                            <Icon icon={resolveImageIcon(w.image)} width={20} height={20} />
+                                            <Icon icon={w.runtime_class === "vm" ? "mdi:monitor" : resolveImageIcon(w.image)} width={20} height={20} />
                                         </div>
                                         <p class="font-medium leading-tight">{w.service_name ?? w.name}</p>
                                     </div>
                                 </td>
                                 <td class="px-4 py-3">
-                                    <span class="text-xs px-2 py-0.5 rounded border font-medium">Container</span>
+                                    <span class="text-xs px-2 py-0.5 rounded border font-medium">{w.runtime_class === "vm" ? "VM" : "Container"}</span>
                                 </td>
                                 <td class="px-4 py-3 text-xs text-muted-foreground font-mono">
                                     {w.assigned_agent_id ? w.assigned_agent_id.slice(0, 8) : "-"}
