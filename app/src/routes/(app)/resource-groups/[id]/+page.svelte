@@ -75,7 +75,7 @@
     let savingRgSettings = $state(false);
     let rgSettingsError = $state<string | null>(null);
 
-    let activeTab = $state<"all" | "container" | "volume" | "bucket">("all");
+    let activeTab = $state<"all" | "container" | "vm" | "volume" | "bucket">("all");
     let filterText = $state("");
 
     let nodeIpCache = $state<Record<string, string | null>>({});
@@ -846,6 +846,7 @@
 
     type ResourceItem =
         | { kind: "container"; data: Workload }
+        | { kind: "vm"; data: Workload }
         | { kind: "stack"; data: WorkloadStack }
         | { kind: "volume"; data: Volume }
         | { kind: "bucket"; data: Bucket };
@@ -876,7 +877,7 @@
         );
 
         return [
-            ...standalone.map((w): ResourceItem => ({ kind: "container", data: w })),
+            ...standalone.map((w): ResourceItem => ({ kind: w.runtime_class === "vm" ? "vm" : "container", data: w })),
             ...stackItems,
         ];
     }
@@ -889,12 +890,13 @@
 
     let filteredResources = $derived(
         allResources.filter((r) => {
-            if (activeTab === "container" && (r.kind === "volume" || r.kind === "bucket")) return false;
+            if (activeTab === "container" && r.kind !== "container" && r.kind !== "stack") return false;
+            if (activeTab === "vm" && r.kind !== "vm") return false;
             if (activeTab === "volume" && r.kind !== "volume") return false;
             if (activeTab === "bucket" && r.kind !== "bucket") return false;
             if (!filterText) return true;
             const q = filterText.toLowerCase();
-            if (r.kind === "container") {
+            if (r.kind === "container" || r.kind === "vm") {
                 return r.data.name.toLowerCase().includes(q) || r.data.image.toLowerCase().includes(q);
             }
             if (r.kind === "stack") {
@@ -1993,7 +1995,7 @@
         <div class="border rounded-lg overflow-hidden">
             <div class="px-4 py-3 border-b flex items-center justify-between gap-4 flex-wrap">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.length}`], ["volume", `Volume ${volumes.length}`], ["bucket", `Bucket ${buckets.length}`]] as [tab, label]}
+                    {#each [["all", `All ${allResources.length}`], ["container", `Container ${workloads.filter((w) => w.runtime_class !== "vm").length}`], ["vm", `VM ${workloads.filter((w) => w.runtime_class === "vm").length}`], ["volume", `Volume ${volumes.length}`], ["bucket", `Bucket ${buckets.length}`]] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {activeTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => (activeTab = tab as typeof activeTab)}
@@ -2099,7 +2101,7 @@
                             </tr>
                         {/snippet}
                         {#each filteredResources as item (item.kind + (item.kind === "stack" ? item.data.stack_id : item.data.id))}
-                            {#if item.kind === "container"}
+                            {#if item.kind === "container" || item.kind === "vm"}
                                 {@render workloadRow(item.data, false)}
                             {:else if item.kind === "stack"}
                                 {@const stack = item.data}
