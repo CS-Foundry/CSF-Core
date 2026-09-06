@@ -30,6 +30,7 @@ pub const POWER_TICKET_SCOPE: &str = "__power__";
 #[derive(Clone)]
 pub struct ServerState {
     pub firecracker: Arc<crate::firecracker::runtime::FirecrackerRuntime>,
+    pub qemu: Arc<crate::qemu::runtime::QemuRuntime>,
     pub running_containers: Arc<Mutex<HashMap<String, String>>>,
     pub agent_id: uuid::Uuid,
 }
@@ -38,6 +39,7 @@ pub async fn run(state: ServerState, port: u16) -> Result<()> {
     let app = Router::new()
         .route("/logs/{workload_id}", get(logs_handler))
         .route("/exec/{workload_id}", get(exec_handler))
+        .route("/vnc/{workload_id}", get(vnc_handler))
         .route("/metrics/stream", get(metrics_stream_handler))
         .route("/power", post(power_handler))
         .with_state(state);
@@ -289,6 +291,89 @@ async fn handle_exec_socket(socket: WebSocket, state: ServerState, container_id:
     }
 
     info!(container_id = %container_id, "exec session closed");
+}
+
+async fn vnc_handler(
+    State(state): State<ServerState>,
+    Path(workload_id): Path<String>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    if !is_internal_source(&addr) {
+        warn!(source = %addr, "rejected agent inbound request from non-internal source");
+        return Err((StatusCode::FORBIDDEN, "source not allowed".to_string()));
+    }
+
+    verify_ticket(&headers, &workload_id, &state.agent_id.to_string()).map_err(|e| {
+        warn!(workload_id = %workload_id, error = %e, "rejected request with invalid proxy ticket");
+        (StatusCode::UNAUTHORIZED, e.to_string())
+    })?;
+
+    let vnc_socket_path = state
+        .qemu
+        .vnc_socket_path(&workload_id)
+        .await
+        .ok_or((StatusCode::NOT_FOUND, "vm not running here".to_string()))?;
+
+    Ok(ws.on_upgrade(move |socket| handle_vnc_socket(socket, workload_id, vnc_socket_path)))
+}
+
+async fn handle_vnc_socket(
+    socket: WebSocket,
+    workload_id: String,
+    vnc_socket_path: std::path::PathBuf,
+) {
+    let stream = match tokio::net::UnixStream::connect(&vnc_socket_path).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            warn!(workload_id = %workload_id, error = %e, "failed to connect to vnc socket");
+            return;
+        }
+    };
+
+    let (mut vnc_read, mut vnc_write) = stream.into_split();
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    let output_task = tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        loop {
+            match vnc_read.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if ws_sink
+                        .send(Message::Binary(buf[..n].to_vec().into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let input_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            match msg {
+                Message::Binary(data) => {
+                    if vnc_write.write_all(&data).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = output_task => {}
+        _ = input_task => {}
+    }
+
+    info!(workload_id = %workload_id, "vnc session closed");
 }
 
 async fn metrics_stream_handler(

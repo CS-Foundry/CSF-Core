@@ -4,7 +4,9 @@ mod config;
 mod firecracker;
 mod nftables;
 mod pki;
+mod qemu;
 mod rbd;
+mod rg_dhcp;
 mod rg_dns;
 mod rg_dns_process;
 mod rg_ipam;
@@ -144,8 +146,16 @@ async fn main() -> Result<()> {
         Arc::clone(&rg_dns_registry),
     ));
 
+    let qemu_runtime = Arc::new(qemu::runtime::QemuRuntime::new(
+        wg_identity.private_key_b64.clone(),
+        Arc::clone(&rg_dns_registry),
+    ));
+
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
+
+    let vm_workload_ids: Arc<Mutex<std::collections::HashSet<String>>> =
+        Arc::new(Mutex::new(std::collections::HashSet::new()));
 
     let workload_phases: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -162,6 +172,7 @@ async fn main() -> Result<()> {
     {
         let server_state = server::ServerState {
             firecracker: firecracker_runtime.clone(),
+            qemu: qemu_runtime.clone(),
             running_containers: running_containers.clone(),
             agent_id,
         };
@@ -182,7 +193,9 @@ async fn main() -> Result<()> {
         &api_key,
         heartbeat_interval_secs,
         firecracker_runtime,
+        qemu_runtime,
         running_containers,
+        vm_workload_ids,
         workload_phases,
         mounted_volumes,
         restart_counts,
@@ -272,7 +285,9 @@ async fn reconcile_tick(
     agent_id: uuid::Uuid,
     api_key: &str,
     firecracker: &Arc<firecracker::runtime::FirecrackerRuntime>,
+    qemu: &Arc<qemu::runtime::QemuRuntime>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    vm_workload_ids: &Arc<Mutex<std::collections::HashSet<String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
@@ -286,7 +301,9 @@ async fn reconcile_tick(
         client,
         api_key,
         firecracker,
+        qemu,
         running_containers,
+        vm_workload_ids,
         workload_phases,
         mounted_volumes,
         restart_counts,
@@ -297,7 +314,8 @@ async fn reconcile_tick(
     sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
     sync_vpn_peers(client, api_key, &resource_group_ids).await;
     firecracker.check_dns_liveness().await;
-    cleanup_stale_resource_groups(client, api_key, firecracker).await;
+    qemu.check_dhcp_liveness().await;
+    cleanup_stale_resource_groups(client, api_key, firecracker, qemu).await;
 
     let statuses = build_container_statuses(firecracker, running_containers, workload_phases).await;
     push_workload_stats(client, api_key, firecracker, running_containers).await;
@@ -353,13 +371,16 @@ async fn reconcile_tick(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 async fn run_heartbeat_loop(
     client: &client::ApiClient,
     agent_id: uuid::Uuid,
     api_key: &str,
     interval_secs: u64,
     firecracker: Arc<firecracker::runtime::FirecrackerRuntime>,
+    qemu: Arc<qemu::runtime::QemuRuntime>,
     running_containers: Arc<Mutex<HashMap<String, String>>>,
+    vm_workload_ids: Arc<Mutex<std::collections::HashSet<String>>>,
     workload_phases: Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: Arc<Mutex<HashMap<String, String>>>,
     restart_counts: Arc<Mutex<HashMap<String, u32>>>,
@@ -374,7 +395,7 @@ async fn run_heartbeat_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                reconcile_tick(client, agent_id, api_key, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &firecracker, &qemu, &running_containers, &vm_workload_ids, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
             }
             signal = assignment_signal.recv() => {
                 if signal.is_none() {
@@ -383,7 +404,7 @@ async fn run_heartbeat_loop(
                 }
                 info!(agent_id = %agent_id, "assignment push received, reconciling immediately");
                 interval.reset();
-                reconcile_tick(client, agent_id, api_key, &firecracker, &running_containers, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
+                reconcile_tick(client, agent_id, api_key, &firecracker, &qemu, &running_containers, &vm_workload_ids, &workload_phases, &mounted_volumes, &restart_counts, &service_dns_registry, &rg_dns_registry, &mut failure_count, &mut current_flake_rev).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutdown signal received");
@@ -440,9 +461,10 @@ async fn process_volumes(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 async fn reap_stale_containers(
-    docker: &dyn runtime::Runtime,
+    firecracker: &dyn runtime::Runtime,
+    qemu: &dyn runtime::Runtime,
+    vm_workload_ids: &Arc<Mutex<std::collections::HashSet<String>>>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
@@ -464,7 +486,10 @@ async fn reap_stale_containers(
     for (workload_id, container_id) in stale {
         info!(workload_id = %workload_id, container_id = %container_id, "Tearing down removed workload");
 
-        if let Err(e) = docker.stop_workload(&container_id).await {
+        let is_vm = vm_workload_ids.lock().await.contains(&workload_id);
+        let runtime = if is_vm { qemu } else { firecracker };
+
+        if let Err(e) = runtime.stop_workload(&container_id).await {
             warn!(workload_id = %workload_id, container_id = %container_id, error = %e, "Failed to tear down container");
             continue;
         }
@@ -472,6 +497,7 @@ async fn reap_stale_containers(
         running_containers.lock().await.remove(&workload_id);
         workload_phases.lock().await.remove(&workload_id);
         restart_counts.lock().await.remove(&workload_id);
+        vm_workload_ids.lock().await.remove(&workload_id);
 
         let dns_entry = service_dns_registry.lock().await.remove(&workload_id);
         if let Some((resource_group_id, service_name)) = dns_entry {
@@ -534,7 +560,9 @@ async fn process_workloads(
     client: &client::ApiClient,
     api_key: &str,
     firecracker: &Arc<firecracker::runtime::FirecrackerRuntime>,
+    qemu: &Arc<qemu::runtime::QemuRuntime>,
     running_containers: &Arc<Mutex<HashMap<String, String>>>,
+    vm_workload_ids: &Arc<Mutex<std::collections::HashSet<String>>>,
     workload_phases: &Arc<Mutex<HashMap<String, String>>>,
     mounted_volumes: &Arc<Mutex<HashMap<String, String>>>,
     restart_counts: &Arc<Mutex<HashMap<String, u32>>>,
@@ -567,8 +595,21 @@ async fn process_workloads(
         }
     }
 
+    {
+        let mut vm_ids = vm_workload_ids.lock().await;
+        vm_ids.clear();
+        vm_ids.extend(
+            workloads
+                .iter()
+                .filter(|w| w.runtime_class == "vm")
+                .map(|w| w.id.clone()),
+        );
+    }
+
     reap_stale_containers(
         firecracker.as_ref(),
+        qemu.as_ref(),
+        vm_workload_ids,
         running_containers,
         workload_phases,
         restart_counts,
@@ -580,9 +621,14 @@ async fn process_workloads(
 
     for workload in workloads {
         let workload_id = workload.id.clone();
+        let runtime: &dyn runtime::Runtime = if workload.runtime_class == "vm" {
+            qemu.as_ref()
+        } else {
+            firecracker.as_ref()
+        };
 
         let restart_fulfilled = start_or_restart_workload(
-            firecracker.as_ref(),
+            runtime,
             workload,
             running_containers,
             workload_phases,
@@ -671,6 +717,16 @@ async fn start_or_restart_workload(
 
     let volume_devices = mounted_volumes.lock().await.clone();
 
+    let vm_spec = if workload.runtime_class == "vm" {
+        Some(spec::VmSpec {
+            boot_disk_path: qemu::runtime::boot_disk_path(&workload.id),
+            boot_disk_size_bytes: workload.disk_bytes,
+            iso_url: Some(workload.image.clone()),
+        })
+    } else {
+        None
+    };
+
     let spec = spec::WorkloadSpec {
         workload_id: workload.id.clone(),
         image: workload.image.clone(),
@@ -694,6 +750,7 @@ async fn start_or_restart_workload(
         service_name: workload.service_name,
         resource_group_id: workload.resource_group_id,
         resource_group_cidr: workload.resource_group_cidr,
+        vm_spec,
     };
 
     match runtime.start_workload(&spec).await {
@@ -847,6 +904,7 @@ async fn cleanup_stale_resource_groups(
     client: &client::ApiClient,
     api_key: &str,
     firecracker: &firecracker::runtime::FirecrackerRuntime,
+    qemu: &qemu::runtime::QemuRuntime,
 ) {
     let active_ids = match client.fetch_active_resource_group_ids(api_key).await {
         Ok(ids) => ids,
@@ -856,17 +914,10 @@ async fn cleanup_stale_resource_groups(
         }
     };
 
-    cleanup_stale_firecracker_resource_groups(&active_ids, firecracker).await;
-}
-
-async fn cleanup_stale_firecracker_resource_groups(
-    active_ids: &[String],
-    firecracker: &firecracker::runtime::FirecrackerRuntime,
-) {
     let local_ids = match rg_network::list_rg_ids().await {
         Ok(ids) => ids,
         Err(e) => {
-            warn!(error = %e, "Failed to list local firecracker resource group bridges");
+            warn!(error = %e, "Failed to list local resource group bridges");
             return;
         }
     };
@@ -876,10 +927,13 @@ async fn cleanup_stale_firecracker_resource_groups(
             continue;
         }
 
-        info!(resource_group_id = %local_id, "Tearing down stale firecracker resource group network");
+        info!(resource_group_id = %local_id, "Tearing down stale resource group network");
 
         if let Err(e) = firecracker.teardown_rg_network(&local_id).await {
             warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale firecracker resource group network");
+        }
+        if let Err(e) = qemu.teardown_rg_network(&local_id).await {
+            warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale qemu resource group network");
         }
     }
 }

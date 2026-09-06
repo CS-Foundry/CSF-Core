@@ -161,7 +161,7 @@ const SELF_REGISTER_MAX_ATTEMPTS: u32 = 60;
 fn available_capacity_bytes(data_dir: &str) -> Option<i64> {
     match nix::sys::statvfs::statvfs(data_dir) {
         Ok(stats) => {
-            let bytes = stats.blocks_available() as u64 * stats.fragment_size() as u64;
+            let bytes = stats.blocks_available() * stats.fragment_size();
             Some(bytes as i64)
         }
         Err(e) => {

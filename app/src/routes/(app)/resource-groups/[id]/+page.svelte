@@ -29,6 +29,8 @@
         createBucketKey,
         streamWorkloadLogs,
         openWorkloadExecSocket,
+        ensureIsoBucket,
+        uploadIso,
         type ResourceGroup,
         type Workload,
         type Volume,
@@ -49,6 +51,7 @@
     import { Button } from "$lib/components/ui/button/index.js";
     import IconPicker from "$lib/components/icon-picker.svelte";
     import StatusBadge from "$lib/components/status-badge.svelte";
+    import VncConsole from "$lib/components/vnc-console.svelte";
     import { isTransientStatus } from "$lib/utils/status.js";
 
     const rgId: string = $page.params.id;
@@ -124,6 +127,7 @@
     const RESOURCE_TYPES = [
         { key: "docker-container", label: "Docker Container", description: "Deploy a single container", icon: "logos:docker-icon" },
         { key: "docker-compose", label: "Docker Compose", description: "Deploy multiple related containers as one stack", icon: "logos:docker-icon" },
+        { key: "vm", label: "Virtual Machine", description: "Boot a full VM from an ISO image", icon: "mdi:monitor" },
         { key: "volume", label: "Volume", description: "Add a block storage volume", icon: "mdi:database-outline" },
         { key: "bucket", label: "S3 Bucket", description: "Add an S3-compatible object storage bucket", icon: "fluent-emoji-high-contrast:bucket" },
     ] as const;
@@ -138,6 +142,16 @@
         { containerPort: string; rgPort: string; nodePort: string; protocol: "tcp" | "udp" }[]
     >([]);
     let formVolumeMounts = $state("");
+
+    let vmDialog = $state<HTMLDialogElement | null>(null);
+    let vmFormName = $state("");
+    let vmFormCpu = $state("2000");
+    let vmFormMemory = $state("2048");
+    let vmFormDisk = $state("20480");
+    let vmFormIsoFile = $state<File | null>(null);
+    let vmDeploying = $state(false);
+    let vmUploadProgress = $state(0);
+    let vmError = $state<string | null>(null);
 
     let composeStackName = $state("");
     let composeYaml = $state("");
@@ -380,10 +394,60 @@
             deployDialog?.showModal();
         } else if (key === "docker-compose") {
             composeDialog?.showModal();
+        } else if (key === "vm") {
+            vmDialog?.showModal();
         } else if (key === "volume") {
             volumeDialog?.showModal();
         } else {
             bucketDialog?.showModal();
+        }
+    }
+
+    function resetVmForm() {
+        vmFormName = "";
+        vmFormCpu = "2000";
+        vmFormMemory = "2048";
+        vmFormDisk = "20480";
+        vmFormIsoFile = null;
+        vmUploadProgress = 0;
+        vmError = null;
+    }
+
+    function handleVmIsoFileChange(event: Event) {
+        const input = event.target as HTMLInputElement;
+        vmFormIsoFile = input.files?.[0] ?? null;
+    }
+
+    async function handleDeployVm() {
+        if (!auth.token || !vmFormName || !vmFormIsoFile) return;
+        vmDeploying = true;
+        vmUploadProgress = 0;
+        vmError = null;
+        try {
+            const bucket = await ensureIsoBucket(auth.token, rgId);
+            const isoUrl = await uploadIso(auth.token, bucket.id, vmFormIsoFile, (fraction) => {
+                vmUploadProgress = fraction;
+            });
+
+            await createWorkload(auth.token, {
+                name: vmFormName,
+                image: isoUrl,
+                cpu_millicores: parseInt(vmFormCpu),
+                memory_bytes: parseInt(vmFormMemory) * 1024 * 1024,
+                disk_bytes: parseInt(vmFormDisk) * 1024 * 1024,
+                env_vars: null,
+                ports: null,
+                volume_mounts: null,
+                resource_group_id: rgId,
+                runtime_class: "vm",
+            });
+            vmDialog?.close();
+            resetVmForm();
+            workloads = await listResourceGroupWorkloads(auth.token, rgId);
+        } catch (e) {
+            vmError = e instanceof Error ? e.message : "Failed to deploy vm";
+        } finally {
+            vmDeploying = false;
         }
     }
 
@@ -498,12 +562,16 @@
 
     function openContainer(workload: Workload) {
         activeContainer = workload;
-        containerDialogTab = "logs";
         containerActionError = null;
         containerDialog?.showModal();
-        startLogsStream(workload);
         resolveNodeIp(workload.assigned_agent_id);
         loadSettingsForm(workload);
+        if (workload.runtime_class === "vm") {
+            containerDialogTab = "shell";
+        } else {
+            containerDialogTab = "logs";
+            startLogsStream(workload);
+        }
     }
 
     function closeContainer() {
@@ -515,14 +583,15 @@
 
     function switchTab(tab: "logs" | "shell" | "insights" | "network" | "settings") {
         if (containerDialogTab === tab || !activeContainer) return;
+        const isVm = activeContainer.runtime_class === "vm";
 
         if (containerDialogTab === "logs") stopLogsStream();
-        if (containerDialogTab === "shell") stopExecSession();
+        if (containerDialogTab === "shell" && !isVm) stopExecSession();
 
         containerDialogTab = tab;
 
         if (tab === "logs") startLogsStream(activeContainer);
-        if (tab === "shell") startExecSession(activeContainer);
+        if (tab === "shell" && !isVm) startExecSession(activeContainer);
     }
 
     async function startLogsStream(workload: Workload) {
@@ -1113,6 +1182,71 @@
 </dialog>
 
 <dialog
+    bind:this={vmDialog}
+    class="fixed inset-0 z-50 m-auto w-full max-w-lg rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
+    onclose={() => resetVmForm()}
+>
+    <div class="flex flex-col gap-5 p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold">Deploy Virtual Machine</h2>
+            <button
+                class="flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onclick={() => vmDialog?.close()}
+                aria-label="Close"
+                title="Close"
+            >
+                <Icon icon="mdi:close" width={18} height={18} />
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1 sm:col-span-2">
+                <label class="text-xs text-muted-foreground" for="vm-name">Name</label>
+                <input id="vm-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-vm" bind:value={vmFormName} />
+            </div>
+            <div class="flex flex-col gap-1 sm:col-span-2">
+                <label class="text-xs text-muted-foreground" for="vm-iso">ISO Image</label>
+                <input
+                    id="vm-iso"
+                    type="file"
+                    accept=".iso"
+                    class="border rounded px-3 py-1.5 text-sm bg-background file:mr-3 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+                    onchange={handleVmIsoFileChange}
+                />
+                {#if vmDeploying && vmFormIsoFile}
+                    <div class="h-1.5 rounded-full bg-muted overflow-hidden mt-1">
+                        <div class="h-full bg-primary transition-all" style="width: {Math.round(vmUploadProgress * 100)}%"></div>
+                    </div>
+                {/if}
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="vm-cpu">CPU (millicores)</label>
+                <input id="vm-cpu" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2000" bind:value={vmFormCpu} />
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted-foreground" for="vm-mem">Memory (MB)</label>
+                <input id="vm-mem" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2048" bind:value={vmFormMemory} />
+            </div>
+            <div class="flex flex-col gap-1 sm:col-span-2">
+                <label class="text-xs text-muted-foreground" for="vm-disk">Disk (MB)</label>
+                <input id="vm-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="20480" bind:value={vmFormDisk} />
+            </div>
+        </div>
+        <p class="text-xs text-muted-foreground">
+            The ISO boots on first start. Open the console after deploying to complete the installation.
+        </p>
+        {#if vmError}
+            <p class="text-xs text-destructive">{vmError}</p>
+        {/if}
+        <div class="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onclick={() => vmDialog?.close()}>Cancel</Button>
+            <Button size="sm" onclick={handleDeployVm} disabled={vmDeploying || !vmFormName || !vmFormIsoFile}>
+                {vmDeploying ? "Deploying..." : "Deploy"}
+            </Button>
+        </div>
+    </div>
+</dialog>
+
+<dialog
     bind:this={resourcePickerDialog}
     class="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border bg-background shadow-xl p-0 backdrop:bg-black/40"
 >
@@ -1533,7 +1667,7 @@
             {/if}
             <div class="px-6 py-2 border-b shrink-0">
                 <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
-                    {#each [["logs", "Logs"], ["shell", "Shell"], ["insights", "Performance"], ["network", "Network"], ...(activeContainer.stack_id ? [] : [["settings", "Settings"]])] as [tab, label]}
+                    {#each [...(activeContainer.runtime_class === "vm" ? [] : [["logs", "Logs"]]), ["shell", activeContainer.runtime_class === "vm" ? "Console" : "Shell"], ["insights", "Performance"], ["network", "Network"], ...(activeContainer.stack_id ? [] : [["settings", "Settings"]])] as [tab, label]}
                         <button
                             class="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 {containerDialogTab === tab ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                             onclick={() => switchTab(tab as typeof containerDialogTab)}
@@ -1553,6 +1687,14 @@
                             <p class="whitespace-pre-wrap">{line}</p>
                         {/each}
                     </div>
+                {:else if containerDialogTab === "shell" && activeContainer.runtime_class === "vm"}
+                    {#if activeContainer.status !== "running" || !auth.token}
+                        <p class="p-4 text-xs text-muted-foreground">Console is only available while the vm is running.</p>
+                    {:else}
+                        {#key activeContainer.id}
+                            <VncConsole token={auth.token} workloadId={activeContainer.id} />
+                        {/key}
+                    {/if}
                 {:else if containerDialogTab === "shell"}
                     <div class="flex flex-col h-full">
                         {#if activeContainer.status !== "running"}

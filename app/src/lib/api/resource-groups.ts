@@ -115,6 +115,7 @@ export interface Workload {
     restart_policy: string;
     max_restarts: number | null;
     restart_count: number;
+    runtime_class: 'firecracker' | 'vm';
     desired_state: string;
     cpu_usage_percent: number | null;
     memory_usage_bytes: number | null;
@@ -137,6 +138,7 @@ export interface CreateWorkloadRequest {
     resource_group_id: string;
     restart_policy?: 'always' | 'on-failure' | 'never';
     max_restarts?: number | null;
+    runtime_class?: 'firecracker' | 'vm';
 }
 
 export interface UpdateWorkloadRequest {
@@ -418,6 +420,21 @@ export async function openWorkloadExecSocket(token: string, id: string): Promise
     return new WebSocket(url);
 }
 
+export async function getWorkloadVncUrl(token: string, id: string): Promise<string> {
+    const res = await authedFetch(`${API_BASE}/workloads/${id}/vnc/ticket`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.status }));
+        throw new Error(err.error ?? `Failed to issue vnc ticket: ${res.status}`);
+    }
+    const { ticket } = await res.json();
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProtocol}//${window.location.host}${API_BASE}/workloads/${id}/vnc?ticket=${encodeURIComponent(ticket)}`;
+}
+
 export async function listResourceGroupVolumes(token: string, rgId: string): Promise<Volume[]> {
     const res = await authedFetch(`${API_BASE}/resource-groups/${rgId}/volumes`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -596,6 +613,47 @@ export async function presignObjectUpload(
         throw new Error(err.error ?? `Failed to presign upload: ${res.status}`);
     }
     return res.json();
+}
+
+const ISO_BUCKET_NAME = 'vm-isos';
+
+export async function ensureIsoBucket(token: string, rgId: string): Promise<Bucket> {
+    const buckets = await listResourceGroupBuckets(token, rgId);
+    const existing = buckets.find((b) => b.name === ISO_BUCKET_NAME);
+    if (existing) return existing;
+
+    return createBucket(token, {
+        name: ISO_BUCKET_NAME,
+        resource_group_id: rgId,
+        exposure: 'internal',
+    });
+}
+
+export async function uploadIso(
+    token: string,
+    bucketId: string,
+    file: File,
+    onProgress?: (fraction: number) => void
+): Promise<string> {
+    const key = `${crypto.randomUUID()}-${file.name}`;
+    const { url } = await presignObjectUpload(token, bucketId, key);
+
+    await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', url);
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Failed to upload iso: ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('Failed to upload iso'));
+        xhr.send(file);
+    });
+
+    const { url: downloadUrl } = await presignObjectDownload(token, bucketId, key);
+    return downloadUrl;
 }
 
 export async function presignObjectDownload(
