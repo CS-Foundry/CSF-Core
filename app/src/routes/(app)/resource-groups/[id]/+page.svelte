@@ -148,9 +148,23 @@
 
     let vmDialog = $state<HTMLDialogElement | null>(null);
     let vmFormName = $state("");
-    let vmFormCpu = $state("2000");
-    let vmFormMemory = $state("2048");
-    let vmFormDisk = $state("20480");
+    let vmFormVcpus = $state("2");
+    let vmFormMemoryGb = $state("2");
+    let vmFormDiskGb = $state("20");
+    let vmFormAdvanced = $state(false);
+    let vmFormCpuMillicores = $state("2000");
+    let vmFormMemoryMb = $state("2048");
+    let vmFormDiskMb = $state("20480");
+
+    let vmEffectiveCpuMillicores = $derived(
+        vmFormAdvanced ? parseInt(vmFormCpuMillicores) || 0 : (parseInt(vmFormVcpus) || 0) * 1000
+    );
+    let vmEffectiveMemoryMb = $derived(
+        vmFormAdvanced ? parseInt(vmFormMemoryMb) || 0 : (parseInt(vmFormMemoryGb) || 0) * 1024
+    );
+    let vmEffectiveDiskMb = $derived(
+        vmFormAdvanced ? parseInt(vmFormDiskMb) || 0 : (parseInt(vmFormDiskGb) || 0) * 1024
+    );
     let vmFormIsoFile = $state<File | null>(null);
     let vmIsoMode = $state<"existing" | "upload">("upload");
     let vmExistingIsos = $state<ObjectEntry[]>([]);
@@ -440,9 +454,13 @@
 
     function resetVmForm() {
         vmFormName = "";
-        vmFormCpu = "2000";
-        vmFormMemory = "2048";
-        vmFormDisk = "20480";
+        vmFormVcpus = "2";
+        vmFormMemoryGb = "2";
+        vmFormDiskGb = "20";
+        vmFormAdvanced = false;
+        vmFormCpuMillicores = "2000";
+        vmFormMemoryMb = "2048";
+        vmFormDiskMb = "20480";
         vmFormIsoFile = null;
         vmIsoMode = "upload";
         vmExistingIsos = [];
@@ -479,9 +497,9 @@
             await createWorkload(auth.token, {
                 name: vmFormName,
                 image: isoUrl,
-                cpu_millicores: parseInt(vmFormCpu),
-                memory_bytes: parseInt(vmFormMemory) * 1024 * 1024,
-                disk_bytes: parseInt(vmFormDisk) * 1024 * 1024,
+                cpu_millicores: vmEffectiveCpuMillicores,
+                memory_bytes: vmEffectiveMemoryMb * 1024 * 1024,
+                disk_bytes: vmEffectiveDiskMb * 1024 * 1024,
                 env_vars: null,
                 ports: null,
                 volume_mounts: null,
@@ -1301,17 +1319,41 @@
                     {/if}
                 {/if}
             </div>
-            <div class="flex flex-col gap-1">
-                <label class="text-xs text-muted-foreground" for="vm-cpu">CPU (millicores)</label>
-                <input id="vm-cpu" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2000" bind:value={vmFormCpu} />
-            </div>
-            <div class="flex flex-col gap-1">
-                <label class="text-xs text-muted-foreground" for="vm-mem">Memory (MB)</label>
-                <input id="vm-mem" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2048" bind:value={vmFormMemory} />
-            </div>
-            <div class="flex flex-col gap-1 sm:col-span-2">
-                <label class="text-xs text-muted-foreground" for="vm-disk">Disk (MB)</label>
-                <input id="vm-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="20480" bind:value={vmFormDisk} />
+            {#if vmFormAdvanced}
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted-foreground" for="vm-cpu">CPU (millicores)</label>
+                    <input id="vm-cpu" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2000" bind:value={vmFormCpuMillicores} />
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted-foreground" for="vm-mem">Memory (MB)</label>
+                    <input id="vm-mem" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2048" bind:value={vmFormMemoryMb} />
+                </div>
+                <div class="flex flex-col gap-1 sm:col-span-2">
+                    <label class="text-xs text-muted-foreground" for="vm-disk">Disk (MB)</label>
+                    <input id="vm-disk" type="number" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="20480" bind:value={vmFormDiskMb} />
+                </div>
+            {:else}
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted-foreground" for="vm-vcpus">vCPUs</label>
+                    <input id="vm-vcpus" type="number" min="1" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2" bind:value={vmFormVcpus} />
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted-foreground" for="vm-mem-gb">Memory (GB)</label>
+                    <input id="vm-mem-gb" type="number" min="1" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="2" bind:value={vmFormMemoryGb} />
+                </div>
+                <div class="flex flex-col gap-1 sm:col-span-2">
+                    <label class="text-xs text-muted-foreground" for="vm-disk-gb">Disk (GB)</label>
+                    <input id="vm-disk-gb" type="number" min="1" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="20" bind:value={vmFormDiskGb} />
+                </div>
+            {/if}
+            <div class="sm:col-span-2">
+                <button
+                    type="button"
+                    class="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+                    onclick={() => (vmFormAdvanced = !vmFormAdvanced)}
+                >
+                    {vmFormAdvanced ? "Use simple units" : "Advanced (millicores / MB)"}
+                </button>
             </div>
         </div>
         <p class="text-xs text-muted-foreground">
