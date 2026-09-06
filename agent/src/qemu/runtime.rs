@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -17,6 +18,14 @@ const VNC_SOCKET_NAME: &str = "vnc.sock";
 
 fn qemu_bin_path() -> String {
     std::env::var("CSFX_QEMU_BIN_PATH").unwrap_or_else(|_| DEFAULT_QEMU_BIN_PATH.to_string())
+}
+
+fn process_uid() -> u32 {
+    unsafe { libc::getuid() }
+}
+
+fn process_gid() -> u32 {
+    unsafe { libc::getgid() }
 }
 
 fn vm_dir(workload_id: &str) -> PathBuf {
@@ -63,6 +72,7 @@ pub struct QemuRuntime {
     rg_dns_registry: Arc<crate::rg_dns::RgDnsRegistry>,
     dhcp_supervisor: RgDhcpSupervisor,
     handles: Mutex<HashMap<String, VmHandle>>,
+    reconciled: AtomicBool,
 }
 
 impl QemuRuntime {
@@ -75,6 +85,7 @@ impl QemuRuntime {
             rg_dns_registry,
             dhcp_supervisor: RgDhcpSupervisor::new(),
             handles: Mutex::new(HashMap::new()),
+            reconciled: AtomicBool::new(false),
         }
     }
 
@@ -88,6 +99,23 @@ impl QemuRuntime {
 
     pub async fn check_dhcp_liveness(&self) {
         self.dhcp_supervisor.check_liveness().await;
+    }
+
+    pub async fn reconcile_once(&self) -> Vec<(String, String)> {
+        if self.reconciled.swap(true, Ordering::SeqCst) {
+            return Vec::new();
+        }
+
+        match crate::runtime::Runtime::list_managed_workloads(self).await {
+            Ok(recovered) => {
+                info!(count = recovered.len(), "Reconciled running vms from disk state");
+                recovered
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to reconcile qemu workloads from disk state");
+                Vec::new()
+            }
+        }
     }
 
     async fn ensure_rg_network(
@@ -154,6 +182,15 @@ impl crate::runtime::Runtime for QemuRuntime {
             .await
             .context("Failed to create vm state directory")?;
 
+        write_sidecar_metadata(
+            &dir,
+            &VmSidecarMetadata {
+                resource_group_id: spec.resource_group_id.clone(),
+            },
+        )
+        .await
+        .context("Failed to write vm sidecar metadata")?;
+
         ensure_boot_disk(&vm_spec.boot_disk_path, vm_spec.boot_disk_size_bytes).await?;
 
         let iso_path = match &vm_spec.iso_url {
@@ -198,7 +235,7 @@ impl crate::runtime::Runtime for QemuRuntime {
         }
 
         let tap_device = format!("{}{}", TAP_DEVICE_PREFIX, short_id(&spec.workload_id));
-        create_tap_device(&tap_device, bridge_iface.as_deref()).await?;
+        create_tap_device(&tap_device, bridge_iface.as_deref(), process_uid()).await?;
 
         let qmp_socket_path = dir.join(QMP_SOCKET_NAME);
         let vnc_socket_path = dir.join(VNC_SOCKET_NAME);
@@ -291,6 +328,81 @@ impl crate::runtime::Runtime for QemuRuntime {
     async fn stats(&self, _workload_handle: &str) -> Result<crate::runtime::ContainerStats> {
         Ok(crate::runtime::ContainerStats::default())
     }
+
+    async fn list_managed_workloads(&self) -> Result<Vec<(String, String)>> {
+        let mut entries = match tokio::fs::read_dir(VM_STATE_DIR).await {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e).context("Failed to read vm state directory"),
+        };
+
+        let mut recovered = Vec::new();
+
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .context("Failed to read vm state directory entry")?
+        {
+            let dir = entry.path();
+            let Some(workload_id) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+
+            if !is_unit_active(&unit_name(&workload_id)).await {
+                continue;
+            }
+
+            let sidecar = read_sidecar_metadata(&dir).await;
+
+            let handle = VmHandle {
+                workload_id: workload_id.clone(),
+                tap_device: format!("{}{}", TAP_DEVICE_PREFIX, short_id(&workload_id)),
+                qmp_socket_path: dir.join(QMP_SOCKET_NAME),
+                vnc_socket_path: dir.join(VNC_SOCKET_NAME),
+                resource_group_id: sidecar.and_then(|s| s.resource_group_id),
+            };
+
+            self.handles
+                .lock()
+                .await
+                .insert(workload_id.clone(), handle);
+
+            recovered.push((workload_id.clone(), workload_id));
+        }
+
+        Ok(recovered)
+    }
+}
+
+async fn is_unit_active(unit: &str) -> bool {
+    let output = Command::new("systemctl")
+        .args(["is-active", unit])
+        .output()
+        .await;
+
+    matches!(output, Ok(output) if output.stdout.starts_with(b"active"))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct VmSidecarMetadata {
+    resource_group_id: Option<String>,
+}
+
+fn sidecar_metadata_path(dir: &Path) -> PathBuf {
+    dir.join("csfx-meta.json")
+}
+
+async fn write_sidecar_metadata(dir: &Path, metadata: &VmSidecarMetadata) -> Result<()> {
+    let payload = serde_json::to_vec(metadata).context("Failed to serialize sidecar metadata")?;
+    tokio::fs::write(sidecar_metadata_path(dir), payload)
+        .await
+        .context("Failed to write sidecar metadata file")?;
+    Ok(())
+}
+
+async fn read_sidecar_metadata(dir: &Path) -> Option<VmSidecarMetadata> {
+    let content = tokio::fs::read(sidecar_metadata_path(dir)).await.ok()?;
+    serde_json::from_slice(&content).ok()
 }
 
 async fn ensure_iso_cached(workload_id: &str, iso_url: &str) -> Result<PathBuf> {
@@ -355,15 +467,25 @@ async fn ensure_boot_disk(path: &str, size_bytes: i64) -> Result<()> {
     Ok(())
 }
 
-async fn create_tap_device(tap_device: &str, bridge_iface: Option<&str>) -> Result<()> {
-    let status = Command::new("ip")
-        .args(["tuntap", "add", "dev", tap_device, "mode", "tap"])
-        .status()
+async fn create_tap_device(
+    tap_device: &str,
+    bridge_iface: Option<&str>,
+    owner_uid: u32,
+) -> Result<()> {
+    let uid_arg = owner_uid.to_string();
+    let output = Command::new("ip")
+        .args([
+            "tuntap", "add", "dev", tap_device, "mode", "tap", "user", &uid_arg,
+        ])
+        .output()
         .await
         .context("Failed to execute ip tuntap add")?;
 
-    if !status.success() {
-        anyhow::bail!("failed to create tap device {}", tap_device);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.contains("File exists") {
+            anyhow::bail!("failed to create tap device {}: {}", tap_device, stderr);
+        }
     }
 
     if let Some(bridge) = bridge_iface {
@@ -436,8 +558,13 @@ async fn spawn_vm(
         mem_size_mib.to_string(),
         "-drive".to_string(),
         format!("file={},format=raw,if=virtio", vm_spec.boot_disk_path),
+        "-display".to_string(),
+        "none".to_string(),
         "-vga".to_string(),
-        "virtio".to_string(),
+        "std".to_string(),
+        "-usb".to_string(),
+        "-device".to_string(),
+        "usb-tablet".to_string(),
         "-netdev".to_string(),
         format!("tap,id=net0,ifname={},script=no,downscript=no", tap_device),
         "-device".to_string(),
@@ -457,11 +584,17 @@ async fn spawn_vm(
 
     debug!(workload_id = %workload_id, args = ?args, stage = "spawn_vm", "Launching qemu-system-x86_64");
 
+    let uid_arg = format!("--uid={}", process_uid());
+    let gid_arg = format!("--gid={}", process_gid());
+
     let status = Command::new("systemd-run")
         .args([
             "--unit",
             &unit_name(workload_id),
             "--collect",
+            &uid_arg,
+            &gid_arg,
+            "--property=SupplementaryGroups=kvm",
             "--property=StandardOutput=journal",
             "--property=StandardError=journal",
             &qemu_bin,

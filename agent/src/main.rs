@@ -588,9 +588,10 @@ async fn process_workloads(
     };
 
     let recovered_microvms = firecracker.reconcile_once().await;
-    if !recovered_microvms.is_empty() {
+    let recovered_vms = qemu.reconcile_once().await;
+    if !recovered_microvms.is_empty() || !recovered_vms.is_empty() {
         let mut containers = running_containers.lock().await;
-        for (workload_id, handle) in recovered_microvms {
+        for (workload_id, handle) in recovered_microvms.into_iter().chain(recovered_vms) {
             containers.insert(workload_id, handle);
         }
     }
