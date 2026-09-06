@@ -174,7 +174,10 @@ pub async fn proxy_object_data(
     headers: HeaderMap,
     body: Body,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let raw = uri.path().strip_prefix("/s3data").unwrap_or_else(|| uri.path());
+    let raw = uri
+        .path()
+        .strip_prefix("/s3data")
+        .unwrap_or_else(|| uri.path());
     let raw_path_and_query = match uri.query() {
         Some(query) => format!("{}?{}", raw, query),
         None => raw.to_string(),
