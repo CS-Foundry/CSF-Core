@@ -82,6 +82,10 @@ services:
       FRONTEND_URL: http://localhost:5173
       CSFX_INCLUDE_CONTAINERS: "true"
       TLS_ENABLED: "false"
+      RATE_LIMIT_PER_SECOND: "100000"
+      RATE_LIMIT_BURST: "100000"
+      LOGIN_RATE_LIMIT_PER_SECOND: "1000"
+      LOGIN_RATE_LIMIT_BURST: "1000"
     ports:
       - "8000:8000"
     depends_on:
