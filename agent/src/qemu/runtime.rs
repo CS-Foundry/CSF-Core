@@ -38,8 +38,16 @@ fn unit_name(workload_id: &str) -> String {
     format!("csfx-qemu-{}", short_id(workload_id))
 }
 
+const TAP_DEVICE_PREFIX: &str = "qtap";
+const MAX_LINUX_IFNAME_LEN: usize = 15;
+
 fn short_id(workload_id: &str) -> String {
-    workload_id.chars().filter(|c| *c != '-').take(12).collect()
+    let max_len = MAX_LINUX_IFNAME_LEN - TAP_DEVICE_PREFIX.len();
+    workload_id
+        .chars()
+        .filter(|c| *c != '-')
+        .take(max_len)
+        .collect()
 }
 
 struct VmHandle {
@@ -189,7 +197,7 @@ impl crate::runtime::Runtime for QemuRuntime {
                 .context("Failed to register resource group dhcp reservation")?;
         }
 
-        let tap_device = format!("qtap{}", short_id(&spec.workload_id));
+        let tap_device = format!("{}{}", TAP_DEVICE_PREFIX, short_id(&spec.workload_id));
         create_tap_device(&tap_device, bridge_iface.as_deref()).await?;
 
         let qmp_socket_path = dir.join(QMP_SOCKET_NAME);
