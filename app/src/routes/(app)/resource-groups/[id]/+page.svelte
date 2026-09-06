@@ -31,6 +31,8 @@
         openWorkloadExecSocket,
         ensureIsoBucket,
         uploadIso,
+        listBucketObjects,
+        presignObjectDownload,
         type ResourceGroup,
         type Workload,
         type Volume,
@@ -38,6 +40,7 @@
         type BucketAccessKey,
         type PortMapping,
         type VolumeMount,
+        type ObjectEntry,
     } from "$lib/api/resource-groups";
     import { getNode } from "$lib/api/nodes";
     import { resolveImageIcon } from "$lib/utils/image-icon";
@@ -149,6 +152,11 @@
     let vmFormMemory = $state("2048");
     let vmFormDisk = $state("20480");
     let vmFormIsoFile = $state<File | null>(null);
+    let vmIsoMode = $state<"existing" | "upload">("upload");
+    let vmExistingIsos = $state<ObjectEntry[]>([]);
+    let vmExistingIsosLoading = $state(false);
+    let vmSelectedIsoKey = $state("");
+    let vmIsoBucketId = $state<string | null>(null);
     let vmDeploying = $state(false);
     let vmUploadProgress = $state(0);
     let vmError = $state<string | null>(null);
@@ -396,11 +404,38 @@
             composeDialog?.showModal();
         } else if (key === "vm") {
             vmDialog?.showModal();
+            loadExistingIsos();
         } else if (key === "volume") {
             volumeDialog?.showModal();
         } else {
             bucketDialog?.showModal();
         }
+    }
+
+    async function loadExistingIsos() {
+        if (!auth.token) return;
+        vmExistingIsosLoading = true;
+        try {
+            const bucket = await ensureIsoBucket(auth.token, rgId);
+            vmIsoBucketId = bucket.id;
+            const result = await listBucketObjects(auth.token, bucket.id, "");
+            vmExistingIsos = result.objects;
+            if (vmExistingIsos.length > 0) {
+                vmIsoMode = "existing";
+                vmSelectedIsoKey = vmExistingIsos[0].key;
+            } else {
+                vmIsoMode = "upload";
+            }
+        } catch (e) {
+            vmError = e instanceof Error ? e.message : "Failed to load existing isos";
+        } finally {
+            vmExistingIsosLoading = false;
+        }
+    }
+
+    function isoFileName(key: string): string {
+        const parts = key.split("-");
+        return parts.length > 5 ? parts.slice(5).join("-") : key;
     }
 
     function resetVmForm() {
@@ -409,6 +444,10 @@
         vmFormMemory = "2048";
         vmFormDisk = "20480";
         vmFormIsoFile = null;
+        vmIsoMode = "upload";
+        vmExistingIsos = [];
+        vmSelectedIsoKey = "";
+        vmIsoBucketId = null;
         vmUploadProgress = 0;
         vmError = null;
     }
@@ -419,15 +458,23 @@
     }
 
     async function handleDeployVm() {
-        if (!auth.token || !vmFormName || !vmFormIsoFile) return;
+        if (!auth.token || !vmFormName) return;
+        if (vmIsoMode === "upload" && !vmFormIsoFile) return;
+        if (vmIsoMode === "existing" && !vmSelectedIsoKey) return;
         vmDeploying = true;
         vmUploadProgress = 0;
         vmError = null;
         try {
-            const bucket = await ensureIsoBucket(auth.token, rgId);
-            const isoUrl = await uploadIso(auth.token, bucket.id, vmFormIsoFile, (fraction) => {
-                vmUploadProgress = fraction;
-            });
+            let isoUrl: string;
+            if (vmIsoMode === "existing" && vmIsoBucketId) {
+                const presigned = await presignObjectDownload(auth.token, vmIsoBucketId, vmSelectedIsoKey);
+                isoUrl = presigned.url;
+            } else {
+                const bucket = await ensureIsoBucket(auth.token, rgId);
+                isoUrl = await uploadIso(auth.token, bucket.id, vmFormIsoFile!, (fraction) => {
+                    vmUploadProgress = fraction;
+                });
+            }
 
             await createWorkload(auth.token, {
                 name: vmFormName,
@@ -1205,19 +1252,53 @@
                 <label class="text-xs text-muted-foreground" for="vm-name">Name</label>
                 <input id="vm-name" class="border rounded px-3 py-1.5 text-sm bg-background" placeholder="my-vm" bind:value={vmFormName} />
             </div>
-            <div class="flex flex-col gap-1 sm:col-span-2">
-                <label class="text-xs text-muted-foreground" for="vm-iso">ISO Image</label>
-                <input
-                    id="vm-iso"
-                    type="file"
-                    accept=".iso"
-                    class="border rounded px-3 py-1.5 text-sm bg-background file:mr-3 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
-                    onchange={handleVmIsoFileChange}
-                />
-                {#if vmDeploying && vmFormIsoFile}
-                    <div class="h-1.5 rounded-full bg-muted overflow-hidden mt-1">
-                        <div class="h-full bg-primary transition-all" style="width: {Math.round(vmUploadProgress * 100)}%"></div>
-                    </div>
+            <div class="flex flex-col gap-2 sm:col-span-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-muted-foreground">ISO Image</span>
+                    {#if vmExistingIsos.length > 0}
+                        <div class="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-muted">
+                            <button
+                                type="button"
+                                class="px-2 py-0.5 rounded text-xs font-medium transition-colors {vmIsoMode === 'existing' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={() => (vmIsoMode = "existing")}
+                            >
+                                Existing
+                            </button>
+                            <button
+                                type="button"
+                                class="px-2 py-0.5 rounded text-xs font-medium transition-colors {vmIsoMode === 'upload' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={() => (vmIsoMode = "upload")}
+                            >
+                                Upload new
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+                {#if vmExistingIsosLoading}
+                    <p class="text-xs text-muted-foreground">Loading isos...</p>
+                {:else if vmIsoMode === "existing"}
+                    <select
+                        id="vm-iso-existing"
+                        class="border rounded px-3 py-1.5 text-sm bg-background"
+                        bind:value={vmSelectedIsoKey}
+                    >
+                        {#each vmExistingIsos as obj (obj.key)}
+                            <option value={obj.key}>{isoFileName(obj.key)}</option>
+                        {/each}
+                    </select>
+                {:else}
+                    <input
+                        id="vm-iso"
+                        type="file"
+                        accept=".iso"
+                        class="border rounded px-3 py-1.5 text-sm bg-background file:mr-3 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+                        onchange={handleVmIsoFileChange}
+                    />
+                    {#if vmDeploying && vmFormIsoFile}
+                        <div class="h-1.5 rounded-full bg-muted overflow-hidden mt-1">
+                            <div class="h-full bg-primary transition-all" style="width: {Math.round(vmUploadProgress * 100)}%"></div>
+                        </div>
+                    {/if}
                 {/if}
             </div>
             <div class="flex flex-col gap-1">
@@ -1241,7 +1322,13 @@
         {/if}
         <div class="flex gap-2 justify-end">
             <Button size="sm" variant="outline" onclick={() => vmDialog?.close()}>Cancel</Button>
-            <Button size="sm" onclick={handleDeployVm} disabled={vmDeploying || !vmFormName || !vmFormIsoFile}>
+            <Button
+                size="sm"
+                onclick={handleDeployVm}
+                disabled={vmDeploying ||
+                    !vmFormName ||
+                    (vmIsoMode === "upload" ? !vmFormIsoFile : !vmSelectedIsoKey)}
+            >
                 {vmDeploying ? "Deploying..." : "Deploy"}
             </Button>
         </div>
