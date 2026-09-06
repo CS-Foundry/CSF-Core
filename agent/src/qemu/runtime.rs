@@ -446,9 +446,6 @@ async fn spawn_vm(
         format!("unix:{},server,nowait", qmp_socket_path.display()),
         "-vnc".to_string(),
         format!("unix:{}", vnc_socket_path.display()),
-        "-daemonize".to_string(),
-        "-pidfile".to_string(),
-        vm_dir(workload_id).join("qemu.pid").display().to_string(),
     ];
 
     if let Some(iso_path) = iso_path {
