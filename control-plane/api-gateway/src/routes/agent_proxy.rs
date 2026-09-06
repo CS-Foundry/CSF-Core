@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use crate::{
     auth::jwt::{
-        create_exec_ticket, create_node_metrics_ticket, verify_exec_ticket,
-        verify_node_metrics_ticket,
+        create_exec_ticket, create_node_metrics_ticket, create_vnc_ticket, verify_exec_ticket,
+        verify_node_metrics_ticket, verify_vnc_ticket,
     },
     auth::rbac::{CanManageSystem, CanManageWorkloads, CanViewAgents, CanViewWorkloads},
     AppState,
@@ -326,6 +326,77 @@ async fn bridge_exec_sockets(
     }
 }
 
+pub async fn issue_vnc_ticket(
+    CanManageWorkloads(claims): CanManageWorkloads,
+    Path(workload_id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let ticket = create_vnc_ticket(workload_id, claims.user_id).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("failed to issue vnc ticket: {}", e) })),
+        )
+    })?;
+
+    Ok(Json(json!({ "ticket": ticket })))
+}
+
+#[derive(Deserialize)]
+pub struct VncQuery {
+    ticket: String,
+}
+
+pub async fn vnc_workload(
+    State(state): State<AppState>,
+    Path(workload_id): Path<Uuid>,
+    Query(query): Query<VncQuery>,
+    ws: WebSocketUpgrade,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    verify_vnc_ticket(&query.ticket, workload_id).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "invalid or expired vnc ticket" })),
+        )
+    })?;
+
+    let (tunnel_ip, agent_id) = resolve_agent_target(&state, workload_id).await?;
+    let proxy_ticket = fetch_proxy_ticket(&state, agent_id, &workload_id.to_string()).await?;
+
+    let agent_port: u16 = std::env::var(CSFX_AGENT_PORT_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7443);
+
+    let agent_url = format!("ws://{}:{}/vnc/{}", tunnel_ip, agent_port, workload_id);
+
+    let mut request = agent_url.into_client_request().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("invalid agent vnc url: {}", e) })),
+        )
+    })?;
+    request.headers_mut().insert(
+        "X-Csfx-Proxy-Ticket",
+        proxy_ticket.parse().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "invalid proxy ticket header" })),
+            )
+        })?,
+    );
+
+    let (agent_socket, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| {
+            tracing::warn!(workload_id = %workload_id, error = %e, "failed to connect to agent vnc socket");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": format!("failed to connect to agent vnc socket: {}", e) })),
+            )
+        })?;
+
+    Ok(ws.on_upgrade(move |browser_socket| bridge_exec_sockets(browser_socket, agent_socket)))
+}
+
 pub async fn issue_node_metrics_ticket(
     CanViewAgents(claims): CanViewAgents,
     Path(agent_id): Path<Uuid>,
@@ -499,6 +570,11 @@ pub fn agent_proxy_routes() -> Router<AppState> {
             axum::routing::post(issue_exec_ticket),
         )
         .route("/workloads/{id}/exec", get(exec_workload))
+        .route(
+            "/workloads/{id}/vnc/ticket",
+            axum::routing::post(issue_vnc_ticket),
+        )
+        .route("/workloads/{id}/vnc", get(vnc_workload))
         .route(
             "/agents/{id}/metrics/ticket",
             axum::routing::post(issue_node_metrics_ticket),

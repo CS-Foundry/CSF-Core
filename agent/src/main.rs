@@ -6,6 +6,7 @@ mod nftables;
 mod pki;
 mod qemu;
 mod rbd;
+mod rg_dhcp;
 mod rg_dns;
 mod rg_dns_process;
 mod rg_ipam;
@@ -145,7 +146,10 @@ async fn main() -> Result<()> {
         Arc::clone(&rg_dns_registry),
     ));
 
-    let qemu_runtime = Arc::new(qemu::runtime::QemuRuntime::new());
+    let qemu_runtime = Arc::new(qemu::runtime::QemuRuntime::new(
+        wg_identity.private_key_b64.clone(),
+        Arc::clone(&rg_dns_registry),
+    ));
 
     let running_containers: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -310,7 +314,8 @@ async fn reconcile_tick(
     sync_wireguard_peers(client, api_key, agent_id, &resource_group_ids).await;
     sync_vpn_peers(client, api_key, &resource_group_ids).await;
     firecracker.check_dns_liveness().await;
-    cleanup_stale_resource_groups(client, api_key, firecracker).await;
+    qemu.check_dhcp_liveness().await;
+    cleanup_stale_resource_groups(client, api_key, firecracker, qemu).await;
 
     let statuses = build_container_statuses(firecracker, running_containers, workload_phases).await;
     push_workload_stats(client, api_key, firecracker, running_containers).await;
@@ -899,6 +904,7 @@ async fn cleanup_stale_resource_groups(
     client: &client::ApiClient,
     api_key: &str,
     firecracker: &firecracker::runtime::FirecrackerRuntime,
+    qemu: &qemu::runtime::QemuRuntime,
 ) {
     let active_ids = match client.fetch_active_resource_group_ids(api_key).await {
         Ok(ids) => ids,
@@ -908,17 +914,10 @@ async fn cleanup_stale_resource_groups(
         }
     };
 
-    cleanup_stale_firecracker_resource_groups(&active_ids, firecracker).await;
-}
-
-async fn cleanup_stale_firecracker_resource_groups(
-    active_ids: &[String],
-    firecracker: &firecracker::runtime::FirecrackerRuntime,
-) {
     let local_ids = match rg_network::list_rg_ids().await {
         Ok(ids) => ids,
         Err(e) => {
-            warn!(error = %e, "Failed to list local firecracker resource group bridges");
+            warn!(error = %e, "Failed to list local resource group bridges");
             return;
         }
     };
@@ -928,10 +927,13 @@ async fn cleanup_stale_firecracker_resource_groups(
             continue;
         }
 
-        info!(resource_group_id = %local_id, "Tearing down stale firecracker resource group network");
+        info!(resource_group_id = %local_id, "Tearing down stale resource group network");
 
         if let Err(e) = firecracker.teardown_rg_network(&local_id).await {
             warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale firecracker resource group network");
+        }
+        if let Err(e) = qemu.teardown_rg_network(&local_id).await {
+            warn!(resource_group_id = %local_id, error = %e, "Failed to tear down stale qemu resource group network");
         }
     }
 }

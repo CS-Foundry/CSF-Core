@@ -105,6 +105,59 @@ pub fn verify_exec_ticket(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VncTicketClaims {
+    pub workload_id: Uuid,
+    pub user_id: Uuid,
+    pub exp: i64,
+    pub iat: i64,
+    pub purpose: String,
+}
+
+impl VncTicketClaims {
+    pub fn new(workload_id: Uuid, user_id: Uuid) -> Self {
+        let now = Utc::now();
+        VncTicketClaims {
+            workload_id,
+            user_id,
+            exp: (now + Duration::seconds(30)).timestamp(),
+            iat: now.timestamp(),
+            purpose: "workload-vnc".to_string(),
+        }
+    }
+}
+
+pub fn create_vnc_ticket(
+    workload_id: Uuid,
+    user_id: Uuid,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let claims = VncTicketClaims::new(workload_id, user_id);
+    let secret = get_jwt_secret();
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_ref()),
+    )
+}
+
+pub fn verify_vnc_ticket(
+    token: &str,
+    workload_id: Uuid,
+) -> Result<VncTicketClaims, jsonwebtoken::errors::Error> {
+    let secret = get_jwt_secret();
+    let data = decode::<VncTicketClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_ref()),
+        &Validation::default(),
+    )?;
+
+    if data.claims.purpose != "workload-vnc" || data.claims.workload_id != workload_id {
+        return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+    }
+
+    Ok(data.claims)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetricsTicketClaims {
     pub agent_id: Uuid,
     pub user_id: Uuid,
