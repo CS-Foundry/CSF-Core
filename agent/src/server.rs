@@ -314,10 +314,7 @@ async fn vnc_handler(
         .qemu
         .vnc_socket_path(&workload_id)
         .await
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            "vm not running here".to_string(),
-        ))?;
+        .ok_or((StatusCode::NOT_FOUND, "vm not running here".to_string()))?;
 
     Ok(ws.on_upgrade(move |socket| handle_vnc_socket(socket, workload_id, vnc_socket_path)))
 }

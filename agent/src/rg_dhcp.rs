@@ -70,7 +70,9 @@ impl RgDhcpSupervisor {
     ) -> Result<()> {
         {
             let mut reservations = self.reservations.lock().await;
-            let rg_reservations = reservations.entry(resource_group_id.to_string()).or_default();
+            let rg_reservations = reservations
+                .entry(resource_group_id.to_string())
+                .or_default();
             rg_reservations.insert(
                 workload_id.to_string(),
                 (mac_address.to_string(), guest_ip.to_string()),
@@ -130,8 +132,8 @@ impl RgDhcpSupervisor {
             info!(resource_group_id = %resource_group_id, "Resource group dhcp process exited, respawning");
         }
 
-        let (range_start, range_end) = dhcp_range(cidr)
-            .with_context(|| format!("invalid resource group cidr {}", cidr))?;
+        let (range_start, range_end) =
+            dhcp_range(cidr).with_context(|| format!("invalid resource group cidr {}", cidr))?;
         let gateway = second_host_ip(cidr)
             .with_context(|| format!("invalid resource group cidr {}", cidr))?;
 
@@ -156,7 +158,10 @@ impl RgDhcpSupervisor {
                 "--dhcp-leasefile={}",
                 leases_file_path(resource_group_id).display()
             ))
-            .arg(format!("--pid-file={}", pid_file_path(resource_group_id).display()))
+            .arg(format!(
+                "--pid-file={}",
+                pid_file_path(resource_group_id).display()
+            ))
             .kill_on_drop(true)
             .spawn()
             .context("Failed to spawn dnsmasq process")?;

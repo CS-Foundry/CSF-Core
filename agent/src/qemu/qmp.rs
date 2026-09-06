@@ -37,7 +37,8 @@ impl QmpClient {
             command["arguments"] = arguments;
         }
 
-        let mut payload = serde_json::to_vec(&command).context("Failed to serialize QMP command")?;
+        let mut payload =
+            serde_json::to_vec(&command).context("Failed to serialize QMP command")?;
         payload.push(b'\n');
 
         self.writer
